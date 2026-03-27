@@ -1,0 +1,197 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.user_id;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.tier == 'creator' ||
+          (request.auth.token.email in ["kanitezu@gmail.com", "andilenqobile561@gmail.com"] && request.auth.token.email_verified == true));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'tier', 'signals_used_today', 'last_reset_date', 'created_at']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.email is string && data.email.size() > 0 &&
+             data.tier in ['free', 'oracle', 'zion', 'legendary', 'mythic', 'creator'] &&
+             data.signals_used_today is int && data.signals_used_today >= 0 &&
+             data.last_reset_date is string &&
+             data.created_at is string;
+    }
+
+    function isValidSignal(data) {
+      return data.keys().hasAll(['user_id', 'pair', 'timeframe', 'entry', 'stop_loss', 'tp1', 'tp2', 'tp3', 'tp4', 'risk_reward', 'strategy', 'ai_bot', 'confidence', 'analysis', 'recommended_lot_size', 'status', 'created_at']) &&
+             data.user_id is string && data.user_id == request.auth.uid &&
+             data.pair is string && data.pair.size() > 0 &&
+             data.timeframe in ['M15', 'M30', 'H1', 'H4'] &&
+             data.entry is number &&
+             data.stop_loss is number &&
+             data.tp1 is number &&
+             data.tp2 is number &&
+             data.tp3 is number &&
+             data.tp4 is number &&
+             data.risk_reward is number &&
+             data.strategy is string &&
+             data.ai_bot is string &&
+             data.confidence is number &&
+             data.analysis is string &&
+             data.recommended_lot_size is number &&
+             data.status in ['active', 'tp_hit', 'sl_hit'] &&
+             data.created_at is string;
+    }
+
+    function areUserImmutableFieldsUnchanged() {
+      return request.resource.data.uid == resource.data.uid &&
+             request.resource.data.email == resource.data.email &&
+             request.resource.data.created_at == resource.data.created_at;
+    }
+
+    function areSignalImmutableFieldsUnchanged() {
+      return request.resource.data.user_id == resource.data.user_id &&
+             request.resource.data.created_at == resource.data.created_at;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.tier == 'free' || isAdmin());
+      allow update: if (isOwner(userId) && isValidUser(request.resource.data) && areUserImmutableFieldsUnchanged() && (request.resource.data.tier == resource.data.tier || isAdmin())) || isAdmin();
+    }
+
+    match /signals/{signalId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidSignal(request.resource.data);
+      allow update: if (isDocOwner() && isValidSignal(request.resource.data) && areSignalImmutableFieldsUnchanged()) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId}/messages/{messageId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && 
+                    request.resource.data.user_id == request.auth.uid &&
+                    request.resource.data.keys().hasAll(['user_id', 'bot_name', 'role', 'text', 'created_at']) &&
+                    request.resource.data.role in ['user', 'model'];
+      allow update, delete: if isAdmin();
+    }
+
+    match /users/{userId}/trades/{tradeId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && 
+                    request.resource.data.user_id == request.auth.uid &&
+                    request.resource.data.status == 'open';
+      allow update: if isOwner(userId) && 
+                    request.resource.data.user_id == request.auth.uid &&
+                    (request.resource.data.status == 'closed' || request.resource.data.status == 'open');
+      allow delete: if isAdmin();
+    }
+
+    match /cosmic_feed/{postId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+                    request.resource.data.user_id == request.auth.uid &&
+                    request.resource.data.likes == 0;
+      allow update: if isAuthenticated() && 
+                    (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']) || isOwner(resource.data.user_id));
+      allow delete: if isAdmin() || isOwner(resource.data.user_id);
+    }
+
+    match /users/{userId}/notifications/{notificationId} {
+      allow read, delete: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) || isAdmin();
+      allow update: if isOwner(userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+    }
+
+    match /users/{userId}/custom_bots/{botId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /academy/{articleId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId}/alerts/{alertId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/strategies/{strategyId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /tribes/{tribeId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && 
+                    (resource.data.creator_id == request.auth.uid || 
+                     (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members']) &&
+                      (request.resource.data.members.size() == resource.data.members.size() + 1 ||
+                       request.resource.data.members.size() == resource.data.members.size() - 1)));
+      allow delete: if isAuthenticated() && resource.data.creator_id == request.auth.uid;
+    }
+
+    match /challenges/{challengeId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /users/{userId}/backtests/{backtestId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /marketplace/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isAuthenticated() && resource.data.seller_id == request.auth.uid;
+    }
+
+    match /users/{userId}/progress/academy {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /live_chat/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.user_id == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    match /community_messages/{messageId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && 
+                    request.resource.data.user_id == request.auth.uid &&
+                    request.resource.data.keys().hasAll(['user_id', 'username', 'text', 'created_at', 'role']);
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId}/journal/{journalId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /proposals/{proposalId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+    }
+  }
+}

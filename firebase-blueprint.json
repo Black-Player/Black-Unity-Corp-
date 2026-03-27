@@ -1,0 +1,316 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with subscription tier and usage stats.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "tier": { "type": "string", "enum": ["free", "oracle", "zion", "creator"] },
+        "signals_used_today": { "type": "integer" },
+        "last_reset_date": { "type": "string", "format": "date-time" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "total_pnl": { "type": "number" },
+        "win_rate": { "type": "number" },
+        "referral_code": { "type": "string" },
+        "referred_by": { "type": "string" },
+        "notification_settings": {
+          "type": "object",
+          "properties": {
+            "new_signals": { "type": "boolean" },
+            "signal_updates": { "type": "boolean" },
+            "sound": { "type": "boolean" },
+            "email_digest": { "type": "boolean" }
+          }
+        }
+      },
+      "required": ["uid", "email", "tier", "signals_used_today", "last_reset_date", "created_at"]
+    },
+    "Signal": {
+      "title": "Trading Signal",
+      "description": "AI generated trading signal.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "pair": { "type": "string" },
+        "timeframe": { "type": "string" },
+        "entry": { "type": "number" },
+        "stop_loss": { "type": "number" },
+        "tp1": { "type": "number" },
+        "tp2": { "type": "number" },
+        "tp3": { "type": "number" },
+        "tp4": { "type": "number" },
+        "risk_reward": { "type": "number" },
+        "strategy": { "type": "string" },
+        "ai_bot": { "type": "string" },
+        "confidence": { "type": "number" },
+        "analysis": { "type": "string" },
+        "recommended_lot_size": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "tp_hit", "sl_hit"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "pair", "timeframe", "entry", "stop_loss", "tp1", "tp2", "tp3", "tp4", "risk_reward", "strategy", "ai_bot", "confidence", "analysis", "recommended_lot_size", "status", "created_at"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "A message in a conversation with an AI bot.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "bot_name": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "model"] },
+        "text": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "bot_name", "role", "text", "created_at"]
+    },
+    "Trade": {
+      "title": "Paper Trade",
+      "description": "A simulated trade executed from a signal.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "signal_id": { "type": "string" },
+        "pair": { "type": "string" },
+        "entry_price": { "type": "number" },
+        "current_price": { "type": "number" },
+        "pnl": { "type": "number" },
+        "pnl_percentage": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "type": { "type": "string", "enum": ["buy", "sell"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "closed_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "signal_id", "pair", "entry_price", "current_price", "pnl", "pnl_percentage", "status", "type", "created_at"]
+    },
+    "FeedPost": {
+      "title": "Cosmic Feed Post",
+      "description": "A post shared to the community feed.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "user_email": { "type": "string" },
+        "type": { "type": "string", "enum": ["signal", "insight"] },
+        "content": { "type": "string" },
+        "pair": { "type": "string" },
+        "pnl": { "type": "number" },
+        "likes": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "user_email", "type", "content", "likes", "created_at"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "A notification for the user.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "type": { "type": "string", "enum": ["signal", "system", "trade"] },
+        "read": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "message", "type", "read", "created_at"]
+    },
+    "CustomBot": {
+      "title": "Custom Bot",
+      "description": "A user-customized AI bot.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "base_bot_id": { "type": "string" },
+        "name": { "type": "string" },
+        "risk_level": { "type": "string", "enum": ["low", "medium", "high"] },
+        "preferred_timeframes": { "type": "array", "items": { "type": "string" } },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "base_bot_id", "name", "risk_level", "created_at"]
+    },
+    "AcademyArticle": {
+      "title": "Academy Article",
+      "description": "Educational content for users.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "content": { "type": "string" },
+        "image_url": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "content", "created_at"]
+    },
+    "EconomicEvent": {
+      "title": "Economic Event",
+      "description": "High-impact market news.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "impact": { "type": "string", "enum": ["low", "medium", "high"] },
+        "currency": { "type": "string" },
+        "time": { "type": "string", "format": "date-time" },
+        "ai_analysis": { "type": "string" }
+      },
+      "required": ["title", "impact", "currency", "time"]
+    },
+    "PriceAlert": {
+      "title": "Price Alert",
+      "description": "User-defined price alert.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "pair": { "type": "string" },
+        "price": { "type": "number" },
+        "condition": { "type": "string", "enum": ["above", "below"] },
+        "active": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "pair", "price", "condition", "active", "created_at"]
+    },
+    "MasterStrategy": {
+      "title": "Master Strategy",
+      "description": "A combination of multiple AI bot strategies.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "name": { "type": "string" },
+        "bots": { "type": "array", "items": { "type": "string" } },
+        "risk_weight": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "name", "bots", "risk_weight", "created_at"]
+    },
+    "Tribe": {
+      "title": "Tribe",
+      "description": "A community trading group.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "creator_id": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "creator_id", "members", "created_at"]
+    },
+    "Challenge": {
+      "title": "Challenge",
+      "description": "A gamified trading task.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "target_pnl": { "type": "number" },
+        "reward": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["title", "description", "target_pnl", "reward", "active"]
+    },
+    "BacktestResult": {
+      "title": "Backtest Result",
+      "description": "Result of a strategy backtest.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "strategy_id": { "type": "string" },
+        "pnl": { "type": "number" },
+        "win_rate": { "type": "number" },
+        "trades_count": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "strategy_id", "pnl", "win_rate", "trades_count", "created_at"]
+    },
+    "MarketplaceItem": {
+      "title": "Marketplace Item",
+      "description": "A strategy or bot configuration for sale.",
+      "type": "object",
+      "properties": {
+        "seller_id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "price": { "type": "number" },
+        "type": { "type": "string", "enum": ["strategy", "bot_config"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["seller_id", "name", "price", "type", "created_at"]
+    },
+    "UserProgress": {
+      "title": "User Progress",
+      "description": "Tracking user learning progress in the academy.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "completed_articles": { "type": "array", "items": { "type": "string" } },
+        "total_points": { "type": "number" }
+      },
+      "required": ["user_id", "completed_articles", "total_points"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents."
+    },
+    "signals/{signalId}": {
+      "schema": "Signal",
+      "description": "Trading signals generated by AI."
+    },
+    "users/{userId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Chat messages for a specific user and bot."
+    },
+    "users/{userId}/trades/{tradeId}": {
+      "schema": "Trade",
+      "description": "Simulated trades for a user."
+    },
+    "feed/{postId}": {
+      "schema": "FeedPost",
+      "description": "Community feed posts."
+    },
+    "users/{userId}/notifications/{notificationId}": {
+      "schema": "Notification",
+      "description": "User notifications."
+    },
+    "users/{userId}/custom_bots/{botId}": {
+      "schema": "CustomBot",
+      "description": "User's customized AI bots."
+    },
+    "academy/{articleId}": {
+      "schema": "AcademyArticle",
+      "description": "Educational articles."
+    },
+    "events/{eventId}": {
+      "schema": "EconomicEvent",
+      "description": "Market events."
+    },
+    "users/{userId}/alerts/{alertId}": {
+      "schema": "PriceAlert",
+      "description": "User price alerts."
+    },
+    "users/{userId}/strategies/{strategyId}": {
+      "schema": "MasterStrategy",
+      "description": "User composite strategies."
+    },
+    "tribes/{tribeId}": {
+      "schema": "Tribe",
+      "description": "Community groups."
+    },
+    "challenges/{challengeId}": {
+      "schema": "Challenge",
+      "description": "Global challenges."
+    },
+    "users/{userId}/backtests/{backtestId}": {
+      "schema": "BacktestResult",
+      "description": "User backtest history."
+    },
+    "marketplace/{itemId}": {
+      "schema": "MarketplaceItem",
+      "description": "Items for sale in the celestial market."
+    },
+    "users/{userId}/progress/academy": {
+      "schema": "UserProgress",
+      "description": "User's academy progress."
+    }
+  }
+}

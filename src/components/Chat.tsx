@@ -1,0 +1,322 @@
+import { useState, useRef, useEffect } from 'react';
+import { BOTS, UserProfile, TIER_BOT_LIMITS } from '../types';
+import { chatWithBot } from '../services/aiService';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { collection, query, where, onSnapshot, addDoc, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { Bot, Send, User, Sparkles, MessageSquare, Zap, Globe, Users } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import ReactMarkdown from 'react-markdown';
+
+interface ChatProps {
+  userProfile: UserProfile;
+  addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+}
+
+interface Message {
+  role: 'user' | 'model' | 'system';
+  text: string;
+  username?: string;
+  created_at: string;
+}
+
+export default function Chat({ userProfile, addToast }: ChatProps) {
+  const [chatMode, setChatMode] = useState<'ai' | 'community'>('ai');
+  const [selectedBot, setSelectedBot] = useState(BOTS[0]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [communityMessages, setCommunityMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (chatMode === 'ai') {
+      const messagesRef = collection(db, 'users', userProfile.uid, 'messages');
+      const q = query(
+        messagesRef,
+        where('bot_name', '==', selectedBot.name),
+        orderBy('created_at', 'asc'),
+        limit(50)
+      );
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const loadedMessages = snapshot.docs.map(doc => ({
+          role: doc.data().role as 'user' | 'model',
+          text: doc.data().text,
+          created_at: doc.data().created_at
+        }));
+        setMessages(loadedMessages);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, `users/${userProfile.uid}/messages`);
+      });
+
+      return () => unsubscribe();
+    } else {
+      const messagesRef = collection(db, 'community_chat');
+      const q = query(
+        messagesRef,
+        orderBy('created_at', 'asc'),
+        limit(50)
+      );
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const loadedMessages = snapshot.docs.map(doc => ({
+          role: doc.data().role as 'user' | 'system',
+          text: doc.data().text,
+          username: doc.data().username,
+          created_at: doc.data().created_at
+        }));
+        setCommunityMessages(loadedMessages);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'community_chat');
+      });
+
+      return () => unsubscribe();
+    }
+  }, [selectedBot, userProfile.uid, chatMode]);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [messages, communityMessages]);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!input.trim() || loading) return;
+
+    const userMessage = input.trim();
+    setInput('');
+    
+    if (chatMode === 'ai') {
+      const messagesRef = collection(db, 'users', userProfile.uid, 'messages');
+      
+      try {
+        await addDoc(messagesRef, {
+          user_id: userProfile.uid,
+          bot_name: selectedBot.name,
+          role: 'user',
+          text: userMessage,
+          created_at: new Date().toISOString()
+        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userProfile.uid}/messages`));
+
+        setLoading(true);
+
+        const response = await chatWithBot(
+          selectedBot.name,
+          selectedBot.strategy,
+          userMessage,
+          messages.map(m => ({ role: m.role as any, parts: [{ text: m.text }] }))
+        );
+
+        await addDoc(messagesRef, {
+          user_id: userProfile.uid,
+          bot_name: selectedBot.name,
+          role: 'model',
+          text: response,
+          created_at: new Date().toISOString()
+        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userProfile.uid}/messages`));
+
+      } catch (err) {
+        console.error(err);
+        addToast("The cosmic connection was interrupted. Please try again.", "error");
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      const messagesRef = collection(db, 'community_chat');
+      try {
+        await addDoc(messagesRef, {
+          user_id: userProfile.uid,
+          username: userProfile.username || 'Anonymous Oracle',
+          role: 'user',
+          text: userMessage,
+          created_at: new Date().toISOString()
+        }).catch(err => handleFirestoreError(err, OperationType.CREATE, 'community_chat'));
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
+  const availableBots = BOTS.filter((_, index) => index < TIER_BOT_LIMITS[userProfile.tier]);
+
+  const currentMessages = chatMode === 'ai' ? messages : communityMessages;
+
+  return (
+    <div className="h-[calc(100vh-180px)] lg:h-[calc(100vh-160px)] flex flex-col lg:flex-row gap-4 lg:gap-8">
+      <div className="w-full lg:w-80 flex flex-col gap-4 lg:gap-6 shrink-0">
+        <div className="glass-card p-1.5 flex gap-1 border-white/5">
+          <button
+            onClick={() => setChatMode('ai')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${
+              chatMode === 'ai' ? 'bg-gold text-black' : 'text-white/40 hover:text-white'
+            }`}
+          >
+            <Bot size={14} /> AI Oracle
+          </button>
+          <button
+            onClick={() => setChatMode('community')}
+            className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold transition-all ${
+              chatMode === 'community' ? 'bg-gold text-black' : 'text-white/40 hover:text-white'
+            }`}
+          >
+            <Users size={14} /> Community
+          </button>
+        </div>
+
+        {chatMode === 'ai' ? (
+          <div className="glass-card p-4 lg:p-6 space-y-4">
+            <h2 className="text-lg lg:text-xl font-display font-bold flex items-center gap-2">
+              <Bot className="text-gold" size={18} /> Select Oracle
+            </h2>
+            <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-y-auto pb-2 lg:pb-0 max-h-[300px] lg:max-h-none pr-2 scrollbar-hide">
+              {availableBots.map((bot) => (
+                <button
+                  key={bot.name}
+                  onClick={() => {
+                    setSelectedBot(bot);
+                    setMessages([]);
+                  }}
+                  className={`flex-none w-48 lg:w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                    selectedBot.name === bot.name 
+                      ? 'bg-gold/10 border-gold/50 text-gold shadow-lg shadow-gold/5' 
+                      : 'bg-white/5 border-white/5 text-white/60 hover:bg-white/10'
+                  }`}
+                >
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${selectedBot.name === bot.name ? 'bg-gold text-black' : 'bg-white/10'}`}>
+                    <Bot size={16} />
+                  </div>
+                  <div className="text-left overflow-hidden">
+                    <p className="text-sm font-bold truncate">{bot.name}</p>
+                    <p className="text-[10px] opacity-60 uppercase tracking-widest truncate">{bot.strategy}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="glass-card p-6 space-y-4">
+            <h2 className="text-xl font-display font-bold flex items-center gap-2">
+              <Globe className="text-gold" size={20} /> Global Feed
+            </h2>
+            <p className="text-xs text-white/40 leading-relaxed">
+              Connect with other Oracles across the cosmos. Share insights, signals, and wisdom in real-time.
+            </p>
+            <div className="p-4 rounded-xl bg-gold/5 border border-gold/10 space-y-2">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-gold">Online Oracles</div>
+              <div className="text-2xl font-bold text-white">1,248</div>
+            </div>
+          </div>
+        )}
+
+        <div className="glass-card p-6 bg-gold/5 border-gold/10 hidden lg:block">
+          <h3 className="font-display font-bold text-gold flex items-center gap-2 mb-2">
+            <Sparkles size={16} /> Oracle Wisdom
+          </h3>
+          <p className="text-xs text-white/60 leading-relaxed italic">
+            {chatMode === 'ai' 
+              ? "“Ask the Oracle about market trends, strategy insights, or specific asset analysis. The cosmos reveals all to those who listen.”"
+              : "“The collective wisdom of the community is a powerful force. Listen to the whispers of the global feed.”"}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex-1 glass-card flex flex-col overflow-hidden relative">
+        <div className="p-3 lg:p-4 border-b border-white/10 flex items-center justify-between bg-white/5">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-full bg-gold/20 flex items-center justify-center border border-gold/30">
+              {chatMode === 'ai' ? <Bot className="text-gold" size={16} /> : <Users className="text-gold" size={16} />}
+            </div>
+            <div>
+              <h3 className="text-sm lg:text-base font-bold">{chatMode === 'ai' ? selectedBot.name : 'Global Oracle Feed'}</h3>
+              <p className="text-[8px] lg:text-[10px] text-emerald-400 uppercase tracking-widest flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Online
+              </p>
+            </div>
+          </div>
+          <div className="hidden sm:block text-xs text-white/40 italic">“Where mortals trade, gods speak.”</div>
+        </div>
+
+        <div 
+          ref={scrollRef}
+          className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth"
+        >
+          {currentMessages.length === 0 && (
+            <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
+              <div className="w-16 h-16 rounded-full bg-white/5 flex items-center justify-center">
+                <MessageSquare size={32} />
+              </div>
+              <p className="max-w-xs italic">The {chatMode === 'ai' ? 'Oracle' : 'Community'} awaits your inquiry. Start a conversation to begin.</p>
+            </div>
+          )}
+
+          <AnimatePresence mode="popLayout">
+            {currentMessages.map((msg, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+              >
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                  msg.role === 'user' ? 'bg-gold text-black' : 'bg-white/10 text-gold'
+                }`}>
+                  {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+                </div>
+                <div className={`max-w-[80%] p-4 rounded-2xl ${
+                  msg.role === 'user' 
+                    ? 'bg-gold/10 border border-gold/20 text-white' 
+                    : 'bg-white/5 border border-white/10 text-white/90'
+                }`}>
+                  {chatMode === 'community' && msg.username && (
+                    <div className="text-[10px] font-bold text-gold uppercase tracking-widest mb-1">{msg.username}</div>
+                  )}
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+
+          {loading && chatMode === 'ai' && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="flex gap-4"
+            >
+              <div className="w-8 h-8 rounded-lg bg-white/10 text-gold flex items-center justify-center shrink-0">
+                <Bot size={16} />
+              </div>
+              <div className="bg-white/5 border border-white/10 p-4 rounded-2xl flex gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-gold/40 animate-bounce"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-gold/40 animate-bounce [animation-delay:0.2s]"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-gold/40 animate-bounce [animation-delay:0.4s]"></span>
+              </div>
+            </motion.div>
+          )}
+        </div>
+
+        <form onSubmit={handleSend} className="p-4 bg-white/5 border-t border-white/10">
+          <div className="relative">
+            <input 
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={chatMode === 'ai' ? `Message ${selectedBot.name}...` : "Broadcast to the cosmos..."}
+              className="w-full cosmic-input pr-12 py-4"
+              disabled={loading}
+            />
+            <button 
+              type="submit"
+              disabled={loading || !input.trim()}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-lg bg-gold text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+            >
+              <Send size={18} />
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,106 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&display=swap');
+@import "tailwindcss";
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 30s linear infinite;
+  display: flex;
+  width: max-content;
+}
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-serif: "Playfair Display", serif;
+  
+  --color-gold: var(--theme-primary, #D4AF37);
+  --color-gold-light: var(--theme-light, #F9E29C);
+  --color-gold-dark: var(--theme-dark, #996515);
+  --color-cosmic-black: var(--theme-bg, #050505);
+  --color-cosmic-deep: #0A0A1A;
+  --color-cosmic-accent: #1A1A3A;
+}
+
+:root[data-theme="solar"] {
+  --theme-primary: #f97316;
+  --theme-light: #fdba74;
+  --theme-dark: #c2410c;
+  --theme-bg: #0c0a09;
+}
+
+:root[data-theme="lunar"] {
+  --theme-primary: #94a3b8;
+  --theme-light: #cbd5e1;
+  --theme-dark: #475569;
+  --theme-bg: #0f172a;
+}
+
+:root[data-theme="void"] {
+  --theme-primary: #3f3f46;
+  --theme-light: #71717a;
+  --theme-dark: #18181b;
+  --theme-bg: #000000;
+}
+
+@layer base {
+  body {
+    @apply bg-cosmic-black text-white font-sans selection:bg-gold selection:text-black;
+    background-image: 
+      radial-gradient(circle at 50% 50%, rgba(26, 26, 58, 0.4) 0%, transparent 100%),
+      url('https://www.transparenttextures.com/patterns/stardust.png');
+    background-attachment: fixed;
+    transition: background-color 0.5s ease;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/5 backdrop-blur-md border border-white/10 rounded-2xl;
+  }
+  
+  .gold-gradient {
+    @apply bg-gradient-to-r from-gold-dark via-gold to-gold-light text-transparent bg-clip-text;
+  }
+  
+  .gold-button {
+    @apply bg-gradient-to-r from-gold-dark to-gold text-black font-bold px-6 py-3 rounded-xl transition-all hover:scale-105 active:scale-95 shadow-lg shadow-gold/20 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .cosmic-input {
+    @apply bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:border-gold/50 transition-all;
+  }
+
+  /* Mobile Optimization */
+  @media (max-width: 768px) {
+    .glass-card {
+      @apply rounded-xl p-4;
+    }
+    
+    .gold-button {
+      @apply w-full py-4 text-sm;
+    }
+    
+    h1 {
+      @apply text-2xl;
+    }
+    
+  .mobile-nav-item {
+      @apply flex flex-col items-center gap-1 py-2 text-[10px] uppercase tracking-widest font-bold;
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+    .pb-safe {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+}

@@ -20,6 +20,7 @@ export interface Article {
   created_at: string;
   read_time?: string;
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  requiredTier?: Tier;
 }
 
 export const DERIV_SYMBOLS = [
@@ -78,7 +79,8 @@ export const ACADEMY_ARTICLES: Article[] = [
     image_url: 'https://picsum.photos/seed/trading1/800/400',
     created_at: new Date().toISOString(),
     read_time: '5 min',
-    difficulty: 'Intermediate'
+    difficulty: 'Intermediate',
+    requiredTier: 'free'
   },
   {
     id: '2',
@@ -88,7 +90,8 @@ export const ACADEMY_ARTICLES: Article[] = [
     image_url: 'https://picsum.photos/seed/trading2/800/400',
     created_at: new Date().toISOString(),
     read_time: '8 min',
-    difficulty: 'Advanced'
+    difficulty: 'Advanced',
+    requiredTier: 'oracle'
   },
   {
     id: '3',
@@ -98,7 +101,8 @@ export const ACADEMY_ARTICLES: Article[] = [
     image_url: 'https://picsum.photos/seed/trading3/800/400',
     created_at: new Date().toISOString(),
     read_time: '12 min',
-    difficulty: 'Beginner'
+    difficulty: 'Beginner',
+    requiredTier: 'free'
   },
   {
     id: '4',
@@ -108,7 +112,8 @@ export const ACADEMY_ARTICLES: Article[] = [
     image_url: 'https://picsum.photos/seed/psychology/800/400',
     created_at: new Date().toISOString(),
     read_time: '10 min',
-    difficulty: 'Intermediate'
+    difficulty: 'Intermediate',
+    requiredTier: 'oracle'
   },
   {
     id: '5',
@@ -118,6 +123,7 @@ export const ACADEMY_ARTICLES: Article[] = [
     image_url: 'https://picsum.photos/seed/strategy/800/400',
     created_at: new Date().toISOString(),
     read_time: '15 min',
-    difficulty: 'Advanced'
+    difficulty: 'Advanced',
+    requiredTier: 'zion'
   }
 ];

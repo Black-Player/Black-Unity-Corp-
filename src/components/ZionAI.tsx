@@ -4,6 +4,7 @@ import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Send, Bot, User, Sparkles, Loader2, Zap, Brain, Shield, Globe, TrendingUp, History, Info } from 'lucide-react';
 import Markdown from 'react-markdown';
+import { SYSTEM_ROLE } from '../constants/systemRole';
 
 interface Message {
   id: string;
@@ -49,15 +50,13 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
         contents: [
           {
             role: "user",
-            parts: [{ text: `You are Zion AI, a cosmic trading assistant for the RSA platform. 
-              The user's profile: ${JSON.stringify(userProfile)}. 
+            parts: [{ text: `The user's profile: ${JSON.stringify(userProfile)}. 
               The user asks: ${input}. 
-              Provide a helpful, professional, and slightly mystical (African Cosmic theme) response. 
-              Focus on trading insights, platform features, and risk management.` }]
+              Provide a response based on your core directives.` }]
           }
         ],
         config: {
-          systemInstruction: "You are Zion AI, the sentient core of the RSA Oracle network. Your tone is wise, futuristic, and deeply rooted in African cosmic aesthetics. You guide users through the complexities of trading with precision and mystical insight.",
+          systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in MENTOR MODE acting as Zion AI. Guide the user through the complexities of trading with precision and mystical insight.",
         }
       });
 

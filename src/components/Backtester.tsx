@@ -44,13 +44,14 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
     setTimeout(async () => {
       const winRate = Math.floor(Math.random() * 30) + 60;
       const pnl = Math.floor(Math.random() * 500) + 100;
+      const tradesCount = Math.floor(Math.random() * 50) + 20;
       
       const mockResult: Omit<BacktestResult, 'id'> = {
         user_id: userProfile.uid,
         strategy_id: selectedBot,
         pnl,
         win_rate: winRate,
-        trades_count: Math.floor(Math.random() * 50) + 20,
+        trades_count: tradesCount,
         created_at: new Date().toISOString(),
       };
 
@@ -60,7 +61,28 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
       }));
       setTestData(chartData);
 
-      setProphetVision(`The Prophet's Vision: The ${selectedBot} strategy on ${selectedSymbol} shows a strong ${winRate > 75 ? 'divine' : 'solid'} confluence. The equity curve indicates a healthy recovery factor of 2.4x. Recommended for active deployment.`);
+      // Use Gemini for the Prophet's Vision
+      try {
+        const { GoogleGenAI } = await import("@google/genai");
+        const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+        
+        const response = await ai.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: `As the Eternal Intelligence Core, provide a "Prophet's Vision" for this backtest result:
+          Bot: ${selectedBot}
+          Symbol: ${selectedSymbol}
+          Win Rate: ${winRate}%
+          Total PnL: $${pnl}
+          Trades: ${tradesCount}
+          Timeframe: ${timeframe}
+          
+          Provide a mystical, high-level trading insight about this performance. Keep it under 60 words.`,
+        });
+
+        setProphetVision(response.text);
+      } catch (err) {
+        setProphetVision(`The Prophet's Vision: The ${selectedBot} strategy on ${selectedSymbol} shows a strong ${winRate > 75 ? 'divine' : 'solid'} confluence. Recommended for active deployment.`);
+      }
 
       try {
         await addDoc(collection(db, 'users', userProfile.uid, 'backtests'), mockResult);

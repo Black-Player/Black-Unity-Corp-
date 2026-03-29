@@ -1,13 +1,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { EconomicEvent, MarketNews, Signal } from "../types";
+import { SYSTEM_ROLE } from "../constants/systemRole";
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
 
 export async function generateTradingSignal(pair: string, timeframe: string, bot: string, strategy: string, currentPrice: number, marketData: any, chartAnalysis?: any) {
   const model = "gemini-3-flash-preview";
   const prompt = `
-    You are the RSA Oracle, an advanced AI trading system specializing in Synthetic Indices (Volatility, Crash/Boom, Step, Jump).
-    
     Current Market Data for ${pair} (${timeframe}):
     - Current Price: ${currentPrice}
     - Market Sentiment: ${JSON.stringify(marketData)}
@@ -50,6 +49,7 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       model,
       contents: prompt,
       config: {
+        systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in SIGNAL MODE. Provide precise, data-backed trade setups.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -89,7 +89,7 @@ export async function chatWithBot(botName: string, strategy: string, message: st
   const chat = ai.chats.create({
     model,
     config: {
-      systemInstruction: `You are ${botName}, an elite AI trading bot specializing in the ${strategy} strategy. 
+      systemInstruction: SYSTEM_ROLE + `\n\nYou are currently acting as ${botName}, an elite AI trading bot specializing in the ${strategy} strategy. 
       Your tone is professional, confident, and slightly cosmic/mystical. 
       You provide high-level market analysis and insights. 
       Tagline: "Where mortals trade, gods speak."`,
@@ -117,6 +117,7 @@ export async function getMarketSentiment(pair: string): Promise<{ bullish: numbe
     model,
     contents: prompt,
     config: {
+      systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in ANALYST MODE. Provide deep, institutional-level market sentiment analysis.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.OBJECT,
@@ -148,6 +149,7 @@ export async function getMarketNews(pair: string = 'global'): Promise<MarketNews
     model,
     contents: prompt,
     config: {
+      systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in ANALYST MODE. Provide high-level institutional news and summaries.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.ARRAY,
@@ -185,6 +187,7 @@ export async function getEconomicEvents(): Promise<EconomicEvent[]> {
     model,
     contents: prompt,
     config: {
+      systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in ANALYST MODE. Provide precise economic event data and analysis.",
       responseMimeType: "application/json",
       responseSchema: {
         type: Type.ARRAY,
@@ -211,9 +214,9 @@ export async function getEconomicEvents(): Promise<EconomicEvent[]> {
   }
 }
 
-export async function analyzeChartImage(base64Image: string, mimeType: string) {
+export async function analyzeChartImage(base64Image: string, mimeType: string, userAnalysis?: string, selectedBot?: string) {
   const model = "gemini-3-flash-preview";
-  const prompt = `
+  let prompt = `
     You are the "Oracle Eye," an advanced AI vision system for technical analysis.
     Analyze this forex/synthetic index chart screenshot.
     
@@ -227,12 +230,30 @@ export async function analyzeChartImage(base64Image: string, mimeType: string) {
     3. Identify any visible chart patterns (Head & Shoulders, Double Top/Bottom, Wedges).
     4. Provide a "Visionary Insight" - a high-probability prediction based on the visual evidence, incorporating **Market Maker Model (MMM)** logic (AMD phases).
     5. Suggest a potential Trade Setup (Entry, SL, TP) if a clear opportunity exists. **Ensure the Stop Loss is tight and placed at a logical technical level (e.g., just above/below the OB or FVG).**
+    `;
+
+  if (userAnalysis && selectedBot) {
+    prompt += `
     
+    PEER REVIEW MODE:
+    The trader has provided their own analysis: "${userAnalysis}"
+    You are acting as the bot "${selectedBot}". 
+    
+    Additional Tasks:
+    6. Compare the trader's analysis with your own visual findings.
+    7. Identify any mistaken levels, incorrect structure identification, or missed opportunities in the trader's analysis.
+    8. Rectify the analysis by explicitly marking what was wrong and how to properly analyze this specific chart.
+    9. Provide a final verdict on whether the trader's setup is accurate or needs modifications.
+    `;
+  }
+
+  prompt += `
     Return the analysis in JSON format with the following fields:
     - market_structure: string
     - identified_elements: string[] (e.g., ["Order Block at 1.2345", "FVG at 1.2300-1.2310"])
     - patterns: string[]
     - visionary_insight: string
+    - peer_review: string (Only if in Peer Review Mode, otherwise null. Provide the rectification and feedback here.)
     - suggested_setup: object (with fields: entry, stop_loss, tp) or null
     - confidence: number (0-100)`;
 
@@ -244,6 +265,7 @@ export async function analyzeChartImage(base64Image: string, mimeType: string) {
         { inlineData: { data: base64Image, mimeType } }
       ],
       config: {
+        systemInstruction: SYSTEM_ROLE + `\n\nYou are currently in ANALYST MODE acting as the Oracle Eye${selectedBot ? ` (Persona: ${selectedBot})` : ''}. Provide visionary technical analysis from visual evidence.`,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -252,6 +274,7 @@ export async function analyzeChartImage(base64Image: string, mimeType: string) {
             identified_elements: { type: Type.ARRAY, items: { type: Type.STRING } },
             patterns: { type: Type.ARRAY, items: { type: Type.STRING } },
             visionary_insight: { type: Type.STRING },
+            peer_review: { type: Type.STRING },
             suggested_setup: {
               type: Type.OBJECT,
               properties: {

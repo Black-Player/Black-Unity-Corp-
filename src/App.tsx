@@ -44,7 +44,7 @@ import Subscription from './components/Subscription';
 import Diagnostics from './components/Diagnostics';
 import ErrorBoundary from './components/ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, Hammer } from 'lucide-react';
+import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, Hammer, Book, Zap, Video, Layers, Layout, Settings2 } from 'lucide-react';
 
 interface Toast {
   id: string;
@@ -165,7 +165,7 @@ export default function App() {
       case 'backtest':
         return <Backtester {...props} />;
       case 'academy':
-        return <Academy userProfile={userProfile} />;
+        return <Academy userProfile={userProfile} addToast={addToast} setActiveTab={setActivePage} />;
       case 'security':
         return <SecuritySettings {...props} />;
       case 'settings':
@@ -184,6 +184,20 @@ export default function App() {
         return <Subscription {...props} />;
       case 'diagnostics':
         return <Diagnostics {...props} />;
+      case 'archive':
+        return <Archive {...props} />;
+      case 'signal-stream':
+        return <SignalStream {...props} />;
+      case 'bot-gallery':
+        return <BotGallery {...props} />;
+      case 'bot-customizer':
+        return <BotCustomizer {...props} />;
+      case 'live-room':
+        return <LiveTradingRoom {...props} />;
+      case 'strategy-builder':
+        return <StrategyBuilder {...props} />;
+      case 'marketplace':
+        return <Marketplace {...props} />;
       default:
         return <Dashboard {...props} />;
     }
@@ -266,6 +280,13 @@ export default function App() {
                     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
                     { id: 'sessions', label: 'Sessions', icon: Clock },
                     { id: 'arena', label: 'The Arena', icon: Trophy },
+                    { id: 'archive', label: 'The Archive', icon: Book },
+                    { id: 'signal-stream', label: 'Signal Stream', icon: Zap },
+                    { id: 'bot-gallery', label: 'Bot Gallery', icon: Layout },
+                    { id: 'bot-customizer', label: 'The Alchemist', icon: Settings2 },
+                    { id: 'live-room', label: 'The Nexus', icon: Video },
+                    { id: 'strategy-builder', label: 'The Weaver', icon: Layers },
+                    { id: 'marketplace', label: 'Marketplace', icon: Search },
                     { id: 'council', label: 'Council', icon: Users },
                     { id: 'chart-vision', label: 'Oracle Eye', icon: Eye },
                     { id: 'abyss', label: 'The Abyss', icon: Eye },

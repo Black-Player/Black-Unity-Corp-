@@ -81,6 +81,39 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
     }
   };
 
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
+
+  const handleTestLogic = async () => {
+    if (!newBot.description) {
+      addToast('Please describe the bot logic first', 'error');
+      return;
+    }
+
+    setTesting(true);
+    try {
+      const { GoogleGenAI } = await import("@google/genai");
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `As the Eternal Intelligence Core, evaluate this trading bot logic:
+        Name: ${newBot.name}
+        Strategy: ${newBot.strategy}
+        Risk Profile: ${newBot.risk_profile}
+        Description: ${newBot.description}
+        
+        Provide a brief cosmic evaluation of its potential win rate, drawdown risk, and one specific improvement. Keep it under 100 words.`,
+      });
+
+      setTestResult(response.text);
+    } catch (err: any) {
+      addToast('Cosmic interference during testing.', 'error');
+    } finally {
+      setTesting(false);
+    }
+  };
+
   const handleDelete = async (bot: any) => {
     try {
       const userRef = doc(db, 'users', userProfile.uid);
@@ -235,13 +268,33 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
               </div>
 
               <div className="space-y-2">
-                <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Description & Logic</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Description & Logic</label>
+                  <button 
+                    onClick={handleTestLogic}
+                    disabled={testing}
+                    className="text-[10px] text-gold hover:text-gold/80 flex items-center gap-1 transition-colors"
+                  >
+                    {testing ? <div className="w-2 h-2 border border-gold/20 border-t-gold rounded-full animate-spin" /> : <Zap size={10} />}
+                    Test Logic
+                  </button>
+                </div>
                 <textarea 
                   value={newBot.description}
                   onChange={(e) => setNewBot({ ...newBot, description: e.target.value })}
                   placeholder="Describe the bot's unique trading logic and personality..."
                   className="w-full cosmic-input min-h-[100px] resize-none"
                 />
+                {testResult && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="p-3 rounded-lg bg-gold/5 border border-gold/10 text-[10px] text-white/60 italic leading-relaxed"
+                  >
+                    <span className="text-gold font-bold block mb-1 uppercase tracking-widest">Oracle Evaluation:</span>
+                    {testResult}
+                  </motion.div>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">

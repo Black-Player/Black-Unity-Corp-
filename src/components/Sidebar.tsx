@@ -1,7 +1,7 @@
-import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book } from 'lucide-react';
+import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock } from 'lucide-react';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
-import { UserProfile } from '../types';
+import { UserProfile, Tier, hasTierAccess } from '../types';
 import { motion } from 'motion/react';
 
 interface SidebarProps {
@@ -11,7 +11,7 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activePage, setActivePage, userProfile }: SidebarProps) {
-  const menuItems = [
+  const menuItems: { id: string; label: string; icon: any; requiredTier?: Tier }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'feed', label: 'Cosmic Feed', icon: Globe },
     { id: 'zion', label: 'Zion AI', icon: Bot },
@@ -20,10 +20,17 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
     { id: 'sessions', label: 'Sessions', icon: Clock },
     { id: 'arena', label: 'The Arena', icon: Trophy },
-    { id: 'council', label: 'Council', icon: Users },
+    { id: 'archive', label: 'The Archive', icon: Book },
+    { id: 'signal-stream', label: 'Signal Stream', icon: Zap, requiredTier: 'oracle' },
+    { id: 'bot-gallery', label: 'Bot Gallery', icon: Layout },
+    { id: 'bot-customizer', label: 'The Alchemist', icon: Settings2, requiredTier: 'zion' },
+    { id: 'live-room', label: 'The Nexus', icon: Video, requiredTier: 'oracle' },
+    { id: 'strategy-builder', label: 'The Weaver', icon: Layers, requiredTier: 'legendary' },
+    { id: 'marketplace', label: 'Marketplace', icon: Search, requiredTier: 'mythic' },
+    { id: 'council', label: 'Council', icon: Users, requiredTier: 'mythic' },
     { id: 'chart-vision', label: 'Oracle Eye', icon: Eye },
     { id: 'abyss', label: 'The Abyss', icon: Eye },
-    { id: 'forge', label: 'The Forge', icon: Hammer },
+    { id: 'forge', label: 'The Forge', icon: Hammer, requiredTier: 'zion' },
     { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
     { id: 'academy', label: 'The Library', icon: GraduationCap },
     { id: 'security', label: 'Zion Vault', icon: Shield },
@@ -42,21 +49,28 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
         </div>
       </div>
 
-        <nav className="flex-1 space-y-2">
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActivePage(item.id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                activePage === item.id 
-                  ? 'bg-gold/10 text-gold border border-gold/20' 
-                  : 'text-white/60 hover:bg-white/5 hover:text-white'
-              }`}
-            >
-              <item.icon size={20} />
-              <span className="font-medium">{item.label}</span>
-            </button>
-          ))}
+        <nav className="flex-1 space-y-2 overflow-y-auto pr-2 custom-scrollbar">
+          {menuItems.map((item) => {
+            const hasAccess = !item.requiredTier || (userProfile && hasTierAccess(userProfile.tier, item.requiredTier));
+            
+            return (
+              <button
+                key={item.id}
+                onClick={() => hasAccess ? setActivePage(item.id) : setActivePage('subscription')}
+                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
+                  activePage === item.id 
+                    ? 'bg-gold/10 text-gold border border-gold/20' 
+                    : hasAccess ? 'text-white/60 hover:bg-white/5 hover:text-white' : 'text-white/20 cursor-not-allowed'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <item.icon size={20} />
+                  <span className="font-medium">{item.label}</span>
+                </div>
+                {!hasAccess && <Lock size={14} className="text-white/20" />}
+              </button>
+            );
+          })}
 
           {userProfile?.tier === 'creator' && (
             <div className="pt-4 mt-4 border-t border-white/5">

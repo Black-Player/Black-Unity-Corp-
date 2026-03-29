@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, X, Command, ArrowRight, Zap, Bot, Globe, Trophy, GraduationCap, Wallet, Users, Settings, History, BarChart3, Book, Target, Hammer, FlaskConical, MessageSquare } from 'lucide-react';
+import { Search, X, Command, ArrowRight, Zap, Bot, Globe, Trophy, GraduationCap, Wallet, Users, Settings, History, BarChart3, Book, Target, Hammer, FlaskConical, MessageSquare, Layers, Video, Layout, Settings2 } from 'lucide-react';
 
 interface GlobalSearchProps {
   isOpen: boolean;
@@ -46,10 +46,14 @@ export default function GlobalSearch({ isOpen, onClose, setActivePage }: GlobalS
     { id: 'council', label: 'The Council', icon: Users, category: 'Navigation' },
     { id: 'zion', label: 'Zion AI', icon: Bot, category: 'Navigation' },
     { id: 'arena', label: 'The Arena', icon: Target, category: 'Navigation' },
+    { id: 'archive', label: 'The Archive', icon: Book, category: 'Navigation' },
+    { id: 'signal-stream', label: 'Signal Stream', icon: Zap, category: 'Navigation' },
+    { id: 'bot-gallery', label: 'Bot Gallery', icon: Layout, category: 'Navigation' },
+    { id: 'bot-customizer', label: 'The Alchemist', icon: Settings2, category: 'Navigation' },
+    { id: 'live-room', label: 'The Nexus', icon: Video, category: 'Navigation' },
+    { id: 'strategy-builder', label: 'The Weaver', icon: Layers, category: 'Navigation' },
     { id: 'forge', label: 'Bot Forge', icon: Hammer, category: 'Navigation' },
     { id: 'indicator-forge', label: 'Indicator Forge', icon: FlaskConical },
-    { id: 'archive', label: 'The Archive', icon: Book, category: 'Navigation' },
-    { id: 'stream', label: 'Signal Stream', icon: Zap, category: 'Navigation' },
     { id: 'academy', label: 'Academy', icon: GraduationCap, category: 'Navigation' },
     { id: 'marketplace', label: 'Marketplace', icon: Users, category: 'Navigation' },
     { id: 'settings', label: 'Settings', icon: Settings, category: 'Navigation' },

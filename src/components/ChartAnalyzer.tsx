@@ -1,14 +1,15 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Eye, Upload, Image as ImageIcon, Loader2, Sparkles, Target, Shield, TrendingUp, TrendingDown, Info, X } from 'lucide-react';
+import { Eye, Upload, Image as ImageIcon, Loader2, Sparkles, Target, Shield, TrendingUp, TrendingDown, Info, X, MessageSquare, Bot as BotIcon, AlertCircle } from 'lucide-react';
 import { analyzeChartImage } from '../services/aiService';
-import { UserProfile } from '../types';
+import { UserProfile, BOTS } from '../types';
 
 interface ChartAnalysis {
   market_structure: string;
   identified_elements: string[];
   patterns: string[];
   visionary_insight: string;
+  peer_review?: string;
   suggested_setup?: {
     entry: number;
     stop_loss: number;
@@ -21,6 +22,9 @@ export default function ChartAnalyzer({ userProfile, addToast }: { userProfile: 
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<ChartAnalysis | null>(null);
+  const [userAnalysis, setUserAnalysis] = useState('');
+  const [selectedBot, setSelectedBot] = useState(BOTS[0].name);
+  const [isPeerReviewMode, setIsPeerReviewMode] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -46,9 +50,14 @@ export default function ChartAnalyzer({ userProfile, addToast }: { userProfile: 
     try {
       const base64Data = selectedImage.split(',')[1];
       const mimeType = selectedImage.split(',')[0].split(':')[1].split(';')[0];
-      const result = await analyzeChartImage(base64Data, mimeType);
+      const result = await analyzeChartImage(
+        base64Data, 
+        mimeType, 
+        isPeerReviewMode ? userAnalysis : undefined,
+        isPeerReviewMode ? selectedBot : undefined
+      );
       setAnalysis(result);
-      addToast('The Oracle Eye has deciphered the patterns.', 'success');
+      addToast(isPeerReviewMode ? 'The Peer Review is complete.' : 'The Oracle Eye has deciphered the patterns.', 'success');
     } catch (error: any) {
       addToast(error.message, 'error');
     } finally {
@@ -117,13 +126,67 @@ export default function ChartAnalyzer({ userProfile, addToast }: { userProfile: 
             />
           </div>
 
+          {/* Peer Review Toggle */}
+          <div className="glass-card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="text-gold" size={18} />
+                <h3 className="text-sm font-bold uppercase tracking-widest">Peer Review Mode</h3>
+              </div>
+              <button 
+                onClick={() => setIsPeerReviewMode(!isPeerReviewMode)}
+                className={`w-12 h-6 rounded-full transition-all relative ${isPeerReviewMode ? 'bg-gold' : 'bg-white/10'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${isPeerReviewMode ? 'left-7' : 'left-1'}`}></div>
+              </button>
+            </div>
+            
+            {isPeerReviewMode && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="space-y-4 pt-2"
+              >
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/40">Select Reviewer Persona</label>
+                  <select 
+                    value={selectedBot}
+                    onChange={(e) => setSelectedBot(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-gold/50 transition-all"
+                  >
+                    {BOTS.map(bot => (
+                      <option key={bot.name} value={bot.name} className="bg-black">{bot.name} ({bot.strategy})</option>
+                    ))}
+                  </select>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-white/40">Your Analysis</label>
+                  <textarea 
+                    value={userAnalysis}
+                    onChange={(e) => setUserAnalysis(e.target.value)}
+                    placeholder="Describe your setup, levels, and bias..."
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-gold/50 transition-all min-h-[120px] resize-none"
+                  />
+                </div>
+                
+                <div className="p-3 rounded-xl bg-gold/5 border border-gold/10 flex items-start gap-3">
+                  <AlertCircle className="text-gold shrink-0" size={16} />
+                  <p className="text-[10px] text-gold/80 leading-relaxed">
+                    The selected AI will review your levels, identify mistakes, and provide a rectification based on its specific strategy persona.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </div>
+
           <button 
             onClick={runAnalysis}
-            disabled={!selectedImage || isAnalyzing}
+            disabled={!selectedImage || isAnalyzing || (isPeerReviewMode && !userAnalysis.trim())}
             className="w-full gold-button py-4 flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            {isAnalyzing ? <Loader2 className="animate-spin" size={20} /> : <Eye size={20} />}
-            {isAnalyzing ? 'Deciphering Cosmic Patterns...' : 'Analyze Chart'}
+            {isAnalyzing ? <Loader2 className="animate-spin" size={20} /> : isPeerReviewMode ? <BotIcon size={20} /> : <Eye size={20} />}
+            {isAnalyzing ? 'Deciphering Cosmic Patterns...' : isPeerReviewMode ? 'Request Peer Review' : 'Analyze Chart'}
           </button>
         </div>
 
@@ -168,6 +231,20 @@ export default function ChartAnalyzer({ userProfile, addToast }: { userProfile: 
                   </div>
                   <p className="text-2xl font-display font-bold">{analysis.market_structure}</p>
                 </div>
+
+                {/* Peer Review Feedback */}
+                {analysis.peer_review && (
+                  <div className="glass-card p-6 border-gold/30 bg-gold/5 space-y-4">
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-gold flex items-center gap-2">
+                      <BotIcon size={14} /> Peer Review & Rectification
+                    </h3>
+                    <div className="text-sm text-white/90 leading-relaxed space-y-2">
+                      {analysis.peer_review.split('\n').map((line, i) => (
+                        <p key={i}>{line}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Identified Elements */}
                 <div className="glass-card p-6 space-y-4">

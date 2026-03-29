@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, increment, serverTimestamp, orderBy, limit, getDocs } from 'firebase/firestore';
-import { UserProfile, Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, PriceAlert, MarketNews } from '../types';
+import { UserProfile, Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, PriceAlert, MarketNews, Tier, hasTierAccess } from '../types';
 import { DERIV_SYMBOLS } from '../constants';
 import { generateTradingSignal, getMarketSentiment, analyzeChartImage, getMarketNews } from '../services/aiService';
 import { derivService, DerivTick } from '../services/derivService';
-import { Zap, TrendingUp, TrendingDown, Target, ShieldAlert, Clock, BarChart3, Bot, Sparkles, RefreshCw, Globe, ArrowUpRight, ArrowDownRight, X, Activity, Volume2, VolumeX, Newspaper, Eye, Upload, Loader2, Shield, Calendar, Bell, Wifi, WifiOff } from 'lucide-react';
+import { Zap, TrendingUp, TrendingDown, Target, ShieldAlert, Clock, BarChart3, Bot, Sparkles, RefreshCw, Globe, ArrowUpRight, ArrowDownRight, X, Activity, Volume2, VolumeX, Newspaper, Eye, Upload, Loader2, Shield, Calendar, Bell, Wifi, WifiOff, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LightweightChart from './LightweightChart';
 import AssetDetails from './AssetDetails';
@@ -43,9 +43,13 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
   const [pair, setPair] = useState('crash_500');
   const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<'signals' | 'stats' | 'portfolio' | 'backtest' | 'risk' | 'community' | 'bot-forge' | 'chat' | 'calendar' | 'alerts' | 'strategies' | 'tribes' | 'challenges' | 'marketplace' | 'academy' | 'status' | 'performance' | 'subscription'>('signals');
-  const [accountType, setAccountType] = useState<'demo' | 'live'>(userProfile.account_type || 'demo');
+  const [accountType, setAccountType] = useState<'demo' | 'live'>(userProfile.tier === 'free' ? 'demo' : (userProfile.account_type || 'demo'));
   const [showTutorial, setShowTutorial] = useState(false);
   const [launchCountdown, setLaunchCountdown] = useState('');
+
+  const availableBots = BOTS.filter(bot => hasTierAccess(userProfile.tier, bot.tier_requirement));
+  const customBots = userProfile.custom_bots || [];
+  const allAvailableBots = [...availableBots, ...customBots];
 
   useEffect(() => {
     const launchDate = new Date('2024-04-15T00:00:00Z').getTime();
@@ -102,7 +106,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
     });
   }, [marketPrices, activeAlerts, userProfile.uid]);
   const [timeframe, setTimeframe] = useState('H1');
-  const [selectedBot, setSelectedBot] = useState(BOTS[0]);
+  const [selectedBot, setSelectedBot] = useState(allAvailableBots[0]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [sentiment, setSentiment] = useState({ bullish: 65, bearish: 35, summary: 'Market shows strong bullish momentum.' });
@@ -546,11 +550,6 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
     }
   };
 
-  const availableBots = [
-    ...BOTS.filter((_, index) => index < TIER_BOT_LIMITS[userProfile.tier]),
-    ...(userProfile.custom_bots || [])
-  ];
-
   if (showDetails) {
     return <AssetDetails pair={pair} onBack={() => setShowDetails(false)} />;
   }
@@ -600,12 +599,19 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
               DEMO
             </button>
             <button
-              onClick={() => setAccountType('live')}
+              onClick={() => {
+                if (hasTierAccess(userProfile.tier, 'oracle')) {
+                  setAccountType('live');
+                } else {
+                  addToast('Live Account Trading requires Oracle Tier or higher.', 'info');
+                  setActiveTab('subscription');
+                }
+              }}
               className={`flex-1 sm:flex-none px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${
                 accountType === 'live' 
                   ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' 
                   : 'text-white/40 hover:text-white/60'
-              }`}
+              } ${!hasTierAccess(userProfile.tier, 'oracle') ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               LIVE
             </button>
@@ -646,114 +652,49 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
       </header>
 
       <div className="flex overflow-x-auto no-scrollbar lg:flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5 w-full lg:w-fit">
-        <button
-          onClick={() => setActiveTab('signals')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'signals' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Signals
-        </button>
-        <button
-          onClick={() => setActiveTab('stats')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'stats' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Stats
-        </button>
-        <button
-          onClick={() => setActiveTab('portfolio')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'portfolio' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Portfolio
-        </button>
-        <button
-          onClick={() => setActiveTab('risk')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'risk' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Risk
-        </button>
-        <button
-          onClick={() => setActiveTab('backtest')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'backtest' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Backtest
-        </button>
-        <button
-          onClick={() => setActiveTab('community')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'community' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Community
-        </button>
-        <button
-          onClick={() => setActiveTab('bot-forge')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'bot-forge' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Bot Forge
-        </button>
-        <button
-          onClick={() => setActiveTab('chat')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'chat' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Oracle Chat
-        </button>
-        <button
-          onClick={() => setActiveTab('calendar')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'calendar' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Calendar
-        </button>
-        <button
-          onClick={() => setActiveTab('alerts')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'alerts' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Alerts
-        </button>
-        <button
-          onClick={() => setActiveTab('strategies')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'strategies' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Strategies
-        </button>
-        <button
-          onClick={() => setActiveTab('tribes')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'tribes' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Tribes
-        </button>
-        <button
-          onClick={() => setActiveTab('challenges')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'challenges' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Challenges
-        </button>
-        <button
-          onClick={() => setActiveTab('marketplace')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'marketplace' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Market
-        </button>
-        <button
-          onClick={() => setActiveTab('academy')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'academy' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Academy
-        </button>
-        <button
-          onClick={() => setActiveTab('performance')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'performance' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Performance
-        </button>
-        <button
-          onClick={() => setActiveTab('subscription')}
-          className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${activeTab === 'subscription' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          Ascension
-        </button>
-        <button
-          onClick={() => setActiveTab('status')}
-          className={`flex-1 lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'status' ? 'bg-gold text-black' : 'text-white/40 hover:text-white/60'}`}
-        >
-          System Status
-        </button>
+        {[
+          { id: 'signals', label: 'Signals' },
+          { id: 'stats', label: 'Stats' },
+          { id: 'portfolio', label: 'Portfolio' },
+          { id: 'risk', label: 'Risk' },
+          { id: 'backtest', label: 'Backtest' },
+          { id: 'community', label: 'Community' },
+          { id: 'bot-forge', label: 'Bot Forge', requiredTier: 'zion' },
+          { id: 'chat', label: 'Oracle Chat', requiredTier: 'oracle' },
+          { id: 'calendar', label: 'Calendar', requiredTier: 'oracle' },
+          { id: 'alerts', label: 'Alerts' },
+          { id: 'strategies', label: 'Strategies', requiredTier: 'legendary' },
+          { id: 'tribes', label: 'Tribes', requiredTier: 'mythic' },
+          { id: 'challenges', label: 'Challenges' },
+          { id: 'marketplace', label: 'Market', requiredTier: 'mythic' },
+          { id: 'academy', label: 'Academy' },
+          { id: 'performance', label: 'Performance', requiredTier: 'legendary' },
+          { id: 'subscription', label: 'Ascension' },
+          { id: 'status', label: 'System Status' },
+        ].map((tab) => {
+          const hasAccess = !tab.requiredTier || hasTierAccess(userProfile.tier, tab.requiredTier as Tier);
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                if (hasAccess) {
+                  setActiveTab(tab.id as any);
+                } else {
+                  addToast(`${tab.label} requires ${tab.requiredTier} Tier or higher.`, 'info');
+                  setActiveTab('subscription');
+                }
+              }}
+              className={`flex-none lg:flex-none px-4 lg:px-6 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
+                activeTab === tab.id 
+                  ? 'bg-gold text-black' 
+                  : hasAccess ? 'text-white/40 hover:text-white/60' : 'text-white/20'
+              }`}
+            >
+              {tab.label}
+              {!hasAccess && <Lock size={10} />}
+            </button>
+          );
+        })}
       </div>
 
       {activeTab === 'stats' ? (
@@ -783,7 +724,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
       ) : activeTab === 'marketplace' ? (
         <Marketplace userProfile={userProfile} addToast={addToast} />
       ) : activeTab === 'academy' ? (
-        <Academy userProfile={userProfile} />
+        <Academy userProfile={userProfile} addToast={addToast} setActiveTab={(tab) => setActiveTab(tab as any)} />
       ) : activeTab === 'performance' ? (
         <PerformanceReports userProfile={userProfile} />
       ) : activeTab === 'subscription' ? (
@@ -837,7 +778,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 lg:gap-4">
             {Object.entries(marketPrices).map(([symbol, data]) => (
               <motion.div 
                 key={symbol}
@@ -969,30 +910,30 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 lg:gap-4 mb-4">
                         <div className="bg-white/5 rounded-lg p-2 text-center">
                           <p className="text-[10px] text-white/40 uppercase">Entry</p>
-                          <p className="font-mono font-bold text-gold">{signal.entry}</p>
+                          <p className="font-mono font-bold text-gold text-xs sm:text-sm">{signal.entry}</p>
                         </div>
                         <div className="bg-white/5 rounded-lg p-2 text-center">
                           <p className="text-[10px] text-white/40 uppercase">Stop Loss</p>
-                          <p className="font-mono font-bold text-red-400">{signal.stop_loss}</p>
+                          <p className="font-mono font-bold text-red-400 text-xs sm:text-sm">{signal.stop_loss}</p>
                         </div>
                         <div className="bg-white/5 rounded-lg p-2 text-center">
                           <p className="text-[10px] text-white/40 uppercase">TP1</p>
-                          <p className="font-mono font-bold text-emerald-400">{signal.tp1}</p>
+                          <p className="font-mono font-bold text-emerald-400 text-xs sm:text-sm">{signal.tp1}</p>
                         </div>
                         <div className="bg-white/5 rounded-lg p-2 text-center">
                           <p className="text-[10px] text-white/40 uppercase">TP2</p>
-                          <p className="font-mono font-bold text-emerald-400">{signal.tp2}</p>
+                          <p className="font-mono font-bold text-emerald-400 text-xs sm:text-sm">{signal.tp2}</p>
                         </div>
                         <div className="bg-white/5 rounded-lg p-2 text-center">
                           <p className="text-[10px] text-white/40 uppercase">TP3</p>
-                          <p className="font-mono font-bold text-emerald-400">{signal.tp3}</p>
+                          <p className="font-mono font-bold text-emerald-400 text-xs sm:text-sm">{signal.tp3}</p>
                         </div>
                         <div className="bg-white/5 rounded-lg p-2 text-center border border-gold/20">
                           <p className="text-[10px] text-gold uppercase font-bold">TP4</p>
-                          <p className="font-mono font-bold text-gold">{signal.tp4}</p>
+                          <p className="font-mono font-bold text-gold text-xs sm:text-sm">{signal.tp4}</p>
                         </div>
                       </div>
 
@@ -1062,20 +1003,20 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-4 gap-2 mb-4">
-                        <div className="bg-white/5 rounded p-1 text-center">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                        <div className="bg-white/5 rounded p-1.5 text-center">
                           <p className="text-[8px] text-white/40 uppercase">TP1</p>
                           <p className="text-[10px] font-mono font-bold text-emerald-400">{trade.tp1}</p>
                         </div>
-                        <div className="bg-white/5 rounded p-1 text-center">
+                        <div className="bg-white/5 rounded p-1.5 text-center">
                           <p className="text-[8px] text-white/40 uppercase">TP2</p>
                           <p className="text-[10px] font-mono font-bold text-emerald-400">{trade.tp2}</p>
                         </div>
-                        <div className="bg-white/5 rounded p-1 text-center">
+                        <div className="bg-white/5 rounded p-1.5 text-center">
                           <p className="text-[8px] text-white/40 uppercase">TP3</p>
                           <p className="text-[10px] font-mono font-bold text-emerald-400">{trade.tp3}</p>
                         </div>
-                        <div className="bg-white/5 rounded p-1 text-center border border-gold/20">
+                        <div className="bg-white/5 rounded p-1.5 text-center border border-gold/20">
                           <p className="text-[8px] text-gold uppercase font-bold">TP4</p>
                           <p className="text-[10px] font-mono font-bold text-gold">{trade.tp4}</p>
                         </div>
@@ -1194,7 +1135,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
 
               <div className="space-y-2">
                 <label className="text-xs text-white/40 uppercase tracking-widest">Timeframe</label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {['M15', 'M30', 'H1', 'H4'].map((tf) => (
                     <button
                       key={tf}
@@ -1319,7 +1260,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
             <h3 className="font-display font-bold text-white/70 flex items-center gap-2">
               <Shield className="text-gold" size={18} /> Risk Status
             </h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="p-3 rounded-xl bg-white/5 border border-white/10">
                 <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Daily P/L</p>
                 <p className={`text-lg font-bold font-display ${userProfile.daily_pnl && userProfile.daily_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -1356,7 +1297,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
               <ShieldAlert className="text-gold" size={18} /> Sentinel Risk Sentinel
             </h3>
             <div className="space-y-4 relative z-10">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] text-white/40 uppercase tracking-widest">Account Balance ($)</label>
                   <input type="number" defaultValue="1000" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-gold/50 outline-none transition-all" />

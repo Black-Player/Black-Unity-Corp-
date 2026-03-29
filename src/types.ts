@@ -175,6 +175,12 @@ export const BOTS: Bot[] = [
   { name: 'Architect', strategy: 'All Strategies', tier_requirement: 'zion', description: 'The ultimate bot. Combines all strategies for maximum confidence.', icon: 'Layout' },
 ];
 
+export const TIER_ORDER: Tier[] = ['free', 'oracle', 'zion', 'legendary', 'mythic', 'creator'];
+
+export function hasTierAccess(userTier: Tier, requiredTier: Tier): boolean {
+  return TIER_ORDER.indexOf(userTier) >= TIER_ORDER.indexOf(requiredTier);
+}
+
 export const TIER_LIMITS: Record<Tier, number> = {
   free: 2,
   oracle: 7,

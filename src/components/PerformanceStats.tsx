@@ -211,7 +211,7 @@ export const PerformanceStats: React.FC<PerformanceStatsProps> = ({ userProfile 
           <button className="text-xs text-gold hover:underline">Export CSV</button>
         </div>
         
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-white/5">
@@ -248,10 +248,43 @@ export const PerformanceStats: React.FC<PerformanceStatsProps> = ({ userProfile 
               ))}
             </tbody>
           </table>
-          {trades.length === 0 && (
-            <div className="text-center py-12 text-white/20 italic">No trade history available.</div>
-          )}
         </div>
+
+        <div className="md:hidden space-y-4">
+          {trades.map((trade) => (
+            <div key={trade.id} className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-gold">{trade.pair}</span>
+                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ${trade.type === 'buy' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
+                    {trade.type.toUpperCase()}
+                  </span>
+                </div>
+                <div className={`text-sm font-bold font-mono ${trade.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {trade.pnl >= 0 ? '+' : ''}${Math.abs(trade.pnl).toFixed(2)}
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2 text-[10px] uppercase tracking-widest text-white/40">
+                <div>
+                  <p>Entry</p>
+                  <p className="text-white font-mono mt-1">{trade.entry_price}</p>
+                </div>
+                <div>
+                  <p>Exit</p>
+                  <p className="text-white font-mono mt-1">{trade.current_price}</p>
+                </div>
+                <div className="text-right">
+                  <p>Date</p>
+                  <p className="text-white font-mono mt-1">{new Date(trade.closed_at!).toLocaleDateString()}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {trades.length === 0 && (
+          <div className="text-center py-12 text-white/20 italic">No trade history available.</div>
+        )}
       </div>
     </div>
   );

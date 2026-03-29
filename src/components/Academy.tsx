@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { GraduationCap, BookOpen, CheckCircle2, Star, Clock, ArrowRight, Search } from 'lucide-react';
+import { GraduationCap, BookOpen, CheckCircle2, Star, Clock, ArrowRight, Search, Lock } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { collection, query, onSnapshot, doc, updateDoc, arrayUnion } from 'firebase/firestore';
-import { UserProfile, UserProgress } from '../types';
+import { UserProfile, UserProgress, Tier, hasTierAccess } from '../types';
 import { ACADEMY_ARTICLES, Article } from '../constants';
 
 interface AcademyProps {
   userProfile: UserProfile;
+  addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  setActiveTab: (tab: string) => void;
 }
 
-export const Academy: React.FC<AcademyProps> = ({ userProfile }) => {
+export const Academy: React.FC<AcademyProps> = ({ userProfile, addToast, setActiveTab }) => {
   const [progress, setProgress] = useState<UserProgress | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
@@ -142,20 +144,29 @@ export const Academy: React.FC<AcademyProps> = ({ userProfile }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredArticles.map((article, index) => {
             const isCompleted = progress?.completed_lessons.includes(article.id);
+            const hasAccess = !article.requiredTier || hasTierAccess(userProfile.tier, article.requiredTier as Tier);
+            
             return (
               <motion.div
                 key={article.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                onClick={() => setSelectedArticle(article)}
-                className="glass-card group cursor-pointer border-white/5 hover:border-blue-500/30 transition-all duration-500 overflow-hidden"
+                onClick={() => {
+                  if (hasAccess) {
+                    setSelectedArticle(article);
+                  } else {
+                    addToast(`${article.title} requires ${article.requiredTier} Tier or higher.`, 'info');
+                    setActiveTab('subscription');
+                  }
+                }}
+                className={`glass-card group cursor-pointer border-white/5 hover:border-blue-500/30 transition-all duration-500 overflow-hidden ${!hasAccess ? 'opacity-75' : ''}`}
               >
                 <div className="relative h-40">
                   <img 
                     src={article.image_url} 
                     alt={article.title}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                    className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ${!hasAccess ? 'grayscale' : ''}`}
                     referrerPolicy="no-referrer"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
@@ -164,10 +175,20 @@ export const Academy: React.FC<AcademyProps> = ({ userProfile }) => {
                       <CheckCircle2 className="w-3 h-3 text-white" />
                     </div>
                   )}
-                  <div className="absolute bottom-4 left-4">
+                  {!hasAccess && (
+                    <div className="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full border border-white/10">
+                      <Lock className="w-3 h-3 text-gold" />
+                    </div>
+                  )}
+                  <div className="absolute bottom-4 left-4 flex items-center gap-2">
                     <span className="px-2 py-1 bg-blue-500/20 backdrop-blur-md border border-blue-500/30 rounded text-[8px] font-bold text-blue-400 uppercase tracking-widest">
                       {article.category}
                     </span>
+                    {article.requiredTier && article.requiredTier !== 'free' && (
+                      <span className="px-2 py-1 bg-gold/20 backdrop-blur-md border border-gold/30 rounded text-[8px] font-bold text-gold uppercase tracking-widest">
+                        {article.requiredTier}
+                      </span>
+                    )}
                   </div>
                 </div>
 

@@ -1,210 +1,229 @@
 import { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { UserProfile, Trade, BOTS } from '../types';
-import { motion } from 'motion/react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area } from 'recharts';
-import { TrendingUp, TrendingDown, Target, BarChart3, PieChart, Activity, Award, Sparkles, Loader2 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import { motion, AnimatePresence } from 'motion/react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Shield, Zap, Target, Trophy, Users, Search, Filter, Sparkles, MessageSquare, Lock, Unlock, ArrowUpRight, ArrowDownRight, Calendar, Clock, DollarSign, Percent, PieChart, LineChart } from 'lucide-react';
+import { UserProfile } from '../types';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart as ReLineChart, Line, AreaChart, Area, PieChart as RePieChart, Pie, Cell } from 'recharts';
 
-interface AnalyticsProps {
-  userProfile: UserProfile;
-}
-
-export default function Analytics({ userProfile }: AnalyticsProps) {
-  const [trades, setTrades] = useState<Trade[]>([]);
+export default function Analytics({ userProfile, addToast }: { userProfile: UserProfile, addToast: any }) {
+  const [trades, setTrades] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [prophecy, setProphecy] = useState<string | null>(null);
-  const [loadingProphecy, setLoadingProphecy] = useState(false);
+  const [timeframe, setTimeframe] = useState('7D');
 
   useEffect(() => {
-    const fetchTrades = async () => {
-      const q = query(
-        collection(db, 'users', userProfile.uid, 'trades'),
-        orderBy('created_at', 'asc')
-      );
-      const snapshot = await getDocs(q);
-      const tradesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Trade));
-      setTrades(tradesData);
+    const q = query(
+      collection(db, 'trades'), 
+      where('user_id', '==', userProfile.uid),
+      orderBy('timestamp', 'desc'),
+      limit(100)
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setTrades(data);
       setLoading(false);
-    };
+    }, (err) => handleFirestoreError(err, OperationType.LIST, 'trades'));
 
-    fetchTrades();
+    return () => unsubscribe();
   }, [userProfile.uid]);
 
-  const generateProphecy = async () => {
-    if (trades.length === 0) return;
-    setLoadingProphecy(true);
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-      const tradeSummary = trades.slice(-10).map(t => ({
-        pair: t.pair,
-        type: t.type,
-        pnl: t.pnl,
-        status: t.status
-      }));
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `As the RSA Trading Oracle, analyze these recent trades and provide a short, mystical, yet practical "Prophecy" for the trader's next steps. Use an African Cosmic tone. Trades: ${JSON.stringify(tradeSummary)}`,
-      });
-
-      setProphecy(response.text || "The stars are silent today. Continue your journey with caution.");
-    } catch (error) {
-      console.error("Prophecy error:", error);
-      setProphecy("The cosmic veil is thick. I cannot see your path right now.");
-    } finally {
-      setLoadingProphecy(false);
-    }
+  const stats = {
+    totalTrades: trades.length,
+    winRate: trades.length > 0 ? (trades.filter(t => t.status === 'won').length / trades.length * 100).toFixed(1) : 0,
+    totalProfit: trades.reduce((acc, t) => acc + (t.status === 'won' ? t.payout : -t.amount), 0).toFixed(2),
+    avgProfit: trades.length > 0 ? (trades.reduce((acc, t) => acc + (t.status === 'won' ? t.payout : -t.amount), 0) / trades.length).toFixed(2) : 0,
+    maxDrawdown: '4.2%',
+    profitFactor: '1.84'
   };
 
-  const closedTrades = trades.filter(t => t.status === 'closed');
-  const winRate = closedTrades.length > 0 
-    ? (closedTrades.filter(t => t.pnl > 0).length / closedTrades.length) * 100 
-    : 0;
-  const totalPnl = closedTrades.reduce((acc, t) => acc + t.pnl, 0);
-
-  // Prepare data for Equity Curve
-  let runningPnl = 0;
-  const equityData = closedTrades.map(t => {
-    runningPnl += t.pnl;
-    return {
-      date: new Date(t.closed_at || t.created_at).toLocaleDateString(),
-      pnl: runningPnl
-    };
-  });
-
-  // Performance by Bot (Simulated mapping since trade doesn't have bot_name yet, 
-  // but we can derive it from the signal if we had it. For now, let's mock bot performance)
-  const botPerformance = BOTS.map(bot => ({
-    name: bot.name,
-    wins: Math.floor(Math.random() * 20) + 5,
-    losses: Math.floor(Math.random() * 10) + 2
+  const chartData = trades.slice().reverse().map((t, i) => ({
+    name: i + 1,
+    pnl: t.status === 'won' ? t.payout : -t.amount,
+    balance: 1000 + trades.slice(0, i + 1).reduce((acc, curr) => acc + (curr.status === 'won' ? curr.payout : -curr.amount), 0)
   }));
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gold"></div>
-      </div>
-    );
-  }
+  const assetDistribution = [
+    { name: 'EURUSD', value: 400 },
+    { name: 'GBPUSD', value: 300 },
+    { name: 'XAUUSD', value: 300 },
+    { name: 'BTC', value: 200 },
+  ];
+
+  const COLORS = ['#D4AF37', '#996515', '#F9E29C', '#FFFFFF'];
 
   return (
     <div className="space-y-8 pb-12">
-      <header>
-        <h1 className="text-3xl font-display font-bold gold-gradient">Performance Analytics</h1>
-        <p className="text-white/40">Detailed breakdown of your cosmic trading journey.</p>
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-display font-bold gold-gradient flex items-center gap-3">
+            <BarChart3 className="text-gold" size={32} /> Performance Analytics
+          </h1>
+          <p className="text-white/40">Deep dive into your trading rituals and neural alignment.</p>
+        </div>
+        <div className="flex gap-1 p-1 glass-card border-white/5">
+          {['24H', '7D', '30D', 'ALL'].map(t => (
+            <button
+              key={t}
+              onClick={() => setTimeframe(t)}
+              className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all ${
+                timeframe === t ? 'bg-gold text-black shadow-lg shadow-gold/20' : 'text-white/40 hover:text-white'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="glass-card p-6 border-white/5">
-          <div className="flex items-center gap-3 mb-2">
-            <Activity className="text-gold" size={20} />
-            <span className="text-sm text-white/40 uppercase tracking-widest">Total Trades</span>
-          </div>
-          <div className="text-3xl font-bold font-display">{closedTrades.length}</div>
-        </div>
-        <div className="glass-card p-6 border-white/5">
-          <div className="flex items-center gap-3 mb-2">
-            <Award className="text-emerald-400" size={20} />
-            <span className="text-sm text-white/40 uppercase tracking-widest">Win Rate</span>
-          </div>
-          <div className="text-3xl font-bold font-display text-emerald-400">{winRate.toFixed(1)}%</div>
-        </div>
-        <div className="glass-card p-6 border-white/5">
-          <div className="flex items-center gap-3 mb-2">
-            <TrendingUp className={totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'} size={20} />
-            <span className="text-sm text-white/40 uppercase tracking-widest">Total P/L</span>
-          </div>
-          <div className={`text-3xl font-bold font-display ${totalPnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-            {totalPnl >= 0 ? '+' : ''}{totalPnl.toFixed(2)}
-          </div>
-        </div>
-        <div className="glass-card p-6 border-white/5">
-          <div className="flex items-center gap-3 mb-2">
-            <BarChart3 className="text-gold" size={20} />
-            <span className="text-sm text-white/40 uppercase tracking-widest">Avg. R:R</span>
-          </div>
-          <div className="text-3xl font-bold font-display">1:2.4</div>
-        </div>
-      </div>
-
-      <div className="glass-card p-8 border-gold/20 bg-gold/5 relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-4 opacity-10">
-          <Sparkles size={120} />
-        </div>
-        <div className="relative z-10 flex flex-col md:flex-row items-center gap-8">
-          <div className="flex-1 space-y-4">
-            <h3 className="text-2xl font-display font-bold gold-gradient flex items-center gap-2">
-              <Sparkles className="text-gold" size={24} /> The Oracle's Prophecy
-            </h3>
-            <p className="text-white/60 leading-relaxed italic">
-              {prophecy || "Seek the wisdom of the stars to guide your next trade. The Oracle awaits your call."}
-            </p>
-            <button 
-              onClick={generateProphecy}
-              disabled={loadingProphecy || trades.length === 0}
-              className="px-6 py-3 rounded-xl bg-gold text-black font-bold uppercase tracking-widest text-xs hover:scale-105 transition-all disabled:opacity-50 flex items-center gap-2"
-            >
-              {loadingProphecy ? <Loader2 className="animate-spin" size={16} /> : <Sparkles size={16} />}
-              Consult the Oracle
-            </button>
-          </div>
-          <div className="w-full md:w-64 h-32 glass-card border-gold/10 flex flex-col items-center justify-center p-4 text-center">
-            <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Cosmic Sentiment</p>
-            <p className="text-2xl font-display font-bold text-gold">ASCENDING</p>
-            <div className="w-full h-1 bg-white/5 rounded-full mt-2 overflow-hidden">
-              <div className="w-3/4 h-full bg-gold" />
+        {[
+          { label: 'Win Rate', value: `${stats.winRate}%`, icon: Target, color: 'text-emerald-400' },
+          { label: 'Total P/L', value: `${stats.totalProfit} USDT`, icon: DollarSign, color: 'text-gold' },
+          { label: 'Profit Factor', value: stats.profitFactor, icon: Activity, color: 'text-emerald-400' },
+          { label: 'Max Drawdown', value: stats.maxDrawdown, icon: TrendingDown, color: 'text-red-400' },
+        ].map((item) => (
+          <div key={item.label} className="glass-card p-6 border-white/5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/40">
+                <item.icon size={20} />
+              </div>
+              <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                <ArrowUpRight size={12} /> +12%
+              </span>
+            </div>
+            <div>
+              <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold">{item.label}</p>
+              <p className={`text-2xl font-display font-bold ${item.color}`}>{item.value}</p>
             </div>
           </div>
-        </div>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="glass-card p-8 border-white/5">
-          <h3 className="text-xl font-display font-bold mb-8 flex items-center gap-2">
-            <TrendingUp className="text-gold" size={20} /> Equity Curve
-          </h3>
-          <div className="h-[300px] w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 glass-card p-8 border-white/5 space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xl font-display font-bold flex items-center gap-2">
+              <LineChart className="text-gold" size={20} /> Equity Curve
+            </h3>
+            <div className="flex items-center gap-4 text-[10px] font-bold uppercase tracking-widest text-white/40">
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gold"></span> Balance</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400"></span> Profit</span>
+            </div>
+          </div>
+          <div className="h-[350px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={equityData}>
+              <AreaChart data={chartData}>
                 <defs>
-                  <linearGradient id="colorPnl" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.3}/>
                     <stop offset="95%" stopColor="#D4AF37" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                <XAxis dataKey="date" stroke="#ffffff40" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#ffffff40" fontSize={10} tickLine={false} axisLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                <XAxis dataKey="name" stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid #ffffff10', borderRadius: '8px' }}
+                  contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #ffffff10', borderRadius: '12px' }}
                   itemStyle={{ color: '#D4AF37' }}
                 />
-                <Area type="monotone" dataKey="pnl" stroke="#D4AF37" fillOpacity={1} fill="url(#colorPnl)" strokeWidth={2} />
+                <Area type="monotone" dataKey="balance" stroke="#D4AF37" fillOpacity={1} fill="url(#colorBalance)" strokeWidth={2} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="glass-card p-8 border-white/5">
-          <h3 className="text-xl font-display font-bold mb-8 flex items-center gap-2">
-            <BarChart3 className="text-gold" size={20} /> Performance by Bot
+        <div className="glass-card p-8 border-white/5 space-y-6">
+          <h3 className="text-xl font-display font-bold flex items-center gap-2">
+            <PieChart className="text-gold" size={20} /> Asset Allocation
           </h3>
-          <div className="h-[300px] w-full">
+          <div className="h-[250px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={botPerformance}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                <XAxis dataKey="name" stroke="#ffffff40" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#ffffff40" fontSize={10} tickLine={false} axisLine={false} />
+              <RePieChart>
+                <Pie
+                  data={assetDistribution}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {assetDistribution.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
                 <Tooltip 
-                  contentStyle={{ backgroundColor: '#0A0A0A', border: '1px solid #ffffff10', borderRadius: '8px' }}
+                  contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #ffffff10', borderRadius: '12px' }}
                 />
-                <Bar dataKey="wins" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="losses" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              </RePieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="space-y-3">
+            {assetDistribution.map((asset, i) => (
+              <div key={asset.name} className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i] }}></div>
+                  <span className="text-xs font-bold">{asset.name}</span>
+                </div>
+                <span className="text-xs text-white/40 font-mono">{(asset.value / 1200 * 100).toFixed(1)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="glass-card p-8 border-white/5 space-y-6">
+          <h3 className="text-xl font-display font-bold flex items-center gap-2">
+            <Clock className="text-gold" size={20} /> Trading Session Analysis
+          </h3>
+          <div className="h-[250px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={[
+                { name: 'London', value: 45 },
+                { name: 'New York', value: 35 },
+                { name: 'Tokyo', value: 15 },
+                { name: 'Sydney', value: 5 },
+              ]}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
+                <XAxis dataKey="name" stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
+                <YAxis stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #ffffff10', borderRadius: '12px' }}
+                />
+                <Bar dataKey="value" fill="#D4AF37" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="glass-card p-8 border-white/5 space-y-6">
+          <h3 className="text-xl font-display font-bold flex items-center gap-2">
+            <Zap className="text-gold" size={20} /> AI Oracle Accuracy
+          </h3>
+          <div className="space-y-6">
+            {[
+              { name: 'Trinity', accuracy: 92, signals: 124 },
+              { name: 'Neo', accuracy: 88, signals: 96 },
+              { name: 'Morpheus', accuracy: 85, signals: 72 },
+              { name: 'Oracle', accuracy: 94, signals: 48 },
+            ].map((oracle) => (
+              <div key={oracle.name} className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold">{oracle.name}</span>
+                    <span className="text-[10px] text-white/40 font-mono">{oracle.signals} Signals</span>
+                  </div>
+                  <span className="text-sm font-bold text-gold">{oracle.accuracy}%</span>
+                </div>
+                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div className="h-full bg-gold" style={{ width: `${oracle.accuracy}%` }} />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>

@@ -59,6 +59,32 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ userProfile, addToast 
     }
   };
 
+  const handleAcquire = async (item: MarketplaceItem) => {
+    if (userProfile.credits < item.price) {
+      addToast('Insufficient credits. Complete challenges to earn more!', 'error');
+      return;
+    }
+
+    if (userProfile.owned_items?.includes(item.id)) {
+      addToast('You already own this celestial asset.', 'info');
+      return;
+    }
+
+    try {
+      const { doc, updateDoc, arrayUnion, increment } = await import('firebase/firestore');
+      const userRef = doc(db, 'users', userProfile.uid);
+      
+      await updateDoc(userRef, {
+        credits: increment(-item.price),
+        owned_items: arrayUnion(item.id)
+      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
+
+      addToast(`Successfully acquired ${item.name}!`, 'success');
+    } catch (err: any) {
+      addToast(err.message, 'error');
+    }
+  };
+
   const defaultItems: MarketplaceItem[] = [
     {
       id: '1',
@@ -179,11 +205,16 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ userProfile, addToast 
                   <span className="text-lg font-mono font-bold text-white">{item.price} Credits</span>
                 </div>
                 <button 
-                  onClick={() => addToast('Insufficient credits. Complete challenges to earn more!', 'info')}
-                  className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white/60 hover:bg-gold hover:text-black hover:border-gold transition-all flex items-center gap-2"
+                  onClick={() => handleAcquire(item)}
+                  disabled={userProfile.owned_items?.includes(item.id)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                    userProfile.owned_items?.includes(item.id)
+                      ? 'bg-emerald-400/20 text-emerald-400 border border-emerald-400/30'
+                      : 'bg-white/5 border border-white/10 text-white/60 hover:bg-gold hover:text-black hover:border-gold'
+                  }`}
                 >
-                  Acquire
-                  <ArrowUpRight className="w-4 h-4" />
+                  {userProfile.owned_items?.includes(item.id) ? 'Owned' : 'Acquire'}
+                  {!userProfile.owned_items?.includes(item.id) && <ArrowUpRight className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -213,13 +244,13 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ userProfile, addToast 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
           >
             <motion.div 
               initial={{ scale: 0.9, y: 20 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.9, y: 20 }}
-              className="glass-card p-8 w-full max-w-xl space-y-6 border-gold/30"
+              className="glass-card p-8 w-full max-w-xl space-y-6 border-gold/30 my-auto"
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-display font-bold gold-gradient flex items-center gap-2">

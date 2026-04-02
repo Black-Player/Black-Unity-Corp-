@@ -7,12 +7,22 @@
       "properties": {
         "uid": { "type": "string" },
         "email": { "type": "string", "format": "email" },
-        "tier": { "type": "string", "enum": ["free", "oracle", "zion", "creator"] },
+        "role": { "type": "string", "enum": ["creator", "investor", "student", "subscriber"] },
+        "tier": { "type": "string", "enum": ["free", "oracle", "zion", "legendary", "mythic", "creator"] },
+        "student_tier": { "type": "string", "enum": ["initiate", "oracle", "zion", "ascended"] },
+        "student_rank": { "type": "string", "enum": ["Initiate", "Developing", "Disciplined", "Elite", "Ascended"] },
+        "ap": { "type": "number" },
+        "penalties": { "type": "number" },
         "signals_used_today": { "type": "integer" },
         "last_reset_date": { "type": "string", "format": "date-time" },
         "created_at": { "type": "string", "format": "date-time" },
         "total_pnl": { "type": "number" },
         "win_rate": { "type": "number" },
+        "is_elite": { "type": "boolean" },
+        "followers_count": { "type": "integer" },
+        "risk_score": { "type": "integer" },
+        "strategy_description": { "type": "string" },
+        "avatar_url": { "type": "string" },
         "referral_code": { "type": "string" },
         "referred_by": { "type": "string" },
         "notification_settings": {
@@ -46,12 +56,49 @@
         "strategy": { "type": "string" },
         "ai_bot": { "type": "string" },
         "confidence": { "type": "number" },
+        "market_structure": { "type": "string" },
+        "liquidity_presence": { "type": "boolean" },
+        "volatility_validation": { "type": "boolean" },
+        "session_timing": { "type": "string" },
+        "confirmations_count": { "type": "integer" },
         "analysis": { "type": "string" },
         "recommended_lot_size": { "type": "number" },
         "status": { "type": "string", "enum": ["active", "tp_hit", "sl_hit"] },
-        "created_at": { "type": "string", "format": "date-time" }
+        "created_at": { "type": "string", "format": "date-time" },
+        "telegram_message_id": { "type": "string" }
       },
       "required": ["user_id", "pair", "timeframe", "entry", "stop_loss", "tp1", "tp2", "tp3", "tp4", "risk_reward", "strategy", "ai_bot", "confidence", "analysis", "recommended_lot_size", "status", "created_at"]
+    },
+    "AccessKey": {
+      "title": "Access Key",
+      "description": "A key used to grant specific roles to users.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "key": { "type": "string" },
+        "type": { "type": "string", "enum": ["student", "investor"] },
+        "expiry": { "type": "string", "format": "date-time" },
+        "usage_limit": { "type": "integer" },
+        "usage_count": { "type": "integer" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "signature": { "type": "string" }
+      },
+      "required": ["id", "key", "type", "usage_limit", "usage_count", "created_at", "signature"]
+    },
+    "AdvancementRequest": {
+      "title": "Advancement Request",
+      "description": "A request from a student to advance to the next tier.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "current_tier": { "type": "string", "enum": ["initiate", "oracle", "zion", "ascended"] },
+        "target_tier": { "type": "string", "enum": ["initiate", "oracle", "zion", "ascended"] },
+        "ap_score": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "user_id", "current_tier", "target_tier", "ap_score", "status", "created_at"]
     },
     "ChatMessage": {
       "title": "Chat Message",
@@ -245,6 +292,32 @@
         "total_points": { "type": "number" }
       },
       "required": ["user_id", "completed_articles", "total_points"]
+    },
+    "UserChallenge": {
+      "title": "User Challenge Progress",
+      "description": "Tracking a user's progress in a specific challenge.",
+      "type": "object",
+      "properties": {
+        "user_id": { "type": "string" },
+        "challenge_id": { "type": "string" },
+        "current_pnl": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "completed", "failed"] },
+        "started_at": { "type": "string", "format": "date-time" },
+        "completed_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["user_id", "challenge_id", "current_pnl", "status", "started_at"]
+    },
+    "Follower": {
+      "title": "Follower Relationship",
+      "description": "Tracking who follows which elite oracle.",
+      "type": "object",
+      "properties": {
+        "follower_id": { "type": "string" },
+        "oracle_id": { "type": "string" },
+        "mirror_active": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["follower_id", "oracle_id", "mirror_active", "created_at"]
     }
   },
   "firestore": {
@@ -266,7 +339,7 @@
     },
     "feed/{postId}": {
       "schema": "FeedPost",
-      "description": "Community feed posts."
+      "description": "Community feed ritual posts."
     },
     "users/{userId}/notifications/{notificationId}": {
       "schema": "Notification",
@@ -311,6 +384,22 @@
     "users/{userId}/progress/academy": {
       "schema": "UserProgress",
       "description": "User's academy progress."
+    },
+    "users/{userId}/challenges/{challengeId}": {
+      "schema": "UserChallenge",
+      "description": "User's progress in a specific challenge."
+    },
+    "followers/{followerId}": {
+      "schema": "Follower",
+      "description": "Follower relationships."
+    },
+    "access_keys/{keyId}": {
+      "schema": "AccessKey",
+      "description": "Creator generated access keys."
+    },
+    "advancement_requests/{requestId}": {
+      "schema": "AdvancementRequest",
+      "description": "Student tier advancement requests."
     }
   }
 }

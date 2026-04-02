@@ -1,72 +1,74 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Heart, Share2, TrendingUp, Zap, Globe, Users, Sparkles, Send } from 'lucide-react';
 import { UserProfile } from '../types';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
 
 interface Post {
   id: string;
-  author: string;
-  avatar: string;
+  author_id: string;
+  author_name: string;
+  author_avatar: string;
   content: string;
-  timestamp: string;
-  likes: number;
-  comments: number;
+  created_at: any;
+  likes: string[];
+  comments_count: number;
   type: 'Analysis' | 'Win' | 'Prophecy' | 'General';
   image?: string;
 }
 
 export default function CosmicFeed({ userProfile, addToast }: { userProfile: UserProfile, addToast: any }) {
-  const [posts, setPosts] = useState<Post[]>([
-    {
-      id: '1',
-      author: 'Zion Master',
-      avatar: 'https://picsum.photos/seed/zion/100/100',
-      content: 'Just caught a massive 1:5 RR on V75s using the new Zion Trend indicator! The cosmic alignment was perfect.',
-      timestamp: '2h ago',
-      likes: 124,
-      comments: 18,
-      type: 'Win',
-      image: 'https://picsum.photos/seed/trade1/800/400'
-    },
-    {
-      id: '2',
-      author: 'Cosmic Oracle',
-      avatar: 'https://picsum.photos/seed/oracle/100/100',
-      content: 'The solar frequencies suggest a high volatility period for the next 4 hours. Tighten your stops, warriors.',
-      timestamp: '4h ago',
-      likes: 89,
-      comments: 12,
-      type: 'Prophecy'
-    },
-    {
-      id: '3',
-      author: 'Zulu Trader',
-      avatar: 'https://picsum.photos/seed/zulu/100/100',
-      content: 'Who else is watching the Gold retest at 2150? Looking for a liquidity sweep before the pump.',
-      timestamp: '6h ago',
-      likes: 56,
-      comments: 24,
-      type: 'Analysis'
-    }
-  ]);
-
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
   const [newPost, setNewPost] = useState('');
+  const [postType, setPostType] = useState<'Analysis' | 'Win' | 'Prophecy' | 'General'>('General');
 
-  const handlePost = () => {
+  useEffect(() => {
+    const q = query(collection(db, 'feed'), orderBy('created_at', 'desc'), limit(20));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      } as Post));
+      setPosts(data);
+      setLoading(false);
+    }, (err) => handleFirestoreError(err, OperationType.GET, 'feed'));
+
+    return () => unsubscribe();
+  }, []);
+
+  const handlePost = async () => {
     if (!newPost.trim()) return;
-    const post: Post = {
-      id: Math.random().toString(36).substring(7),
-      author: userProfile.email.split('@')[0],
-      avatar: `https://picsum.photos/seed/${userProfile.uid}/100/100`,
-      content: newPost,
-      timestamp: 'Just now',
-      likes: 0,
-      comments: 0,
-      type: 'General'
-    };
-    setPosts([post, ...posts]);
-    setNewPost('');
-    addToast('Prophecy shared with the tribe.', 'success');
+    try {
+      await addDoc(collection(db, 'feed'), {
+        author_id: userProfile.uid,
+        author_name: userProfile.email.split('@')[0],
+        author_avatar: `https://picsum.photos/seed/${userProfile.uid}/100/100`,
+        content: newPost,
+        created_at: serverTimestamp(),
+        likes: [],
+        comments_count: 0,
+        type: postType
+      }).catch(err => handleFirestoreError(err, OperationType.CREATE, 'feed'));
+      
+      setNewPost('');
+      addToast('Prophecy shared with the tribe.', 'success');
+    } catch (error) {
+      console.error(error);
+      addToast('Failed to share ritual', 'error');
+    }
+  };
+
+  const handleLike = async (postId: string, currentLikes: string[]) => {
+    const isLiked = currentLikes.includes(userProfile.uid);
+    try {
+      await updateDoc(doc(db, 'feed', postId), {
+        likes: isLiked ? arrayRemove(userProfile.uid) : arrayUnion(userProfile.uid)
+      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `feed/${postId}`));
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   return (
@@ -94,9 +96,16 @@ export default function CosmicFeed({ userProfile, addToast }: { userProfile: Use
         </div>
         <div className="flex items-center justify-between pt-4 border-t border-white/5">
           <div className="flex gap-4">
-            <button className="text-white/40 hover:text-gold transition-all"><Globe size={18} /></button>
-            <button className="text-white/40 hover:text-gold transition-all"><Users size={18} /></button>
-            <button className="text-white/40 hover:text-gold transition-all"><Zap size={18} /></button>
+            <select 
+              value={postType}
+              onChange={(e) => setPostType(e.target.value as any)}
+              className="bg-white/5 border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest text-white/60 px-2 py-1 outline-none"
+            >
+              <option value="General">General</option>
+              <option value="Analysis">Analysis</option>
+              <option value="Win">Win</option>
+              <option value="Prophecy">Prophecy</option>
+            </select>
           </div>
           <button 
             onClick={handlePost}
@@ -108,56 +117,70 @@ export default function CosmicFeed({ userProfile, addToast }: { userProfile: Use
       </div>
 
       <div className="space-y-6">
-        <AnimatePresence>
-          {posts.map((post, index) => (
-            <motion.div
-              key={post.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="glass-card overflow-hidden group"
-            >
-              <div className="p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <img src={post.avatar} alt={post.author} className="w-10 h-10 rounded-full border border-gold/30" referrerPolicy="no-referrer" />
-                    <div>
-                      <p className="font-bold text-sm">{post.author}</p>
-                      <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">{post.timestamp}</p>
+        {loading ? (
+          <div className="text-center py-20">
+            <Sparkles className="w-8 h-8 text-gold/20 animate-pulse mx-auto mb-4" />
+            <p className="text-white/20 italic">Consulting the cosmic archives...</p>
+          </div>
+        ) : (
+          <AnimatePresence>
+            {posts.map((post, index) => (
+              <motion.div
+                key={post.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="glass-card overflow-hidden group"
+              >
+                <div className="p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <img src={post.author_avatar} alt={post.author_name} className="w-10 h-10 rounded-full border border-gold/30" referrerPolicy="no-referrer" />
+                      <div>
+                        <p className="font-bold text-sm">{post.author_name}</p>
+                        <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
+                          {post.created_at?.toDate ? new Date(post.created_at.toDate()).toLocaleDateString() : 'Just now'}
+                        </p>
+                      </div>
                     </div>
+                    <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest ${
+                      post.type === 'Win' ? 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20' :
+                      post.type === 'Prophecy' ? 'bg-gold/10 text-gold border border-gold/20' :
+                      'bg-white/5 text-white/40 border border-white/10'
+                    }`}>
+                      {post.type}
+                    </span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest ${
-                    post.type === 'Win' ? 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20' :
-                    post.type === 'Prophecy' ? 'bg-gold/10 text-gold border border-gold/20' :
-                    'bg-white/5 text-white/40 border border-white/10'
-                  }`}>
-                    {post.type}
-                  </span>
-                </div>
 
-                <p className="text-white/80 leading-relaxed">{post.content}</p>
+                  <p className="text-white/80 leading-relaxed">{post.content}</p>
 
-                {post.image && (
-                  <div className="rounded-xl overflow-hidden border border-white/10">
-                    <img src={post.image} alt="Post content" className="w-full h-auto" referrerPolicy="no-referrer" />
+                  {post.image && (
+                    <div className="rounded-xl overflow-hidden border border-white/10">
+                      <img src={post.image} alt="Post content" className="w-full h-auto" referrerPolicy="no-referrer" />
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-6 pt-4 border-t border-white/5">
+                    <button 
+                      onClick={() => handleLike(post.id, post.likes)}
+                      className={`flex items-center gap-2 transition-all text-xs font-bold ${
+                        post.likes.includes(userProfile.uid) ? 'text-red-400' : 'text-white/40 hover:text-red-400'
+                      }`}
+                    >
+                      <Heart size={16} fill={post.likes.includes(userProfile.uid) ? 'currentColor' : 'none'} /> {post.likes.length}
+                    </button>
+                    <button className="flex items-center gap-2 text-white/40 hover:text-gold transition-all text-xs font-bold">
+                      <MessageSquare size={16} /> {post.comments_count}
+                    </button>
+                    <button className="flex items-center gap-2 text-white/40 hover:text-gold transition-all text-xs font-bold ml-auto">
+                      <Share2 size={16} />
+                    </button>
                   </div>
-                )}
-
-                <div className="flex items-center gap-6 pt-4 border-t border-white/5">
-                  <button className="flex items-center gap-2 text-white/40 hover:text-red-400 transition-all text-xs font-bold">
-                    <Heart size={16} /> {post.likes}
-                  </button>
-                  <button className="flex items-center gap-2 text-white/40 hover:text-gold transition-all text-xs font-bold">
-                    <MessageSquare size={16} /> {post.comments}
-                  </button>
-                  <button className="flex items-center gap-2 text-white/40 hover:text-gold transition-all text-xs font-bold ml-auto">
-                    <Share2 size={16} />
-                  </button>
                 </div>
-              </div>
-            </motion.div>
-          ))}
-        </AnimatePresence>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        )}
       </div>
     </div>
   );

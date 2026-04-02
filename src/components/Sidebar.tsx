@@ -1,4 +1,4 @@
-import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock } from 'lucide-react';
+import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock, User, Ghost } from 'lucide-react';
 import { auth } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { UserProfile, Tier, hasTierAccess } from '../types';
@@ -11,30 +11,54 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activePage, setActivePage, userProfile }: SidebarProps) {
-  const menuItems: { id: string; label: string; icon: any; requiredTier?: Tier }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'feed', label: 'Cosmic Feed', icon: Globe },
-    { id: 'zion', label: 'Zion AI', icon: Bot },
-    { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
-    { id: 'portfolio', label: 'Portfolio', icon: Wallet },
-    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-    { id: 'sessions', label: 'Sessions', icon: Clock },
-    { id: 'arena', label: 'The Arena', icon: Trophy },
-    { id: 'archive', label: 'The Archive', icon: Book },
-    { id: 'signal-stream', label: 'Signal Stream', icon: Zap, requiredTier: 'oracle' },
-    { id: 'bot-gallery', label: 'Bot Gallery', icon: Layout },
-    { id: 'bot-customizer', label: 'The Alchemist', icon: Settings2, requiredTier: 'zion' },
-    { id: 'live-room', label: 'The Nexus', icon: Video, requiredTier: 'oracle' },
-    { id: 'strategy-builder', label: 'The Weaver', icon: Layers, requiredTier: 'legendary' },
-    { id: 'marketplace', label: 'Marketplace', icon: Search, requiredTier: 'mythic' },
-    { id: 'council', label: 'Council', icon: Users, requiredTier: 'mythic' },
-    { id: 'chart-vision', label: 'Oracle Eye', icon: Eye },
-    { id: 'abyss', label: 'The Abyss', icon: Eye },
-    { id: 'forge', label: 'The Forge', icon: Hammer, requiredTier: 'zion' },
-    { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
-    { id: 'academy', label: 'The Library', icon: GraduationCap },
-    { id: 'security', label: 'Zion Vault', icon: Shield },
-    { id: 'settings', label: 'Settings', icon: Settings },
+  const menuGroups = [
+    {
+      label: 'Core',
+      items: [
+        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'notifications', label: 'Cosmic Alerts', icon: Bell, badge: userProfile?.notification_count },
+        { id: 'feed', label: 'Cosmic Feed', icon: Globe },
+        { id: 'zion', label: 'Zion AI', icon: Bot },
+        { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
+        { id: 'nexus', label: 'The Nexus', icon: Globe },
+      ]
+    },
+    {
+      label: 'Trading',
+      items: [
+        { id: 'portfolio', label: 'Portfolio', icon: Wallet },
+        { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+        { id: 'eye', label: 'Oracle Eye', icon: Eye },
+        { id: 'sessions', label: 'Sessions', icon: Clock },
+        { id: 'signal-stream', label: 'Signal Stream', icon: Zap, requiredTier: 'oracle' },
+        { id: 'signal-oracle', label: 'Signal Oracle', icon: Target, requiredTier: 'oracle' },
+      ]
+    },
+    {
+      label: 'Laboratory',
+      items: [
+        { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
+        { id: 'alchemist', label: 'The Alchemist', icon: Settings2, requiredTier: 'zion' },
+        { id: 'strategy-builder', label: 'The Weaver', icon: Layers, requiredTier: 'legendary' },
+        { id: 'forge', label: 'The Forge', icon: Hammer, requiredTier: 'zion' },
+        { id: 'vault', label: 'Zion Vault', icon: Shield, requiredTier: 'oracle' },
+      ]
+    },
+    {
+      label: 'Social & Market',
+      items: [
+        { id: 'profile', label: 'My Profile', icon: User },
+        { id: 'social', label: 'Social Feed', icon: Globe },
+        { id: 'tribes', label: 'Cosmic Tribes', icon: Users },
+        { id: 'challenges', label: 'Warrior Trials', icon: Trophy },
+        { id: 'leaderboard', label: 'Leaderboard', icon: Trophy },
+        { id: 'arena', label: 'The Arena', icon: Target },
+        { id: 'abyss', label: 'The Abyss', icon: Ghost, requiredTier: 'legendary' },
+        { id: 'gallery', label: 'The Gallery', icon: ShoppingBag },
+        { id: 'council', label: 'Council', icon: Users, requiredTier: 'mythic' },
+        { id: 'academy', label: 'The Library', icon: GraduationCap },
+      ]
+    }
   ];
 
   return (
@@ -49,31 +73,43 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
         </div>
       </div>
 
-        <nav className="flex-1 space-y-2 overflow-y-auto pr-2 custom-scrollbar">
-          {menuItems.map((item) => {
-            const hasAccess = !item.requiredTier || (userProfile && hasTierAccess(userProfile.tier, item.requiredTier));
-            
-            return (
-              <button
-                key={item.id}
-                onClick={() => hasAccess ? setActivePage(item.id) : setActivePage('subscription')}
-                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
-                  activePage === item.id 
-                    ? 'bg-gold/10 text-gold border border-gold/20' 
-                    : hasAccess ? 'text-white/60 hover:bg-white/5 hover:text-white' : 'text-white/20 cursor-not-allowed'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <item.icon size={20} />
-                  <span className="font-medium">{item.label}</span>
-                </div>
-                {!hasAccess && <Lock size={14} className="text-white/20" />}
-              </button>
-            );
-          })}
+        <nav className="flex-1 space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+          {menuGroups.map((group) => (
+            <div key={group.label} className="space-y-2">
+              <p className="text-[10px] text-white/20 uppercase tracking-widest px-4 font-bold">{group.label}</p>
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const hasAccess = !item.requiredTier || (userProfile && hasTierAccess(userProfile.tier, item.requiredTier as Tier));
+                  
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => hasAccess ? setActivePage(item.id) : setActivePage('subscription')}
+                      className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl transition-all ${
+                        activePage === item.id 
+                          ? 'bg-gold/10 text-gold border border-gold/20' 
+                          : hasAccess ? 'text-white/60 hover:bg-white/5 hover:text-white' : 'text-white/20 cursor-not-allowed'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <item.icon size={18} />
+                        <span className="text-sm font-medium">{item.label}</span>
+                        {(item as any).badge > 0 && (
+                          <span className="px-1.5 py-0.5 bg-rose-500 text-white text-[8px] font-bold rounded-full animate-pulse">
+                            {(item as any).badge}
+                          </span>
+                        )}
+                      </div>
+                      {!hasAccess && <Lock size={12} className="text-white/20" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
 
           {userProfile?.tier === 'creator' && (
-            <div className="pt-4 mt-4 border-t border-white/5">
+            <div className="pt-4 border-t border-white/5">
               <p className="text-[10px] text-white/20 uppercase tracking-widest px-4 mb-2">Admin</p>
               <button
                 onClick={() => setActivePage('diagnostics')}
@@ -92,20 +128,44 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
 
       <div className="space-y-4">
         {userProfile && (
-          <div className="p-4 glass-card border-gold/10 bg-gold/5">
-            <p className="text-[10px] text-gold uppercase font-bold tracking-widest mb-1">Current Tier</p>
-            <p className="text-sm font-display font-bold uppercase">{userProfile.tier}</p>
-            <div className="mt-2 h-1 w-full bg-white/10 rounded-full overflow-hidden">
-              <motion.div 
-                initial={{ width: 0 }}
-                animate={{ width: `${(userProfile.signals_used_today / 15) * 100}%` }}
-                className="h-full bg-gold"
-              />
+          <div className="p-4 glass-card border-gold/10 bg-gold/5 space-y-3">
+            <div>
+              <p className="text-[10px] text-gold uppercase font-bold tracking-widest mb-1">Role</p>
+              <p className="text-sm font-display font-bold uppercase flex items-center gap-2">
+                {userProfile.role === 'creator' && <ShieldCheck size={14} className="text-emerald-400" />}
+                {userProfile.role === 'investor' && <CreditCard size={14} className="text-gold" />}
+                {userProfile.role === 'student' && <GraduationCap size={14} className="text-blue-400" />}
+                {userProfile.role === 'subscriber' && <Users size={14} className="text-white/40" />}
+                {userProfile.role}
+              </p>
             </div>
-            {userProfile.tier !== 'zion' && userProfile.tier !== 'creator' && (
+
+            {userProfile.role === 'student' && (
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <p className="text-[10px] text-blue-400 uppercase font-bold tracking-widest">Student Tier</p>
+                  <span className="text-[10px] text-white/40 font-mono">{userProfile.ap} AP</span>
+                </div>
+                <p className="text-xs font-bold uppercase text-white/80">{userProfile.student_tier} — {userProfile.student_rank}</p>
+                <div className="mt-2 h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(100, (userProfile.ap / 1000) * 100)}%` }}
+                    className="h-full bg-blue-400"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Subscription</p>
+              <p className="text-xs font-bold uppercase">{userProfile.tier}</p>
+            </div>
+
+            {userProfile.tier !== 'zion' && userProfile.tier !== 'creator' && userProfile.role !== 'investor' && (
               <button 
                 onClick={() => setActivePage('subscription')}
-                className="mt-3 w-full py-2 bg-gold text-black text-[10px] font-bold uppercase rounded-lg hover:shadow-lg hover:shadow-gold/20 transition-all flex items-center justify-center gap-2"
+                className="w-full py-2 bg-gold text-black text-[10px] font-bold uppercase rounded-lg hover:shadow-lg hover:shadow-gold/20 transition-all flex items-center justify-center gap-2"
               >
                 <Sparkles size={12} />
                 Upgrade

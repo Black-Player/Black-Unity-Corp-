@@ -152,8 +152,8 @@ export const Community: React.FC<CommunityProps> = ({ userProfile, compact = fal
           )}
         </div>
       ) : activeTab === 'leaderboard' ? (
-        <div className="glass-card overflow-hidden">
-          <table className="w-full text-left border-collapse">
+        <div className="glass-card overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[600px]">
             <thead>
               <tr className="bg-white/5 border-b border-white/5">
                 <th className="p-4 text-[10px] text-white/40 uppercase tracking-widest font-bold">Rank</th>
@@ -176,7 +176,7 @@ export const Community: React.FC<CommunityProps> = ({ userProfile, compact = fal
                   <td className="p-4">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs font-bold">
-                        {user.username?.[0] || user.email[0].toUpperCase()}
+                        {user.username?.[0] || (user.email?.[0] || '?').toUpperCase()}
                       </div>
                       <div>
                         <p className="text-sm font-bold">{user.username || user.email.split('@')[0]}</p>

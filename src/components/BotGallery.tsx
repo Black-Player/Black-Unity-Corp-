@@ -43,7 +43,7 @@ export default function BotGallery({ userProfile, addToast, setActivePage }: Bot
                     <Lock size={24} />
                   </div>
                   <h4 className="font-bold text-lg mb-2">Locked Bot</h4>
-                  <p className="text-xs text-white/60 mb-4">Requires {bot.tier_requirement.toUpperCase()} tier access.</p>
+                  <p className="text-xs text-white/60 mb-4">Requires {(bot.tier_requirement || 'FREE').toUpperCase()} tier access.</p>
                   <button 
                     onClick={() => setActivePage('subscription')}
                     className="gold-button px-4 py-2 text-[10px]"

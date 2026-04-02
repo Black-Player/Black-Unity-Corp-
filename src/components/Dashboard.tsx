@@ -5,7 +5,7 @@ import { UserProfile, Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, PriceAl
 import { DERIV_SYMBOLS } from '../constants';
 import { generateTradingSignal, getMarketSentiment, analyzeChartImage, getMarketNews } from '../services/aiService';
 import { derivService, DerivTick } from '../services/derivService';
-import { Zap, TrendingUp, TrendingDown, Target, ShieldAlert, Clock, BarChart3, Bot, Sparkles, RefreshCw, Globe, ArrowUpRight, ArrowDownRight, X, Activity, Volume2, VolumeX, Newspaper, Eye, Upload, Loader2, Shield, Calendar, Bell, Wifi, WifiOff, Lock } from 'lucide-react';
+import { Zap, TrendingUp, TrendingDown, Target, ShieldAlert, Clock, BarChart3, Bot, Sparkles, RefreshCw, Globe, ArrowUpRight, ArrowDownRight, X, Activity, Volume2, VolumeX, Newspaper, Eye, Upload, Loader2, Shield, Calendar, Bell, Wifi, WifiOff, Lock, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LightweightChart from './LightweightChart';
 import AssetDetails from './AssetDetails';
@@ -29,23 +29,38 @@ import { NewsFeed } from './NewsFeed';
 import PerformanceReports from './PerformanceReports';
 import Subscription from './Subscription';
 
-import { useMarketPrices } from '../hooks/useMarketPrices';
+import { THEMES } from '../constants/themes';
+import { AppTheme } from '../types';
+import { getBotCharacter } from '../lib/themeUtils';
+
+import { useMarketContext } from '../MarketContext';
 
 interface DashboardProps {
   userProfile: UserProfile;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  handleCloseTrade: (trade: Trade, reason?: string) => Promise<void>;
 }
 
-export default function Dashboard({ userProfile, addToast }: DashboardProps) {
-  const marketPrices = useMarketPrices();
+export default function Dashboard({ userProfile, addToast, handleCloseTrade }: DashboardProps) {
+  const { marketPrices } = useMarketContext();
   const [activeSignals, setActiveSignals] = useState<Signal[]>([]);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
-  const [pair, setPair] = useState('crash_500');
+  const [pair, setPair] = useState('CRASH500');
   const [showDetails, setShowDetails] = useState(false);
   const [activeTab, setActiveTab] = useState<'signals' | 'stats' | 'portfolio' | 'backtest' | 'risk' | 'community' | 'bot-forge' | 'chat' | 'calendar' | 'alerts' | 'strategies' | 'tribes' | 'challenges' | 'marketplace' | 'academy' | 'status' | 'performance' | 'subscription'>('signals');
   const [accountType, setAccountType] = useState<'demo' | 'live'>(userProfile.tier === 'free' ? 'demo' : (userProfile.account_type || 'demo'));
   const [showTutorial, setShowTutorial] = useState(false);
   const [launchCountdown, setLaunchCountdown] = useState('');
+  const [showThemeSelector, setShowThemeSelector] = useState(false);
+
+  const theme = THEMES.find(t => t.id === (userProfile.theme || 'cosmic')) || THEMES[0];
+
+  useEffect(() => {
+    document.documentElement.style.setProperty('--theme-primary', theme.colors.primary);
+    document.documentElement.style.setProperty('--theme-light', theme.colors.secondary);
+    document.documentElement.style.setProperty('--theme-dark', theme.colors.accent);
+    document.documentElement.style.setProperty('--theme-bg', theme.colors.background);
+  }, [theme]);
 
   const availableBots = BOTS.filter(bot => hasTierAccess(userProfile.tier, bot.tier_requirement));
   const customBots = userProfile.custom_bots || [];
@@ -77,34 +92,47 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
     return () => unsubscribe();
   }, [userProfile.uid]);
 
+  const marketPricesRef = useRef(marketPrices);
   useEffect(() => {
-    activeAlerts.forEach(async (alert) => {
-      const currentPrice = marketPrices[alert.pair]?.price;
-      if (!currentPrice) return;
+    marketPricesRef.current = marketPrices;
+  }, [marketPrices]);
 
-      const triggered = alert.condition === 'above' 
-        ? currentPrice >= alert.price 
-        : currentPrice <= alert.price;
+  useEffect(() => {
+    if (activeAlerts.length === 0) return;
 
-      if (triggered) {
-        addToast(`Price Alert: ${alert.pair} is ${alert.condition} ${alert.price}!`, 'success');
-        
-        // Deactivate alert
-        await updateDoc(doc(db, 'users', userProfile.uid, 'alerts', alert.id), {
-          active: false
-        }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}/alerts/${alert.id}`));
+    const alertInterval = setInterval(() => {
+      const currentPrices = marketPricesRef.current;
+      
+      activeAlerts.forEach(async (alert) => {
+        const currentPrice = currentPrices[alert.pair]?.price;
+        if (!currentPrice) return;
 
-        // Create notification
-        await addDoc(collection(db, 'users', userProfile.uid, 'notifications'), {
-          title: 'Price Alert Triggered',
-          message: `${alert.pair} has reached your target of ${alert.price}.`,
-          type: 'system',
-          read: false,
-          created_at: new Date().toISOString()
-        });
-      }
-    });
-  }, [marketPrices, activeAlerts, userProfile.uid]);
+        const triggered = alert.condition === 'above' 
+          ? currentPrice >= alert.price 
+          : currentPrice <= alert.price;
+
+        if (triggered) {
+          addToast(`Price Alert: ${alert.pair} is ${alert.condition} ${alert.price}!`, 'success');
+          
+          // Deactivate alert
+          await updateDoc(doc(db, 'users', userProfile.uid, 'alerts', alert.id), {
+            active: false
+          }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}/alerts/${alert.id}`));
+
+          // Create notification
+          await addDoc(collection(db, 'users', userProfile.uid, 'notifications'), {
+            title: 'Price Alert Triggered',
+            message: `${alert.pair} has reached your target of ${alert.price}.`,
+            type: 'system',
+            read: false,
+            created_at: new Date().toISOString()
+          });
+        }
+      });
+    }, 5000); // Check alerts every 5 seconds
+
+    return () => clearInterval(alertInterval);
+  }, [activeAlerts, userProfile.uid, addToast]);
   const [timeframe, setTimeframe] = useState('H1');
   const [selectedBot, setSelectedBot] = useState(allAvailableBots[0]);
   const [generating, setGenerating] = useState(false);
@@ -264,73 +292,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
   }, [userProfile.uid]);
 
   // The Singularity: Automated Signal & Trade Monitoring
-  useEffect(() => {
-    if (activeTrades.length === 0) return;
-
-    const monitorInterval = setInterval(async () => {
-      // Monitor Active Trades for TP/SL
-      for (const trade of activeTrades) {
-        const currentPrice = marketPrices[trade.pair]?.price;
-        if (!currentPrice || currentPrice === 0) continue;
-
-        let shouldClose = false;
-        let reason = '';
-
-        if (trade.type === 'buy') {
-          if (currentPrice >= trade.tp4) {
-            shouldClose = true;
-            reason = 'TP4 Hit';
-          } else if (currentPrice >= trade.tp3) {
-            // Partial close logic could go here, for now just log
-            console.log("TP3 Hit for", trade.pair);
-          } else if (currentPrice >= trade.tp2) {
-            console.log("TP2 Hit for", trade.pair);
-          } else if (currentPrice >= trade.tp1) {
-            console.log("TP1 Hit for", trade.pair);
-          }
-          
-          if (currentPrice <= trade.stop_loss) {
-            shouldClose = true;
-            reason = 'Stop Loss Hit';
-          }
-        } else {
-          if (currentPrice <= trade.tp4) {
-            shouldClose = true;
-            reason = 'TP4 Hit';
-          } else if (currentPrice <= trade.tp3) {
-            console.log("TP3 Hit for", trade.pair);
-          } else if (currentPrice <= trade.tp2) {
-            console.log("TP2 Hit for", trade.pair);
-          } else if (currentPrice <= trade.tp1) {
-            console.log("TP1 Hit for", trade.pair);
-          }
-
-          if (currentPrice >= trade.stop_loss) {
-            shouldClose = true;
-            reason = 'Stop Loss Hit';
-          }
-        }
-
-        if (shouldClose) {
-          await handleCloseTrade(trade, reason);
-        } else {
-          // Update P/L in real-time
-          const pnl = trade.type === 'buy' 
-            ? (currentPrice - trade.entry_price) * 100 
-            : (trade.entry_price - currentPrice) * 100;
-          const pnl_percentage = (pnl / (trade.entry_price * 100)) * 100;
-
-          await updateDoc(doc(db, 'users', userProfile.uid, 'trades', trade.id), {
-            current_price: currentPrice,
-            pnl,
-            pnl_percentage
-          }).catch(() => {});
-        }
-      }
-    }, 2000);
-
-    return () => clearInterval(monitorInterval);
-  }, [activeTrades, marketPrices, userProfile.uid]);
+  // Handled by useTradeMonitor hook now for better performance and real-time updates
 
   const [dailyPnl, setDailyPnl] = useState(0);
 
@@ -428,12 +390,6 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
           const startOfDay = new Date();
           startOfDay.setHours(0, 0, 0, 0);
           
-          const q = query(
-            collection(db, 'users', userProfile.uid, 'trades'),
-            where('created_at', '>=', startOfDay.toISOString()),
-            where('status', '==', 'open') // This is not quite right, should be total trades today
-          );
-          // Actually, let's just count all trades created today
           const totalTodaySnap = await getDocs(query(
             collection(db, 'users', userProfile.uid, 'trades'),
             where('created_at', '>=', startOfDay.toISOString())
@@ -513,45 +469,21 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
     }
   };
 
-  const handleCloseTrade = async (trade: Trade, reason: string = 'Manual Close') => {
+  const handleThemeChange = async (themeId: AppTheme) => {
     try {
-      await updateDoc(doc(db, 'users', userProfile.uid, 'trades', trade.id), {
-        status: 'closed',
-        closed_at: new Date().toISOString()
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}/trades`));
-      
-      // Update User Stats
-      const userRef = doc(db, 'users', userProfile.uid);
-      const isWin = trade.pnl > 0;
-      
-      const balanceField = trade.account_type === 'live' ? 'live_balance' : 'demo_balance';
-      
-      await updateDoc(userRef, {
-        [balanceField]: increment(trade.pnl),
-        'stats.total_trades': increment(1),
-        'stats.wins': increment(isWin ? 1 : 0),
-        'stats.losses': increment(isWin ? 0 : 1),
-        total_pnl: increment(trade.pnl)
-      }).catch(() => {});
-
-      // Create notification
-      await addDoc(collection(db, 'users', userProfile.uid, 'notifications'), {
-        title: `Trade Closed: ${reason}`,
-        message: `${trade.account_type.toUpperCase()} trade for ${trade.pair} closed with ${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)} P/L. Reason: ${reason}`,
-        type: 'trade',
-        read: false,
-        created_at: new Date().toISOString()
+      await updateDoc(doc(db, 'users', userProfile.uid), {
+        theme: themeId
       });
-
-      addToast(`Trade closed: ${trade.pair} (${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)}) - ${reason}`, trade.pnl >= 0 ? 'success' : 'error');
+      addToast(`Aura updated: ${THEMES.find(t => t.id === themeId)?.name}`, 'success');
+      setShowThemeSelector(false);
     } catch (err) {
       console.error(err);
-      addToast('Failed to close trade.', 'error');
+      addToast('Failed to update aura.', 'error');
     }
   };
 
   if (showDetails) {
-    return <AssetDetails pair={pair} onBack={() => setShowDetails(false)} />;
+    return <AssetDetails pair={pair} onBack={() => setShowDetails(false)} userProfile={userProfile} />;
   }
 
   return (
@@ -586,8 +518,8 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:flex sm:flex-wrap lg:flex-nowrap gap-3 lg:gap-4 items-center">
-          <div className="col-span-2 sm:col-auto flex bg-white/5 rounded-lg p-1 border border-white/10 h-fit">
+        <div className="flex flex-wrap items-center gap-3 lg:gap-4">
+          <div className="flex bg-white/5 rounded-lg p-1 border border-white/10 h-fit flex-1 sm:flex-none">
             <button
               onClick={() => setAccountType('demo')}
               className={`flex-1 sm:flex-none px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${
@@ -630,6 +562,13 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
             title="Toggle Oracle's Voice"
           >
             {audioEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+          </button>
+          <button 
+            onClick={() => setShowThemeSelector(true)}
+            className="glass-card px-4 py-3 flex items-center justify-center transition-all text-white/40 hover:text-gold border-white/5 hover:border-gold/40"
+            title="Aura & Theme"
+          >
+            <Palette size={20} />
           </button>
           <div className="glass-card px-4 lg:px-6 py-3 flex flex-col items-center flex-1">
             <span className="text-[10px] text-white/40 uppercase tracking-widest">Used Today</span>
@@ -697,10 +636,40 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
         })}
       </div>
 
+      {/* System Status Bar */}
+      <div className="flex items-center gap-4 px-4 py-3 bg-white/5 border border-white/5 rounded-xl mb-8 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-2 whitespace-nowrap">
+          <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Network: {isOnline ? 'Connected' : 'Offline'}</span>
+        </div>
+        <div className="w-px h-3 bg-white/10" />
+        <div className="flex items-center gap-2 whitespace-nowrap">
+          <Activity className={`w-3 h-3 ${generating ? 'text-gold animate-pulse' : 'text-emerald-400'}`} />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Oracle: {generating ? 'Channeling' : 'Ready'}</span>
+        </div>
+        <div className="w-px h-3 bg-white/10" />
+        <div className="flex items-center gap-2 whitespace-nowrap">
+          <Shield className="w-3 h-3 text-gold" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Sentinel: Active</span>
+        </div>
+        <div className="w-px h-3 bg-white/10" />
+        <div className="flex items-center gap-2 whitespace-nowrap">
+          <Clock className="w-3 h-3 text-blue-400" />
+          <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Market: Active</span>
+        </div>
+        <div className="flex-1" />
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-white/5 border border-white/5">
+            <div className="w-1.5 h-1.5 rounded-full bg-gold" />
+            <span className="text-[9px] font-bold uppercase tracking-widest text-gold">{userProfile.tier}</span>
+          </div>
+        </div>
+      </div>
+
       {activeTab === 'stats' ? (
         <PerformanceStats userProfile={userProfile} />
       ) : activeTab === 'portfolio' ? (
-        <Portfolio userProfile={userProfile} marketPrices={marketPrices} />
+        <Portfolio userProfile={userProfile} addToast={addToast} handleCloseTrade={handleCloseTrade} />
       ) : activeTab === 'risk' ? (
         <RiskManagement userProfile={userProfile} addToast={addToast} />
       ) : activeTab === 'backtest' ? (
@@ -720,7 +689,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
       ) : activeTab === 'tribes' ? (
         <Tribes userProfile={userProfile} addToast={addToast} />
       ) : activeTab === 'challenges' ? (
-        <Challenges userProfile={userProfile} />
+        <Challenges userProfile={userProfile} addToast={addToast} />
       ) : activeTab === 'marketplace' ? (
         <Marketplace userProfile={userProfile} addToast={addToast} />
       ) : activeTab === 'academy' ? (
@@ -778,21 +747,21 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 lg:gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 lg:gap-4">
             {Object.entries(marketPrices).map(([symbol, data]) => (
               <motion.div 
                 key={symbol}
                 layout
-                className="glass-card p-3 flex flex-col items-center justify-center space-y-1 border-white/5 hover:border-gold/20 transition-all cursor-pointer"
+                className="glass-card p-2 sm:p-3 flex flex-col items-center justify-center space-y-1 border-white/5 hover:border-gold/20 transition-all cursor-pointer min-w-0"
                 onClick={() => {
                   setPair(symbol);
                   setShowDetails(true);
                 }}
               >
-                <span className="text-[10px] text-white/40 font-bold">{symbol}</span>
-                <span className="text-sm font-mono font-bold">{(data.price || 0).toFixed(symbol.includes('JPY') || symbol.includes('BTC') || symbol.includes('US100') ? 2 : 4)}</span>
-                <span className={`text-[10px] font-bold flex items-center gap-0.5 ${data.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {data.change >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                <span className="text-[8px] sm:text-[10px] text-white/40 font-bold truncate w-full text-center">{symbol}</span>
+                <span className="text-[10px] sm:text-sm font-mono font-bold">{(data.price || 0).toFixed(symbol.includes('JPY') || symbol.includes('BTC') || symbol.includes('US100') ? 2 : 4)}</span>
+                <span className={`text-[8px] sm:text-[10px] font-bold flex items-center gap-0.5 ${data.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {data.change >= 0 ? <TrendingUp size={8} /> : <TrendingDown size={8} />}
                   {(Math.abs(data.change || 0)).toFixed(2)}%
                 </span>
               </motion.div>
@@ -851,7 +820,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
 
           <TradingSessions userProfile={userProfile} addToast={addToast} />
 
-          <div className="h-[500px] glass-card overflow-hidden relative">
+          <div className="h-[400px] lg:h-[600px] glass-card overflow-hidden relative">
             <LightweightChart 
               symbol={pair} 
               entry={activeSignals.find(s => s.pair === pair && s.status === 'active')?.entry}
@@ -862,7 +831,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
                 activeSignals.find(s => s.pair === pair && s.status === 'active')?.tp3,
                 activeSignals.find(s => s.pair === pair && s.status === 'active')?.tp4,
               ].filter((v): v is number => v !== undefined)}
-              height={500}
+              height={typeof window !== 'undefined' && window.innerWidth < 1024 ? 400 : 600}
             />
           </div>
 
@@ -895,7 +864,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
                           <div>
                             <h3 className="font-bold text-lg">{signal.pair} <span className="text-sm text-white/40 font-normal">({signal.timeframe})</span></h3>
                             <div className="flex items-center gap-2">
-                              <p className="text-xs text-gold/70">{signal.ai_bot} • {signal.strategy}</p>
+                              <p className="text-xs text-gold/70">{getBotCharacter(signal.ai_bot, userProfile.theme)} • {signal.strategy}</p>
                               {signal.market_structure && (
                                 <span className="px-1.5 py-0.5 rounded bg-gold/20 text-gold text-[8px] font-bold uppercase tracking-wider">
                                   {signal.market_structure}
@@ -910,30 +879,30 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 lg:gap-4 mb-4">
-                        <div className="bg-white/5 rounded-lg p-2 text-center">
-                          <p className="text-[10px] text-white/40 uppercase">Entry</p>
-                          <p className="font-mono font-bold text-gold text-xs sm:text-sm">{signal.entry}</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-3 lg:gap-4 mb-4">
+                        <div className="bg-white/5 rounded-lg p-1.5 sm:p-2 text-center min-w-0">
+                          <p className="text-[7px] sm:text-[10px] text-white/40 uppercase truncate">Entry</p>
+                          <p className="font-mono font-bold text-gold text-[9px] sm:text-sm truncate">{signal.entry}</p>
                         </div>
-                        <div className="bg-white/5 rounded-lg p-2 text-center">
-                          <p className="text-[10px] text-white/40 uppercase">Stop Loss</p>
-                          <p className="font-mono font-bold text-red-400 text-xs sm:text-sm">{signal.stop_loss}</p>
+                        <div className="bg-white/5 rounded-lg p-1.5 sm:p-2 text-center min-w-0">
+                          <p className="text-[7px] sm:text-[10px] text-white/40 uppercase truncate">Stop Loss</p>
+                          <p className="font-mono font-bold text-red-400 text-[9px] sm:text-sm truncate">{signal.stop_loss}</p>
                         </div>
-                        <div className="bg-white/5 rounded-lg p-2 text-center">
-                          <p className="text-[10px] text-white/40 uppercase">TP1</p>
-                          <p className="font-mono font-bold text-emerald-400 text-xs sm:text-sm">{signal.tp1}</p>
+                        <div className="bg-white/5 rounded-lg p-1.5 sm:p-2 text-center min-w-0">
+                          <p className="text-[7px] sm:text-[10px] text-white/40 uppercase truncate">TP1</p>
+                          <p className="font-mono font-bold text-emerald-400 text-[9px] sm:text-sm truncate">{signal.tp1}</p>
                         </div>
-                        <div className="bg-white/5 rounded-lg p-2 text-center">
-                          <p className="text-[10px] text-white/40 uppercase">TP2</p>
-                          <p className="font-mono font-bold text-emerald-400 text-xs sm:text-sm">{signal.tp2}</p>
+                        <div className="bg-white/5 rounded-lg p-1.5 sm:p-2 text-center min-w-0">
+                          <p className="text-[7px] sm:text-[10px] text-white/40 uppercase truncate">TP2</p>
+                          <p className="font-mono font-bold text-emerald-400 text-[9px] sm:text-sm truncate">{signal.tp2}</p>
                         </div>
-                        <div className="bg-white/5 rounded-lg p-2 text-center">
-                          <p className="text-[10px] text-white/40 uppercase">TP3</p>
-                          <p className="font-mono font-bold text-emerald-400 text-xs sm:text-sm">{signal.tp3}</p>
+                        <div className="bg-white/5 rounded-lg p-1.5 sm:p-2 text-center min-w-0">
+                          <p className="text-[7px] sm:text-[10px] text-white/40 uppercase truncate">TP3</p>
+                          <p className="font-mono font-bold text-emerald-400 text-[9px] sm:text-sm truncate">{signal.tp3}</p>
                         </div>
-                        <div className="bg-white/5 rounded-lg p-2 text-center border border-gold/20">
-                          <p className="text-[10px] text-gold uppercase font-bold">TP4</p>
-                          <p className="font-mono font-bold text-gold text-xs sm:text-sm">{signal.tp4}</p>
+                        <div className="bg-white/5 rounded-lg p-1.5 sm:p-2 text-center min-w-0 border border-gold/20">
+                          <p className="text-[7px] sm:text-gold uppercase font-bold truncate">TP4</p>
+                          <p className="font-mono font-bold text-gold text-[9px] sm:text-sm truncate">{signal.tp4}</p>
                         </div>
                       </div>
 
@@ -1003,22 +972,22 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
-                        <div className="bg-white/5 rounded p-1.5 text-center">
-                          <p className="text-[8px] text-white/40 uppercase">TP1</p>
-                          <p className="text-[10px] font-mono font-bold text-emerald-400">{trade.tp1}</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 mb-4">
+                        <div className="bg-white/5 rounded p-1 sm:p-1.5 text-center min-w-0">
+                          <p className="text-[7px] sm:text-[8px] text-white/40 uppercase truncate">TP1</p>
+                          <p className="text-[8px] sm:text-[10px] font-mono font-bold text-emerald-400 truncate">{trade.tp1}</p>
                         </div>
-                        <div className="bg-white/5 rounded p-1.5 text-center">
-                          <p className="text-[8px] text-white/40 uppercase">TP2</p>
-                          <p className="text-[10px] font-mono font-bold text-emerald-400">{trade.tp2}</p>
+                        <div className="bg-white/5 rounded p-1 sm:p-1.5 text-center min-w-0">
+                          <p className="text-[7px] sm:text-[8px] text-white/40 uppercase truncate">TP2</p>
+                          <p className="text-[8px] sm:text-[10px] font-mono font-bold text-emerald-400 truncate">{trade.tp2}</p>
                         </div>
-                        <div className="bg-white/5 rounded p-1.5 text-center">
-                          <p className="text-[8px] text-white/40 uppercase">TP3</p>
-                          <p className="text-[10px] font-mono font-bold text-emerald-400">{trade.tp3}</p>
+                        <div className="bg-white/5 rounded p-1 sm:p-1.5 text-center min-w-0">
+                          <p className="text-[7px] sm:text-[8px] text-white/40 uppercase truncate">TP3</p>
+                          <p className="text-[8px] sm:text-[10px] font-mono font-bold text-emerald-400 truncate">{trade.tp3}</p>
                         </div>
-                        <div className="bg-white/5 rounded p-1.5 text-center border border-gold/20">
-                          <p className="text-[8px] text-gold uppercase font-bold">TP4</p>
-                          <p className="text-[10px] font-mono font-bold text-gold">{trade.tp4}</p>
+                        <div className="bg-white/5 rounded p-1 sm:p-1.5 text-center min-w-0 border border-gold/20">
+                          <p className="text-[7px] sm:text-gold uppercase font-bold truncate">TP4</p>
+                          <p className="text-[8px] sm:text-[10px] font-mono font-bold text-gold truncate">{trade.tp4}</p>
                         </div>
                       </div>
 
@@ -1072,6 +1041,8 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
         </div>
 
         <div className="space-y-8">
+          <EconomicCalendar compact={true} />
+          
           <div className="glass-card p-6 space-y-6 bg-gradient-to-b from-white/5 to-gold/5 border-gold/20">
             <h2 className="text-xl font-display font-bold flex items-center gap-2">
               <Sparkles className="text-gold" size={20} /> Signal Generator
@@ -1167,7 +1138,7 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
                         <Bot size={16} />
                       </div>
                       <div className="text-left">
-                        <p className="text-sm font-bold">{bot.name}</p>
+                        <p className="text-sm font-bold">{getBotCharacter(bot.name, userProfile.theme)}</p>
                         <p className="text-[10px] opacity-60">{bot.strategy}</p>
                       </div>
                     </button>
@@ -1260,16 +1231,16 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
             <h3 className="font-display font-bold text-white/70 flex items-center gap-2">
               <Shield className="text-gold" size={18} /> Risk Status
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Daily P/L</p>
-                <p className={`text-lg font-bold font-display ${userProfile.daily_pnl && userProfile.daily_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 min-w-0">
+                <p className="text-[8px] sm:text-[10px] text-white/40 uppercase tracking-widest mb-1 truncate">Daily P/L</p>
+                <p className={`text-base sm:text-lg font-bold font-display truncate ${userProfile.daily_pnl && userProfile.daily_pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                   {userProfile.daily_pnl && userProfile.daily_pnl >= 0 ? '+' : ''}${Math.abs(userProfile.daily_pnl || 0).toFixed(2)}
                 </p>
               </div>
-              <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Open Trades</p>
-                <p className="text-lg font-bold font-display text-white">
+              <div className="p-3 rounded-xl bg-white/5 border border-white/10 min-w-0">
+                <p className="text-[8px] sm:text-[10px] text-white/40 uppercase tracking-widest mb-1 truncate">Open Trades</p>
+                <p className="text-base sm:text-lg font-bold font-display text-white truncate">
                   {activeTrades.length} / {userProfile.risk_settings?.max_open_positions || 5}
                 </p>
               </div>
@@ -1297,30 +1268,30 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
               <ShieldAlert className="text-gold" size={18} /> Sentinel Risk Sentinel
             </h3>
             <div className="space-y-4 relative z-10">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] text-white/40 uppercase tracking-widest">Account Balance ($)</label>
-                  <input type="number" defaultValue="1000" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-gold/50 outline-none transition-all" />
+                  <label className="text-[8px] sm:text-[10px] text-white/40 uppercase tracking-widest truncate block">Account Balance ($)</label>
+                  <input type="number" defaultValue="1000" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs sm:text-sm focus:border-gold/50 outline-none transition-all" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] text-white/40 uppercase tracking-widest">Risk Per Trade (%)</label>
-                  <input type="number" defaultValue="1" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-gold/50 outline-none transition-all" />
+                  <label className="text-[8px] sm:text-[10px] text-white/40 uppercase tracking-widest truncate block">Risk Per Trade (%)</label>
+                  <input type="number" defaultValue="1" className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs sm:text-sm focus:border-gold/50 outline-none transition-all" />
                 </div>
               </div>
               
-              <div className="p-4 rounded-xl bg-gold/5 border border-gold/20 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/40 uppercase font-bold">Max Risk Amount</span>
-                  <span className="text-sm font-bold text-gold">$10.00</span>
+              <div className="p-3 sm:p-4 rounded-xl bg-gold/5 border border-gold/20 space-y-2 sm:space-y-3">
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-[8px] sm:text-[10px] text-white/40 uppercase font-bold truncate">Max Risk Amount</span>
+                  <span className="text-xs sm:text-sm font-bold text-gold shrink-0">$10.00</span>
                 </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-white/40 uppercase font-bold">Recommended Lot</span>
-                  <span className="text-sm font-bold text-emerald-400">0.05</span>
+                <div className="flex justify-between items-center gap-2">
+                  <span className="text-[8px] sm:text-[10px] text-white/40 uppercase font-bold truncate">Recommended Lot</span>
+                  <span className="text-xs sm:text-sm font-bold text-emerald-400 shrink-0">0.05</span>
                 </div>
                 <div className="pt-2 border-t border-gold/10">
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-white/40 uppercase font-bold">Drawdown Limit</span>
-                    <span className="text-xs font-bold text-red-400">$50.00 (5%)</span>
+                  <div className="flex justify-between items-center gap-2">
+                    <span className="text-[8px] sm:text-[10px] text-white/40 uppercase font-bold truncate">Drawdown Limit</span>
+                    <span className="text-[10px] sm:text-xs font-bold text-red-400 shrink-0">$50.00 (5%)</span>
                   </div>
                 </div>
               </div>
@@ -1371,6 +1342,93 @@ export default function Dashboard({ userProfile, addToast }: DashboardProps) {
             </div>
           </div>
         </div>
+      </div>
+    )}
+    {showThemeSelector && (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={() => setShowThemeSelector(false)}
+          className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        />
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 20 }}
+          className="relative w-full max-w-2xl glass-card p-6 lg:p-8 border-gold/20 bg-black/90 max-h-[90vh] overflow-y-auto"
+        >
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-2xl font-display font-bold gold-gradient flex items-center gap-3">
+                <Palette className="text-gold" /> Choose Your Aura
+              </h2>
+              <p className="text-white/40 text-sm">Select a theme to transform your interface and AI Bot characters.</p>
+            </div>
+            <button 
+              onClick={() => setShowThemeSelector(false)}
+              className="p-2 hover:bg-white/5 rounded-full transition-all text-white/40 hover:text-white"
+            >
+              <X size={24} />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {THEMES.map((theme) => (
+              <button
+                key={theme.id}
+                onClick={() => handleThemeChange(theme.id)}
+                className={`p-4 rounded-2xl border transition-all text-left group relative overflow-hidden ${
+                  (userProfile.theme || 'cosmic') === theme.id 
+                    ? 'bg-gold/10 border-gold/50' 
+                    : 'bg-white/5 border-white/5 hover:border-white/20'
+                }`}
+              >
+                <div className="relative z-10 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className={`font-bold ${ (userProfile.theme || 'cosmic') === theme.id ? 'text-gold' : 'text-white' }`}>
+                      {theme.name}
+                    </h3>
+                    { (userProfile.theme || 'cosmic') === theme.id && (
+                      <Sparkles size={14} className="text-gold animate-pulse" />
+                    )}
+                  </div>
+                  <p className="text-xs text-white/40 leading-relaxed">{theme.description}</p>
+                  
+                  <div className="flex gap-1 pt-2">
+                    {Object.values(theme.colors).map((color, i) => (
+                      <div 
+                        key={i} 
+                        className="w-4 h-4 rounded-full border border-white/10" 
+                        style={{ backgroundColor: color }} 
+                      />
+                    ))}
+                  </div>
+                </div>
+                
+                {/* Preview Characters */}
+                <div className="mt-4 pt-4 border-t border-white/5">
+                  <p className="text-[8px] font-bold uppercase tracking-widest text-white/20 mb-2">Bot Avatars</p>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(theme.botCharacters).slice(0, 3).map(([bot, char]) => (
+                      <span key={bot} className="text-[8px] px-1.5 py-0.5 rounded bg-white/5 text-white/40 border border-white/5">
+                        {char}
+                      </span>
+                    ))}
+                    <span className="text-[8px] text-white/20">...and more</span>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-8 p-4 rounded-xl bg-gold/5 border border-gold/20 text-center">
+            <p className="text-[10px] text-gold font-bold uppercase tracking-widest">
+              Heavenly Order Theme includes motivational scriptures after every trade.
+            </p>
+          </div>
+        </motion.div>
       </div>
     )}
     {showTutorial && <Tutorial onClose={() => setShowTutorial(false)} />}

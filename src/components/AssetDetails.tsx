@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { db } from '../firebase';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
-import { Signal, BOTS } from '../types';
+import { Signal, BOTS, UserProfile } from '../types';
+import { getBotCharacter } from '../lib/themeUtils';
 import { motion } from 'motion/react';
 import LightweightChart from './LightweightChart';
 import { TrendingUp, TrendingDown, Target, BarChart3, Clock, Bot, Sparkles, ArrowLeft } from 'lucide-react';
@@ -9,9 +10,10 @@ import { TrendingUp, TrendingDown, Target, BarChart3, Clock, Bot, Sparkles, Arro
 interface AssetDetailsProps {
   pair: string;
   onBack: () => void;
+  userProfile: UserProfile;
 }
 
-export default function AssetDetails({ pair, onBack }: AssetDetailsProps) {
+export default function AssetDetails({ pair, onBack, userProfile }: AssetDetailsProps) {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -74,7 +76,7 @@ export default function AssetDetails({ pair, onBack }: AssetDetailsProps) {
                   className="p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between"
                 >
                   <div>
-                    <p className="font-bold text-sm">{bot.name}</p>
+                    <p className="font-bold text-sm">{getBotCharacter(bot.name, userProfile.theme)}</p>
                     <p className="text-[10px] text-white/40 uppercase tracking-widest">{bot.totalSignals} Signals</p>
                   </div>
                   <div className="text-right">
@@ -101,7 +103,7 @@ export default function AssetDetails({ pair, onBack }: AssetDetailsProps) {
                 signals.map((signal) => (
                   <div key={signal.id} className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gold">{signal.ai_bot}</span>
+                      <span className="text-xs font-bold text-gold">{getBotCharacter(signal.ai_bot, userProfile.theme)}</span>
                       <span className={`text-[10px] font-bold uppercase ${signal.status === 'tp_hit' ? 'text-emerald-400' : signal.status === 'sl_hit' ? 'text-red-400' : 'text-white/40'}`}>
                         {signal.status.replace('_', ' ')}
                       </span>

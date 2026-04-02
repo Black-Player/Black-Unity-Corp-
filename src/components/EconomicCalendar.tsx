@@ -4,7 +4,11 @@ import { Calendar, AlertTriangle, Info, Clock, Globe, Shield, TrendingUp, Trendi
 import { getEconomicEvents } from '../services/aiService';
 import { EconomicEvent } from '../types';
 
-export const EconomicCalendar: React.FC = () => {
+interface EconomicCalendarProps {
+  compact?: boolean;
+}
+
+export const EconomicCalendar: React.FC<EconomicCalendarProps> = ({ compact = false }) => {
   const [events, setEvents] = useState<EconomicEvent[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -12,7 +16,11 @@ export const EconomicCalendar: React.FC = () => {
     const fetchEvents = async () => {
       try {
         const data = await getEconomicEvents();
-        setEvents(data);
+        // If compact, only show high impact or first 3
+        const filteredData = compact 
+          ? data.filter(e => e.impact === 'high').slice(0, 3) 
+          : data;
+        setEvents(filteredData.length > 0 ? filteredData : data.slice(0, 2));
       } catch (error) {
         console.error("Failed to fetch economic events", error);
       } finally {
@@ -21,7 +29,7 @@ export const EconomicCalendar: React.FC = () => {
     };
 
     fetchEvents();
-  }, []);
+  }, [compact]);
 
   const getImpactColor = (impact: string) => {
     switch (impact) {
@@ -33,23 +41,37 @@ export const EconomicCalendar: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-500/20 rounded-lg border border-blue-500/30">
-            <Calendar className="w-5 h-5 text-blue-400" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-white tracking-tight">Economic Calendar</h2>
-            <p className="text-sm text-blue-200/60">AI-analyzed high-impact market events</p>
+    <div className={compact ? "space-y-4" : "space-y-6"}>
+      {!compact && (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-500/20 rounded-lg border border-blue-500/30">
+              <Calendar className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white tracking-tight">Economic Calendar</h2>
+              <p className="text-sm text-blue-200/60">AI-analyzed high-impact market events</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {compact && (
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-gold" />
+            <h3 className="text-sm font-bold text-white uppercase tracking-widest">Economic Oracle</h3>
+          </div>
+          <div className="flex items-center gap-1 px-2 py-0.5 bg-gold/10 border border-gold/20 rounded text-[10px] font-bold text-gold">
+            High Impact
+          </div>
+        </div>
+      )}
 
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 space-y-4">
-          <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
-          <p className="text-blue-200/60 animate-pulse">Consulting the cosmic timeline...</p>
+        <div className={`flex flex-col items-center justify-center ${compact ? 'py-10' : 'py-20'} space-y-4`}>
+          <div className="w-8 h-8 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
+          <p className="text-xs text-blue-200/60 animate-pulse">Consulting the cosmic timeline...</p>
         </div>
       ) : events.length > 0 ? (
         <div className="grid gap-4">
@@ -59,50 +81,52 @@ export const EconomicCalendar: React.FC = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
-              className="group relative overflow-hidden bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-5 hover:bg-white/10 transition-all duration-300"
+              className={`group relative overflow-hidden bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl ${compact ? 'p-4' : 'p-5'} hover:bg-white/10 transition-all duration-300`}
             >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-start gap-4">
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest border ${getImpactColor(event.impact)}`}>
-                    {event.impact} Impact
-                  </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-4">
                   <div className="space-y-1">
-                    <h3 className="text-lg font-semibold text-white group-hover:text-blue-400 transition-colors">
+                    <div className={`inline-block px-2 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest border ${getImpactColor(event.impact)} mb-1`}>
+                      {event.impact}
+                    </div>
+                    <h3 className={`${compact ? 'text-sm' : 'text-lg'} font-semibold text-white group-hover:text-blue-400 transition-colors leading-tight`}>
                       {event.title}
                     </h3>
-                    <div className="flex items-center gap-4 text-xs text-blue-200/40">
+                    <div className="flex items-center gap-3 text-[10px] text-blue-200/40">
                       <span className="flex items-center gap-1">
                         <Globe className="w-3 h-3" />
                         {event.currency}
                       </span>
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
-                        {new Date(event.time).toLocaleString()}
+                        {new Date(event.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="mt-4 p-4 bg-blue-500/5 rounded-xl border border-blue-500/10 space-y-3">
-                <div className="flex items-start gap-3">
-                  <Info className="w-4 h-4 text-blue-400 mt-0.5" />
-                  <p className="text-sm text-blue-100/80 leading-relaxed italic">
-                    "{event.ai_analysis}"
-                  </p>
-                </div>
-                <div className="pt-3 border-t border-blue-500/10 flex items-center gap-2">
-                  <Shield className="w-3 h-3 text-emerald-400" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Strategy: {event.impact === 'high' ? 'Wait for Volatility' : 'Mean Reversion'}</span>
+                <div className={`${compact ? 'p-3' : 'p-4'} bg-blue-500/5 rounded-xl border border-blue-500/10 space-y-2`}>
+                  <div className="flex items-start gap-2">
+                    <Info className="w-3 h-3 text-blue-400 mt-0.5 shrink-0" />
+                    <p className={`${compact ? 'text-[10px]' : 'text-sm'} text-blue-100/80 leading-relaxed italic`}>
+                      {event.ai_analysis}
+                    </p>
+                  </div>
+                  {!compact && (
+                    <div className="pt-3 border-t border-blue-500/10 flex items-center gap-2">
+                      <Shield className="w-3 h-3 text-emerald-400" />
+                      <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-400">Strategy: {event.impact === 'high' ? 'Wait for Volatility' : 'Mean Reversion'}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
           ))}
         </div>
       ) : (
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-10 text-center">
-          <AlertTriangle className="w-10 h-10 text-yellow-400 mx-auto mb-4 opacity-50" />
-          <p className="text-blue-200/60">No high-impact events detected in the immediate future.</p>
+        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 text-center">
+          <AlertTriangle className="w-6 h-6 text-yellow-400 mx-auto mb-2 opacity-50" />
+          <p className="text-xs text-blue-200/60">No high-impact events detected.</p>
         </div>
       )}
     </div>

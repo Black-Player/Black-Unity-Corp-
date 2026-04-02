@@ -19,13 +19,15 @@ export default function LightweightChart({ symbol, entry, sl, tps, height = 400 
   const dataRef = useRef<any[]>([]);
   const [showIndicators, setShowIndicators] = useState(true);
   const [timeframe, setTimeframe] = useState(60); // Default 1m
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const TIMEFRAMES = [
-    { label: '1M', value: 60 },
-    { label: '5M', value: 300 },
-    { label: '15M', value: 900 },
-    { label: '1H', value: 3600 },
-    { label: '4H', value: 14400 },
+    { label: 'M1', value: 60 },
+    { label: 'M5', value: 300 },
+    { label: 'M15', value: 900 },
+    { label: 'H1', value: 3600 },
+    { label: 'H4', value: 14400 },
   ];
 
   useEffect(() => {
@@ -69,7 +71,10 @@ export default function LightweightChart({ symbol, entry, sl, tps, height = 400 
 
     const handleResize = () => {
       if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
+        chart.applyOptions({ 
+          width: chartContainerRef.current.clientWidth,
+          height: chartContainerRef.current.clientHeight 
+        });
       }
     };
 
@@ -88,9 +93,39 @@ export default function LightweightChart({ symbol, entry, sl, tps, height = 400 
     dataRef.current = [];
     seriesRef.current.setData([]);
     smaRef.current.setData([]);
+    setIsLoading(true);
+    setError(null);
 
     // Update Deriv subscription for the new timeframe
     derivService.changeTimeframe(symbol, timeframe);
+
+    // Fetch historical data
+    const fetchHistory = async () => {
+      try {
+        const timeframeLabel = TIMEFRAMES.find(tf => tf.value === timeframe)?.label || 'M1';
+        const history = await derivService.getHistory(symbol, timeframeLabel, 500);
+        if (seriesRef.current && smaRef.current) {
+          seriesRef.current.setData(history);
+          dataRef.current = history;
+          
+          // Calculate SMA for history
+          const smaData = [];
+          for (let i = 19; i < history.length; i++) {
+            const slice = history.slice(i - 19, i + 1);
+            const sum = slice.reduce((a, b) => a + b.close, 0);
+            smaData.push({ time: history[i].time, value: sum / 20 });
+          }
+          smaRef.current.setData(smaData);
+        }
+        setIsLoading(false);
+      } catch (err) {
+        console.error("Failed to fetch history:", err);
+        setError(err instanceof Error ? err.message : "Failed to fetch market data");
+        setIsLoading(false);
+      }
+    };
+
+    fetchHistory();
 
     const handleCandle = (candle: DerivCandle) => {
       if (candle.symbol === symbol && seriesRef.current) {
@@ -193,7 +228,7 @@ export default function LightweightChart({ symbol, entry, sl, tps, height = 400 
         }
       });
     }
-  }, [entry, sl, tps, symbol]);
+  }, [entry, sl, tps, symbol, timeframe]);
 
   useEffect(() => {
     if (smaRef.current) {
@@ -204,6 +239,29 @@ export default function LightweightChart({ symbol, entry, sl, tps, height = 400 
   return (
     <div className="w-full h-full relative">
       <div ref={chartContainerRef} className="w-full h-full" />
+      
+      {isLoading && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm z-10">
+          <Activity className="text-gold animate-pulse mb-2" size={32} />
+          <p className="text-xs text-gold/60 font-mono uppercase tracking-widest">Synchronizing Oracle Vision...</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 backdrop-blur-sm z-10 p-6 text-center">
+          <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center mb-4">
+            <EyeOff className="text-red-500" size={24} />
+          </div>
+          <h4 className="text-white font-display font-bold mb-2">Oracle Feed Interrupted</h4>
+          <p className="text-xs text-white/40 mb-4 max-w-xs">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all"
+          >
+            Reconnect Feed
+          </button>
+        </div>
+      )}
       <div className="absolute top-4 left-4 pointer-events-none">
         <h3 className="text-xl font-display font-bold gold-gradient uppercase tracking-wider">{symbol.replace('_', ' ')}</h3>
         <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Oracle Vision Feed • Lightweight Engine</p>

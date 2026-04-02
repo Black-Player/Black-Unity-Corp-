@@ -11,13 +11,42 @@ interface Session {
   start: number; // UTC hour
   end: number;   // UTC hour
   color: string;
+  pairs: string[];
 }
 
 const SESSIONS: Session[] = [
-  { name: 'Sydney', city: 'Sydney', start: 22, end: 7, color: 'bg-emerald-400' },
-  { name: 'Tokyo', city: 'Tokyo', start: 0, end: 9, color: 'bg-indigo-400' },
-  { name: 'London', city: 'London', start: 8, end: 17, color: 'bg-gold' },
-  { name: 'New York', city: 'New York', start: 13, end: 22, color: 'bg-red-400' },
+  { 
+    name: 'Sydney', 
+    city: 'Sydney', 
+    start: 22, 
+    end: 7, 
+    color: 'bg-emerald-400',
+    pairs: ['frxAUDUSD', 'frxNZDUSD', 'R_100', 'BOOM500'] 
+  },
+  { 
+    name: 'Tokyo', 
+    city: 'Tokyo', 
+    start: 0, 
+    end: 9, 
+    color: 'bg-indigo-400',
+    pairs: ['frxUSDJPY', 'frxAUDUSD', 'R_75', 'CRASH500']
+  },
+  { 
+    name: 'London', 
+    city: 'London', 
+    start: 8, 
+    end: 17, 
+    color: 'bg-gold',
+    pairs: ['frxEURUSD', 'frxGBPUSD', 'frxXAUUSD', '1HZ100V']
+  },
+  { 
+    name: 'New York', 
+    city: 'New York', 
+    start: 13, 
+    end: 22, 
+    color: 'bg-red-400',
+    pairs: ['frxUSDJPY', 'frxUSDCAD', 'OTC_NDX', 'cryBTCUSD']
+  },
 ];
 
 interface TradingSessionsProps {
@@ -118,6 +147,17 @@ export default function TradingSessions({ userProfile, addToast }: TradingSessio
                 <div>
                   <h3 className="text-xl font-display font-bold">{session.name}</h3>
                   <p className="text-xs text-white/40">{session.city}</p>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-[8px] font-bold uppercase tracking-widest text-white/20">Oracle Recommendations</p>
+                  <div className="flex flex-wrap gap-1">
+                    {session.pairs.map(p => (
+                      <span key={p} className="px-1.5 py-0.5 rounded bg-white/5 border border-white/5 text-[8px] font-mono text-gold/60">
+                        {p.replace('frx', '').replace('cry', '').replace('OTC_', '')}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
                 <div className="pt-4 border-t border-white/5 flex items-center justify-between text-[10px] font-bold uppercase tracking-widest">

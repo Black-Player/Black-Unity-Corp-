@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from './firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, increment, addDoc, collection } from 'firebase/firestore';
 import { Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, EconomicEvent, PriceAlert, MasterStrategy, Tribe, Challenge, MarketplaceItem, MarketNews, UserProgress, UserProfile } from './types';
 import Auth from './components/Auth';
 import Sidebar from './components/Sidebar';
@@ -9,6 +9,12 @@ import Dashboard from './components/Dashboard';
 import History from './components/History';
 import Analytics from './components/Analytics';
 import Leaderboard from './components/Leaderboard';
+import Social from './components/Social';
+import Profile from './components/Profile';
+import { Tribes } from './components/Tribes';
+import { Challenges } from './components/Challenges';
+import { Marketplace } from './components/Marketplace';
+import { Notifications } from './components/Notifications';
 import { BotForge } from './components/BotForge';
 import { Academy } from './components/Academy';
 import { Portfolio } from './components/Portfolio';
@@ -17,18 +23,10 @@ import NotificationCenter from './components/NotificationCenter';
 import { EconomicCalendar } from './components/EconomicCalendar';
 import StrategyBuilder from './components/StrategyBuilder';
 import AlertsManager from './components/AlertsManager';
-import SecuritySettings from './components/SecuritySettings';
 import GlobalSearch from './components/GlobalSearch';
 import TradingSessions from './components/TradingSessions';
 import AdvancedChart from './components/AdvancedChart';
-import { Tribes } from './components/Tribes';
-import { Challenges } from './components/Challenges';
 import Backtester from './components/Backtester';
-import BotGallery from './components/BotGallery';
-import { Marketplace } from './components/Marketplace';
-import BotCustomizer from './components/BotCustomizer';
-import LiveTradingRoom from './components/LiveTradingRoom';
-import PerformanceReports from './components/PerformanceReports';
 import Council from './components/Council';
 import Archive from './components/Archive';
 import SignalStream from './components/SignalStream';
@@ -37,14 +35,19 @@ import Arena from './components/Arena';
 import ZionAI from './components/ZionAI';
 import Abyss from './components/Abyss';
 import CosmicFeed from './components/CosmicFeed';
-import ChartAnalyzer from './components/ChartAnalyzer';
+import SignalOracle from './components/SignalOracle';
+import OracleEye from './components/OracleEye';
+import Gallery from './components/Gallery';
+import Alchemist from './components/Alchemist';
+import Nexus from './components/Nexus';
+import Vault from './components/Vault';
 import Chat from './components/Chat';
 import Settings from './components/Settings';
 import Subscription from './components/Subscription';
 import Diagnostics from './components/Diagnostics';
 import ErrorBoundary from './components/ErrorBoundary';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, Hammer, Book, Zap, Video, Layers, Layout, Settings2 } from 'lucide-react';
+import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, Hammer, Book, Zap, Video, Layers, Layout, Settings2, Target, ShoppingBag, Ghost } from 'lucide-react';
 
 interface Toast {
   id: string;
@@ -53,13 +56,22 @@ interface Toast {
 }
 
 import { useMarketPrices } from './hooks/useMarketPrices';
+import { useTradeMonitor } from './hooks/useTradeMonitor';
+import { MOTIVATIONAL_SCRIPTURES } from './constants/themes';
+
+import { derivService } from './services/derivService';
 
 export default function App() {
-  const marketPrices = useMarketPrices();
+
+  useEffect(() => {
+    derivService.connect();
+  }, []);
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activePage, setActivePage] = useState('dashboard');
+  const [targetUserId, setTargetUserId] = useState<string | undefined>(undefined);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -68,14 +80,15 @@ export default function App() {
     (window as any).openSearch = () => setIsSearchOpen(true);
   }, []);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const lastResetRef = useRef<string | null>(null);
 
-  const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const addToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Math.random().toString(36).substring(7);
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 5000);
-  };
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -90,19 +103,20 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
+      setError(null);
       const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
         if (snapshot.exists()) {
           setUserProfile(snapshot.data() as UserProfile);
           setLoading(false);
         } else {
-          // If profile doesn't exist yet, we might still be creating it
-          // or there was an error. We should probably wait a bit or handle it.
           console.warn('User profile not found in Firestore');
-          // Don't set loading to false yet, or handle the null profile case in UI
+          setError('User profile not found. Please ensure you are registered correctly.');
           setLoading(false);
         }
       }, (error) => {
+        console.error('Firestore snapshot error:', error);
         handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
+        setError('Could not reach the database. Please check your connection or configuration.');
         setLoading(false);
       });
       return () => unsubscribe();
@@ -110,19 +124,86 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (user && userProfile) {
+    if (user && userProfile?.last_reset_date) {
       const today = new Date().toDateString();
-      const lastReset = new Date(userProfile.last_reset_date).toDateString();
+      const lastResetDate = new Date(userProfile.last_reset_date);
       
-      if (today !== lastReset) {
-        const userRef = doc(db, 'users', user.uid);
-        updateDoc(userRef, {
-          signals_used_today: 0,
-          last_reset_date: new Date().toISOString()
-        }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`));
+      if (!isNaN(lastResetDate.getTime())) {
+        const lastReset = lastResetDate.toDateString();
+        
+        if (today !== lastReset && lastResetRef.current !== today) {
+          lastResetRef.current = today;
+          const userRef = doc(db, 'users', user.uid);
+          updateDoc(userRef, {
+            signals_used_today: 0,
+            last_reset_date: new Date().toISOString()
+          }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`));
+        }
       }
     }
-  }, [user, userProfile]);
+  }, [user?.uid, userProfile?.last_reset_date]);
+
+  useEffect(() => {
+    if (userProfile?.theme) {
+      document.documentElement.setAttribute('data-theme', userProfile.theme);
+    } else {
+      document.documentElement.setAttribute('data-theme', 'cosmic');
+    }
+  }, [userProfile?.theme]);
+
+  const handleCloseTrade = useCallback(async (trade: Trade, reason: string = 'Manual Close') => {
+    if (!userProfile) return;
+    try {
+      const finalPnl = trade.pnl || 0;
+      const finalPnlPercentage = trade.pnl_percentage || 0;
+      const exitPrice = trade.exit_price || trade.entry_price;
+
+      await updateDoc(doc(db, 'users', userProfile.uid, 'trades', trade.id), {
+        status: 'closed',
+        closed_at: new Date().toISOString(),
+        pnl: finalPnl,
+        pnl_percentage: finalPnlPercentage,
+        exit_price: exitPrice,
+        close_reason: reason
+      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}/trades`));
+      
+      // Update User Stats
+      const userRef = doc(db, 'users', userProfile.uid);
+      const isWin = finalPnl > 0;
+      
+      const balanceField = trade.account_type === 'live' ? 'live_balance' : 'demo_balance';
+      
+      await updateDoc(userRef, {
+        [balanceField]: increment(finalPnl),
+        'stats.total_trades': increment(1),
+        'stats.wins': increment(isWin ? 1 : 0),
+        'stats.losses': increment(isWin ? 0 : 1),
+        total_pnl: increment(finalPnl)
+      }).catch(() => {});
+
+      // Heavenly Order Motivation
+      if (userProfile.theme === 'heavenly') {
+        const scripture = MOTIVATIONAL_SCRIPTURES[Math.floor(Math.random() * MOTIVATIONAL_SCRIPTURES.length)];
+        addToast(scripture, 'info');
+      }
+
+      // Create notification
+      await addDoc(collection(db, 'users', userProfile.uid, 'notifications'), {
+        title: `Trade Closed: ${reason}`,
+        message: `${(trade.account_type || 'demo').toUpperCase()} trade for ${trade.pair} closed with ${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)} P/L. Reason: ${reason}`,
+        type: 'trade',
+        read: false,
+        created_at: new Date().toISOString()
+      });
+
+      addToast(`Trade closed: ${trade.pair} (${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)}) - ${reason}`, trade.pnl >= 0 ? 'success' : 'error');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to close trade.', 'error');
+    }
+  }, [userProfile?.uid, userProfile?.theme, addToast]);
+
+  useTradeMonitor(userProfile || {} as UserProfile, addToast, handleCloseTrade);
 
   if (loading) {
     return (
@@ -145,29 +226,41 @@ export default function App() {
   const renderPage = () => {
     if (!userProfile) return null;
     
-    const props = { userProfile, addToast, setActivePage };
+    const props = { userProfile, addToast, setActivePage, handleCloseTrade };
     
     switch (activePage) {
       case 'dashboard':
         return <Dashboard {...props} />;
       case 'feed':
         return <CosmicFeed userProfile={userProfile} addToast={addToast} />;
+      case 'leaderboard':
+        return <Leaderboard setTargetUserId={setTargetUserId} setActivePage={setActivePage} />;
+      case 'social':
+        return <Social userProfile={userProfile} setTargetUserId={setTargetUserId} setActivePage={setActivePage} />;
+      case 'profile':
+        return <Profile userProfile={userProfile} targetUserId={targetUserId} addToast={addToast} />;
+      case 'tribes':
+        return <Tribes userProfile={userProfile} addToast={addToast} />;
+      case 'challenges':
+        return <Challenges userProfile={userProfile} addToast={addToast} />;
+      case 'notifications':
+        return <Notifications userProfile={userProfile} addToast={addToast} setTargetUserId={setTargetUserId} setActivePage={setActivePage} />;
       case 'zion':
         return <ZionAI {...props} />;
       case 'chat':
         return <Chat {...props} />;
       case 'abyss':
         return <Abyss {...props} />;
-      case 'chart-vision':
-        return <ChartAnalyzer {...props} />;
+      case 'eye':
+        return <OracleEye {...props} />;
       case 'forge':
         return <Forge {...props} />;
       case 'backtest':
         return <Backtester {...props} />;
       case 'academy':
         return <Academy userProfile={userProfile} addToast={addToast} setActiveTab={setActivePage} />;
-      case 'security':
-        return <SecuritySettings {...props} />;
+      case 'vault':
+        return <Vault {...props} />;
       case 'settings':
         return <Settings {...props} />;
       case 'sessions':
@@ -177,7 +270,7 @@ export default function App() {
       case 'analytics':
         return <Analytics {...props} />;
       case 'portfolio':
-        return <Portfolio {...props} marketPrices={marketPrices} />;
+        return <Portfolio {...props} />;
       case 'arena':
         return <Arena {...props} />;
       case 'subscription':
@@ -188,16 +281,18 @@ export default function App() {
         return <Archive {...props} />;
       case 'signal-stream':
         return <SignalStream {...props} />;
-      case 'bot-gallery':
-        return <BotGallery {...props} />;
-      case 'bot-customizer':
-        return <BotCustomizer {...props} />;
-      case 'live-room':
-        return <LiveTradingRoom {...props} />;
+      case 'signal-oracle':
+        return <SignalOracle {...props} />;
+      case 'gallery':
+        return <Gallery {...props} />;
+      case 'alchemist':
+        return <Alchemist {...props} />;
+      case 'nexus':
+        return <Nexus {...props} />;
       case 'strategy-builder':
         return <StrategyBuilder {...props} />;
       case 'marketplace':
-        return <Marketplace {...props} />;
+        return <Marketplace userProfile={userProfile} addToast={addToast} />;
       default:
         return <Dashboard {...props} />;
     }
@@ -205,7 +300,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-cosmic-black flex relative">
+      <div className="min-h-screen bg-cosmic-black flex relative overflow-x-hidden">
         <GlobalSearch 
           isOpen={isSearchOpen} 
           onClose={() => setIsSearchOpen(false)} 
@@ -276,24 +371,25 @@ export default function App() {
                     { id: 'feed', label: 'Cosmic Feed', icon: Globe },
                     { id: 'zion', label: 'Zion AI', icon: Bot },
                     { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
+                    { id: 'nexus', label: 'The Nexus', icon: Globe },
                     { id: 'portfolio', label: 'Portfolio', icon: Wallet },
                     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+                    { id: 'eye', label: 'Oracle Eye', icon: Eye },
                     { id: 'sessions', label: 'Sessions', icon: Clock },
                     { id: 'arena', label: 'The Arena', icon: Trophy },
                     { id: 'archive', label: 'The Archive', icon: Book },
                     { id: 'signal-stream', label: 'Signal Stream', icon: Zap },
-                    { id: 'bot-gallery', label: 'Bot Gallery', icon: Layout },
-                    { id: 'bot-customizer', label: 'The Alchemist', icon: Settings2 },
-                    { id: 'live-room', label: 'The Nexus', icon: Video },
+                    { id: 'signal-oracle', label: 'Signal Oracle', icon: Target },
+                    { id: 'gallery', label: 'The Gallery', icon: ShoppingBag },
+                    { id: 'alchemist', label: 'The Alchemist', icon: Settings2 },
                     { id: 'strategy-builder', label: 'The Weaver', icon: Layers },
                     { id: 'marketplace', label: 'Marketplace', icon: Search },
                     { id: 'council', label: 'Council', icon: Users },
-                    { id: 'chart-vision', label: 'Oracle Eye', icon: Eye },
-                    { id: 'abyss', label: 'The Abyss', icon: Eye },
+                    { id: 'abyss', label: 'The Abyss', icon: Ghost },
                     { id: 'forge', label: 'The Forge', icon: Hammer },
                     { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
                     { id: 'academy', label: 'The Library', icon: GraduationCap },
-                    { id: 'security', label: 'Zion Vault', icon: Shield },
+                    { id: 'vault', label: 'Zion Vault', icon: Shield },
                     { id: 'settings', label: 'Settings', icon: SettingsIcon },
                   ].map((item) => (
                     <button
@@ -326,7 +422,7 @@ export default function App() {
           )}
         </AnimatePresence>
         
-        <main className="flex-1 lg:ml-64 p-4 lg:p-8 min-h-screen pb-24 lg:pb-8">
+        <main className="flex-1 lg:ml-64 p-4 lg:p-8 min-h-screen pb-24 lg:pb-8 overflow-x-hidden">
           {userProfile ? (
             <>
               <header className="flex items-center justify-between mb-8 gap-4">
@@ -390,9 +486,25 @@ export default function App() {
             </>
           ) : (
             <div className="flex items-center justify-center h-full">
-              <div className="text-center space-y-4">
-                <Loader2 className="text-gold animate-spin mx-auto" size={48} />
-                <p className="text-white/60">Initializing your cosmic profile...</p>
+              <div className="text-center space-y-4 max-w-md px-6">
+                {error ? (
+                  <>
+                    <XCircle className="text-red-400 mx-auto" size={48} />
+                    <h3 className="text-xl font-bold text-white">Initialization Error</h3>
+                    <p className="text-white/60">{error}</p>
+                    <button 
+                      onClick={() => window.location.reload()}
+                      className="px-6 py-2 bg-gold text-black font-bold rounded-xl hover:bg-gold/80 transition-all"
+                    >
+                      Retry Connection
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Loader2 className="text-gold animate-spin mx-auto" size={48} />
+                    <p className="text-white/60">Initializing your cosmic profile...</p>
+                  </>
+                )}
               </div>
             </div>
           )}

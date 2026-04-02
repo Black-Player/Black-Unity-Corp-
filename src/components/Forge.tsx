@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Hammer, Plus, Trash2, TrendingUp, Clock, Tag, MessageSquare, Brain, Sparkles, Filter, Save, Layers, Activity, Target, Zap, Cpu, Eye, Layout } from 'lucide-react';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { collection, query, onSnapshot, addDoc, deleteDoc, doc, orderBy } from 'firebase/firestore';
 
 interface Indicator {
   id: string;
@@ -13,26 +15,51 @@ interface Indicator {
 }
 
 export default function Forge({ userProfile, addToast }: { userProfile: UserProfile, addToast: any }) {
-  const [indicators, setIndicators] = useState<Indicator[]>([
-    { id: '1', name: 'Cosmic RSI', type: 'Momentum', logic: 'RSI(14) > 70 && EMA(20) > EMA(50)', confidence: 85, created_at: new Date().toISOString() },
-    { id: '2', name: 'Zion Trend', type: 'Trend', logic: 'MACD(12,26,9) crossover && Price > EMA(200)', confidence: 92, created_at: new Date().toISOString() },
-  ]);
+  const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [isForging, setIsForging] = useState(false);
   const [editorMode, setEditorMode] = useState<'Standard' | 'Advanced'>('Standard');
   const [newIndicator, setNewIndicator] = useState({ name: '', type: 'Trend' as const, logic: '' });
 
-  const handleForge = () => {
+  useEffect(() => {
+    const q = query(
+      collection(db, 'users', userProfile.uid, 'indicators'),
+      orderBy('created_at', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Indicator));
+      setIndicators(data);
+    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${userProfile.uid}/indicators`));
+
+    return () => unsubscribe();
+  }, [userProfile.uid]);
+
+  const handleForge = async () => {
     if (!newIndicator.name || !newIndicator.logic) return;
-    const forged: Indicator = {
-      id: Math.random().toString(36).substring(7),
+    
+    const forgedData = {
       ...newIndicator,
       confidence: Math.floor(Math.random() * 20) + 75,
       created_at: new Date().toISOString()
     };
-    setIndicators(prev => [forged, ...prev]);
-    setIsForging(false);
-    setNewIndicator({ name: '', type: 'Trend', logic: '' });
-    addToast('Indicator forged in the cosmic fire.', 'success');
+
+    try {
+      await addDoc(collection(db, 'users', userProfile.uid, 'indicators'), forgedData);
+      setIsForging(false);
+      setNewIndicator({ name: '', type: 'Trend', logic: '' });
+      addToast('Indicator forged in the cosmic fire.', 'success');
+    } catch (err) {
+      addToast('Failed to forge indicator.', 'error');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'users', userProfile.uid, 'indicators', id));
+      addToast('Indicator unraveled.', 'info');
+    } catch (err) {
+      addToast('Failed to delete indicator.', 'error');
+    }
   };
 
   const editorTemplates = {
@@ -99,7 +126,10 @@ export default function Forge({ userProfile, addToast }: { userProfile: UserProf
                   <span className="text-[10px] text-white/20 uppercase tracking-widest font-bold">
                     {new Date(indicator.created_at).toLocaleDateString()}
                   </span>
-                  <button className="text-white/20 hover:text-red-400 transition-all">
+                  <button 
+                    onClick={() => handleDelete(indicator.id)}
+                    className="text-white/20 hover:text-red-400 transition-all"
+                  >
                     <Trash2 size={14} />
                   </button>
                 </div>

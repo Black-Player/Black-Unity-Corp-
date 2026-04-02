@@ -47,6 +47,9 @@
 }
 
 @layer base {
+  html, body {
+    @apply overflow-x-hidden w-full max-w-full;
+  }
   body {
     @apply bg-cosmic-black text-white font-sans selection:bg-gold selection:text-black;
     background-image: 

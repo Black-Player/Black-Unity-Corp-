@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Play, RotateCcw, BarChart3, TrendingUp, TrendingDown, Target, Shield, Clock, Loader2 } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Play, RotateCcw, BarChart3, TrendingUp, TrendingDown, Target, Shield, Clock, Loader2, LineChart as LineChartIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 import { BOTS, DERIV_SYMBOLS } from '../constants';
 import { derivService } from '../services/derivService';
 import { generateTradingSignal } from '../services/aiService';
 import { Signal, UserProfile } from '../types';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 
 interface BacktestingProps {
   userProfile: UserProfile;
@@ -12,13 +13,21 @@ interface BacktestingProps {
 }
 
 export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast }) => {
-  const [pair, setPair] = useState('crash_500');
+  const [pair, setPair] = useState('CRASH500');
   const [timeframe, setTimeframe] = useState('H1');
   const [selectedBot, setSelectedBot] = useState(BOTS[0]);
   const [days, setDays] = useState(7);
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [cosmicMode, setCosmicMode] = useState(false);
+
+  const equityData = useMemo(() => {
+    if (!results?.equityCurve) return [];
+    return results.equityCurve.map((val: number, i: number) => ({
+      index: i,
+      balance: val
+    }));
+  }, [results]);
 
   const runBacktest = async () => {
     setRunning(true);
@@ -245,6 +254,45 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
           </div>
 
           <div className="lg:col-span-2 glass-card p-6 space-y-6">
+            <h3 className="text-lg font-display font-bold flex items-center gap-2">
+              <LineChartIcon className="text-gold" size={20} /> Equity Curve
+            </h3>
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={equityData}>
+                  <defs>
+                    <linearGradient id="colorBalance" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#D4AF37" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <XAxis dataKey="index" hide />
+                  <YAxis 
+                    domain={['dataMin - 100', 'dataMax + 100']} 
+                    stroke="rgba(255,255,255,0.2)" 
+                    fontSize={10} 
+                    tickFormatter={(val) => `$${val}`}
+                  />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: 'rgba(0,0,0,0.8)', border: '1px solid rgba(255,215,0,0.2)', borderRadius: '12px' }}
+                    itemStyle={{ color: '#D4AF37' }}
+                    labelStyle={{ display: 'none' }}
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="balance" 
+                    stroke="#D4AF37" 
+                    fillOpacity={1} 
+                    fill="url(#colorBalance)" 
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="lg:col-span-3 glass-card p-6 space-y-6">
             <h3 className="text-lg font-display font-bold flex items-center gap-2">
               <Clock className="text-gold" size={20} /> Recent Simulated Trades
             </h3>

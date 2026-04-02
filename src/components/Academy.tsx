@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { GraduationCap, BookOpen, CheckCircle2, Star, Clock, ArrowRight, Search, Lock } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, doc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, setDoc, arrayUnion } from 'firebase/firestore';
 import { UserProfile, UserProgress, Tier, hasTierAccess } from '../types';
 import { ACADEMY_ARTICLES, Article } from '../constants';
 
@@ -34,10 +34,11 @@ export const Academy: React.FC<AcademyProps> = ({ userProfile, addToast, setActi
     if (progress?.completed_lessons.includes(articleId)) return;
 
     try {
-      await updateDoc(doc(db, 'users', userProfile.uid, 'progress', 'academy'), {
+      const docRef = doc(db, 'users', userProfile.uid, 'progress', 'academy');
+      await setDoc(docRef, {
         completed_lessons: arrayUnion(articleId),
         xp: (progress?.xp || 0) + 100
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}/progress/academy`));
+      }, { merge: true }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}/progress/academy`));
     } catch (error) {
       console.error(error);
     }

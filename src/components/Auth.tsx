@@ -1,28 +1,66 @@
 import { useState } from 'react';
 import { auth, googleProvider, db } from '../firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
-import { UserProfile } from '../types';
-import { LogIn, UserPlus, Chrome } from 'lucide-react';
+import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc, increment as firestoreIncrement } from 'firebase/firestore';
+import { UserProfile, AccessKey, UserRole } from '../types';
+import { LogIn, UserPlus, Chrome, Key } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [accessKey, setAccessKey] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const createUserProfile = async (user: any) => {
+  const validateAccessKey = async (keyStr: string): Promise<{ role: UserRole; keyId?: string } | null> => {
+    if (!keyStr) return { role: 'subscriber' };
+
+    const keysRef = collection(db, 'access_keys');
+    const q = query(keysRef, where('key', '==', keyStr));
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) return null;
+
+    const keyDoc = querySnapshot.docs[0];
+    const keyData = keyDoc.data() as AccessKey;
+
+    // Check expiry
+    if (keyData.expiry && new Date(keyData.expiry) < new Date()) return null;
+
+    // Check usage limit
+    if (keyData.usage_count >= keyData.usage_limit) return null;
+
+    return { 
+      role: keyData.type === 'student' ? 'student' : 'investor',
+      keyId: keyDoc.id 
+    };
+  };
+
+  const createUserProfile = async (user: any, keyStr: string) => {
     const userRef = doc(db, 'users', user.uid);
     const userSnap = await getDoc(userRef);
     
     if (!userSnap.exists()) {
+      const keyResult = await validateAccessKey(keyStr);
+      if (!keyResult && keyStr) {
+        throw new Error('Invalid or expired Access Key.');
+      }
+
+      const role: UserRole = keyResult?.role || 'subscriber';
       const creatorEmails = ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'];
+      const finalRole: UserRole = creatorEmails.includes(user.email) ? 'creator' : role;
+
       const profile: UserProfile = {
         uid: user.uid,
         email: user.email,
-        tier: creatorEmails.includes(user.email) ? 'creator' : 'free',
+        role: finalRole,
+        tier: finalRole === 'creator' ? 'creator' : (finalRole === 'investor' ? 'zion' : 'free'),
+        student_tier: finalRole === 'student' ? 'initiate' : undefined,
+        student_rank: finalRole === 'student' ? 'Initiate' : undefined,
+        ap: 0,
+        penalties: 0,
         xp: 0,
         level: 1,
         signals_used_today: 0,
@@ -53,7 +91,7 @@ export default function Auth() {
           enabled: false,
           min_confidence: 90,
           max_trades_per_day: 5,
-          pairs: ['crash_500', 'boom_1000', 'volatility_75'],
+          pairs: ['CRASH500', 'BOOM1000', 'R_75'],
         },
         stats: {
           total_trades: 0,
@@ -63,7 +101,16 @@ export default function Auth() {
           max_drawdown: 0,
         },
       };
+
       await setDoc(userRef, profile);
+
+      // Update key usage
+      if (keyResult?.keyId) {
+        const keyRef = doc(db, 'access_keys', keyResult.keyId);
+        await updateDoc(keyRef, {
+          usage_count: firestoreIncrement(1)
+        });
+      }
     }
   };
 
@@ -74,10 +121,10 @@ export default function Auth() {
     try {
       if (isLogin) {
         const { user } = await signInWithEmailAndPassword(auth, email, password);
-        await createUserProfile(user);
+        await createUserProfile(user, accessKey);
       } else {
         const { user } = await createUserWithEmailAndPassword(auth, email, password);
-        await createUserProfile(user);
+        await createUserProfile(user, accessKey);
       }
     } catch (err: any) {
       setError(err.message);
@@ -91,7 +138,7 @@ export default function Auth() {
     setError('');
     try {
       const { user } = await signInWithPopup(auth, googleProvider);
-      await createUserProfile(user);
+      await createUserProfile(user, accessKey);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -134,6 +181,22 @@ export default function Auth() {
               required
             />
           </div>
+
+          {!isLogin && (
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-white/70 flex items-center gap-2">
+                <Key size={14} className="text-gold" /> Access Key (Optional)
+              </label>
+              <input 
+                type="text" 
+                value={accessKey} 
+                onChange={(e) => setAccessKey(e.target.value)}
+                className="w-full cosmic-input"
+                placeholder="STUDENT-XXXX-XXXX"
+              />
+              <p className="text-[10px] text-white/40 italic">Leave blank for Subscriber role.</p>
+            </div>
+          )}
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 

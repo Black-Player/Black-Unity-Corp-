@@ -26,10 +26,14 @@ class DerivService {
   private candleListeners: Set<(candle: DerivCandle) => void> = new Set();
   private symbols: string[] = DERIV_SYMBOLS.map(s => s.symbol);
   private lastPrices: Record<string, number> = {};
+  private pingInterval: any = null;
+  private nextRequestId = 1;
 
   constructor(apiToken: string) {
     this.apiToken = apiToken;
   }
+
+  private pendingRequests: Map<string, { resolve: (data: any) => void, reject: (error: Error) => void, timeout: NodeJS.Timeout }> = new Map();
 
   connect() {
     if (this.socket?.readyState === WebSocket.OPEN) return;
@@ -39,15 +43,41 @@ class DerivService {
     this.socket.onopen = () => {
       console.log('Connected to Deriv WebSocket');
       this.authorize();
+      this.startPing();
     };
 
     this.socket.onmessage = (msg) => {
-      const data = JSON.parse(msg.data);
-      this.handleMessage(data);
+      try {
+        const data = JSON.parse(msg.data);
+        
+        // Handle ping response
+        if (data.msg_type === 'ping') return;
+
+        // Handle pending requests first
+        const reqId = data.req_id?.toString();
+        if (reqId && this.pendingRequests.has(reqId)) {
+          const { resolve, reject, timeout } = this.pendingRequests.get(reqId)!;
+          clearTimeout(timeout);
+          this.pendingRequests.delete(reqId);
+          
+          if (data.error) {
+            reject(new Error(data.error.message));
+          } else {
+            resolve(data);
+          }
+          return;
+        }
+
+        this.handleMessage(data);
+      } catch (e) {
+        console.error('Error parsing Deriv message:', e);
+      }
     };
 
     this.socket.onclose = () => {
       console.log('Deriv connection closed. Reconnecting in 5s...');
+      this.isAuthorized = false;
+      this.stopPing();
       setTimeout(() => this.connect(), 5000);
     };
 
@@ -55,6 +85,53 @@ class DerivService {
       console.error('Deriv WebSocket Error:', error);
     };
   }
+
+  private startPing() {
+    this.stopPing();
+    this.pingInterval = setInterval(() => {
+      if (this.socket?.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({ ping: 1 }));
+      }
+    }, 30000);
+  }
+
+  private stopPing() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+  }
+
+  private async waitForConnection(): Promise<void> {
+    if (this.socket?.readyState === WebSocket.OPEN && this.isAuthorized) {
+      return;
+    }
+
+    if (!this.socket || this.socket.readyState === WebSocket.CLOSED) {
+      this.connect();
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Deriv connection timeout (15s)'));
+      }, 15000);
+
+      const check = () => {
+        if (this.socket?.readyState === WebSocket.OPEN && this.isAuthorized) {
+          clearTimeout(timeout);
+          resolve();
+        } else if (this.socket?.readyState === WebSocket.CLOSED) {
+          clearTimeout(timeout);
+          reject(new Error('Deriv connection failed'));
+        } else {
+          setTimeout(check, 200);
+        }
+      };
+      check();
+    });
+  }
+
+  private isAuthorized = false;
 
   private authorize() {
     if (this.socket?.readyState === WebSocket.OPEN) {
@@ -77,9 +154,6 @@ class DerivService {
 
   changeTimeframe(symbol: string, granularity: number) {
     if (this.socket?.readyState === WebSocket.OPEN) {
-      // Unsubscribe from previous OHLC for this symbol if needed
-      // Deriv handles this by replacing the subscription for the same symbol/granularity pair
-      // but to be safe we just send the new one
       this.socket.send(JSON.stringify({ ohlc: symbol, subscribe: 1, granularity }));
     }
   }
@@ -88,9 +162,11 @@ class DerivService {
     if (data.msg_type === 'authorize') {
       if (data.error) {
         console.error('Deriv Authorization Failed:', data.error.message);
+        this.isAuthorized = false;
         return;
       }
       console.log('Deriv Authorized Successfully');
+      this.isAuthorized = true;
       this.subscribeData();
     }
 
@@ -126,7 +202,7 @@ class DerivService {
     return () => this.tickListeners.delete(callback);
   }
 
-  async getHistory(symbol: string, timeframe: string, count: number): Promise<DerivCandle[]> {
+  async getHistory(symbol: string, timeframe: string, count: number, retries = 2): Promise<DerivCandle[]> {
     const granularityMap: Record<string, number> = {
       'M1': 60,
       'M5': 300,
@@ -137,20 +213,45 @@ class DerivService {
     };
     const granularity = granularityMap[timeframe] || 60;
 
+    try {
+      await this.waitForConnection();
+    } catch (e) {
+      if (retries > 0) {
+        console.warn(`Deriv connection failed, retrying history for ${symbol}... (${retries} left)`);
+        await new Promise(r => setTimeout(r, 2000));
+        return this.getHistory(symbol, timeframe, count, retries - 1);
+      }
+      throw new Error(`Deriv connection failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
     return new Promise((resolve, reject) => {
       if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-        reject(new Error('Deriv WebSocket not connected'));
+        if (retries > 0) {
+          resolve(this.getHistory(symbol, timeframe, count, retries - 1));
+        } else {
+          reject(new Error('Deriv WebSocket not connected'));
+        }
         return;
       }
 
-      const requestId = Math.random().toString(36).substring(7);
-      const handleHistory = (msg: MessageEvent) => {
-        const data = JSON.parse(msg.data);
-        if (data.msg_type === 'candles' && data.req_id === requestId) {
-          this.socket?.removeEventListener('message', handleHistory);
-          if (data.error) {
-            reject(new Error(data.error.message));
+      const requestId = this.nextRequestId++;
+      const requestIdStr = requestId.toString();
+      
+      const timeout = setTimeout(() => {
+        if (this.pendingRequests.has(requestIdStr)) {
+          this.pendingRequests.delete(requestIdStr);
+          if (retries > 0) {
+            console.warn(`History request timed out for ${symbol}, retrying... (${retries} left)`);
+            resolve(this.getHistory(symbol, timeframe, count, retries - 1));
           } else {
+            reject(new Error(`History request timed out for ${symbol} (${timeframe}) after 30s`));
+          }
+        }
+      }, 30000);
+
+      this.pendingRequests.set(requestIdStr, {
+        resolve: (data: any) => {
+          if (data.msg_type === 'candles' || data.candles) {
             const candles = data.candles.map((c: any) => ({
               symbol,
               open: parseFloat(c.open),
@@ -160,11 +261,14 @@ class DerivService {
               time: c.epoch
             }));
             resolve(candles);
+          } else {
+            reject(new Error(`Unexpected response type: ${data.msg_type}`));
           }
-        }
-      };
+        },
+        reject,
+        timeout
+      });
 
-      this.socket.addEventListener('message', handleHistory);
       this.socket.send(JSON.stringify({
         ticks_history: symbol,
         adjust_start_time: 1,
@@ -174,12 +278,6 @@ class DerivService {
         style: 'candles',
         req_id: requestId
       }));
-
-      // Timeout after 10s
-      setTimeout(() => {
-        this.socket?.removeEventListener('message', handleHistory);
-        reject(new Error('History request timed out'));
-      }, 10000);
     });
   }
 

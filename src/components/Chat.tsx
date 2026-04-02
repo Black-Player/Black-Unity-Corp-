@@ -35,7 +35,7 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
         messagesRef,
         where('bot_name', '==', selectedBot.name),
         orderBy('created_at', 'asc'),
-        limit(50)
+        limit(100)
       );
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -55,7 +55,7 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
       const q = query(
         messagesRef,
         orderBy('created_at', 'asc'),
-        limit(50)
+        limit(100)
       );
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -143,8 +143,8 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
   const currentMessages = chatMode === 'ai' ? messages : communityMessages;
 
   return (
-    <div className="h-[calc(100vh-180px)] lg:h-[calc(100vh-160px)] flex flex-col lg:flex-row gap-4 lg:gap-8">
-      <div className="w-full lg:w-80 flex flex-col gap-4 lg:gap-6 shrink-0">
+    <div className="h-[calc(100vh-180px)] lg:h-[calc(100vh-140px)] flex flex-col lg:flex-row gap-4 lg:gap-8">
+      <div className="w-full lg:w-72 flex flex-col gap-4 lg:gap-6 shrink-0">
         <div className="glass-card p-1.5 flex gap-1 border-white/5">
           <button
             onClick={() => setChatMode('ai')}
@@ -221,7 +221,7 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
         </div>
       </div>
 
-      <div className="flex-1 glass-card flex flex-col overflow-hidden relative">
+      <div className="flex-1 glass-card flex flex-col overflow-hidden relative min-h-[500px]">
         <div className="p-3 lg:p-4 border-b border-white/10 flex items-center justify-between bg-white/5">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-full bg-gold/20 flex items-center justify-center border border-gold/30">
@@ -239,7 +239,7 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
 
         <div 
           ref={scrollRef}
-          className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth"
+          className="flex-1 overflow-y-auto p-4 lg:p-8 space-y-6 scroll-smooth"
         >
           {currentMessages.length === 0 && (
             <div className="h-full flex flex-col items-center justify-center text-center space-y-4 opacity-40">
@@ -254,24 +254,24 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
             {currentMessages.map((msg, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                initial={{ opacity: 0, y: 10, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
               >
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                <div className={`w-8 h-8 lg:w-10 lg:h-10 rounded-lg flex items-center justify-center shrink-0 ${
                   msg.role === 'user' ? 'bg-gold text-black' : 'bg-white/10 text-gold'
                 }`}>
-                  {msg.role === 'user' ? <User size={16} /> : <Bot size={16} />}
+                  {msg.role === 'user' ? <User size={18} /> : <Bot size={18} />}
                 </div>
-                <div className={`max-w-[80%] p-4 rounded-2xl ${
+                <div className={`max-w-[95%] lg:max-w-[85%] p-4 lg:p-6 rounded-2xl ${
                   msg.role === 'user' 
                     ? 'bg-gold/10 border border-gold/20 text-white' 
                     : 'bg-white/5 border border-white/10 text-white/90'
                 }`}>
                   {chatMode === 'community' && msg.username && (
-                    <div className="text-[10px] font-bold text-gold uppercase tracking-widest mb-1">{msg.username}</div>
+                    <div className="text-[10px] font-bold text-gold uppercase tracking-widest mb-2">{msg.username}</div>
                   )}
-                  <div className="prose prose-invert prose-sm max-w-none">
+                  <div className="prose prose-invert prose-sm lg:prose-base max-w-none leading-relaxed">
                     <ReactMarkdown>{msg.text}</ReactMarkdown>
                   </div>
                 </div>

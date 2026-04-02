@@ -71,7 +71,7 @@ export default function NotificationCenter({ userProfile }: NotificationCenterPr
               initial={{ opacity: 0, y: 10, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 10, scale: 0.95 }}
-              className="absolute right-0 mt-4 w-80 glass-card p-0 border-gold/20 shadow-2xl z-50 overflow-hidden"
+              className="absolute right-0 mt-4 w-[calc(100vw-2rem)] sm:w-80 max-w-[320px] glass-card p-0 border-gold/20 shadow-2xl z-50 overflow-hidden"
             >
               <div className="p-4 border-b border-white/5 flex items-center justify-between bg-gold/5">
                 <h3 className="font-bold text-sm uppercase tracking-widest">Cosmic Alerts</h3>

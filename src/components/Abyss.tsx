@@ -1,37 +1,62 @@
 import { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Eye, Ghost, Skull, Zap, TrendingUp, TrendingDown, ShieldAlert, Sparkles, Activity, Target } from 'lucide-react';
+import { Eye, Ghost, Skull, Zap, TrendingUp, TrendingDown, ShieldAlert, Sparkles, Activity, Target, BarChart3 } from 'lucide-react';
+import { getAbyssalSignals } from '../services/aiService';
 
 interface AbyssProps {
   userProfile: UserProfile;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
+interface AbyssalSignal {
+  id: string;
+  pair: string;
+  type: 'BUY' | 'SELL';
+  entry: number;
+  tp: number;
+  sl: number;
+  risk: string;
+  reward: string;
+}
+
 export default function Abyss({ userProfile, addToast }: AbyssProps) {
   const [isEntering, setIsEntering] = useState(false);
   const [abyssalPower, setAbyssalPower] = useState(0);
-  const [activeSignals, setActiveSignals] = useState<any[]>([]);
+  const [activeSignals, setActiveSignals] = useState<AbyssalSignal[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [heatmapData, setHeatmapData] = useState<number[]>([]);
+
+  useEffect(() => {
+    if (isEntering) {
+      setLoading(true);
+      const fetchSignals = async () => {
+        const signals = await getAbyssalSignals();
+        setActiveSignals(signals);
+        setLoading(false);
+      };
+      fetchSignals();
+
+      // Generate mock heatmap data
+      setHeatmapData(Array.from({ length: 100 }, () => Math.floor(Math.random() * 100)));
+    }
+  }, [isEntering]);
 
   const enterAbyss = () => {
-    if (userProfile.tier !== 'legendary' && userProfile.tier !== 'mythic') {
-      addToast('Only Legendary and Mythic traders can enter the Abyss.', 'error');
+    if (userProfile.tier !== 'legendary' && userProfile.tier !== 'mythic' && userProfile.tier !== 'zion') {
+      addToast('Only Legendary, Mythic, and Zion traders can enter the Abyss.', 'error');
       return;
     }
     setIsEntering(true);
-    setTimeout(() => {
-      setAbyssalPower(85);
-      generateAbyssalSignals();
-    }, 2000);
-  };
-
-  const generateAbyssalSignals = () => {
-    const signals = [
-      { pair: 'Volatility 100 (1s) Index', type: 'SELL', entry: 1245.32, tp: 1200.00, sl: 1260.00, risk: 'EXTREME', reward: '1:5' },
-      { pair: 'Crash 1000 Index', type: 'BUY', entry: 8942.15, tp: 9200.00, sl: 8850.00, risk: 'HIGH', reward: '1:3.5' },
-      { pair: 'Jump 100 Index', type: 'SELL', entry: 542.10, tp: 500.00, sl: 560.00, risk: 'EXTREME', reward: '1:6' },
-    ];
-    setActiveSignals(signals);
+    const interval = setInterval(() => {
+      setAbyssalPower(prev => {
+        if (prev >= 100) {
+          clearInterval(interval);
+          return 100;
+        }
+        return prev + 5;
+      });
+    }, 100);
   };
 
   return (
@@ -90,7 +115,7 @@ export default function Abyss({ userProfile, addToast }: AbyssProps) {
                 </div>
                 <div>
                   <h2 className="text-2xl font-display font-bold text-white uppercase tracking-tight">Abyssal Dark Pool</h2>
-                  <p className="text-purple-400/60 text-[10px] uppercase tracking-widest font-bold">Active Session: {userProfile.tier.toUpperCase()} ACCESS</p>
+                  <p className="text-purple-400/60 text-[10px] uppercase tracking-widest font-bold">Active Session: {(userProfile.tier || 'FREE').toUpperCase()} ACCESS</p>
                 </div>
               </div>
               <div className="flex items-center gap-6">
@@ -105,45 +130,90 @@ export default function Abyss({ userProfile, addToast }: AbyssProps) {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {activeSignals.map((signal, i) => (
-                <motion.div
-                  key={signal.pair}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.1 }}
-                  className="glass-card p-6 border-purple-500/20 bg-purple-900/5 space-y-6 group hover:border-purple-500/50 transition-all"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white/40">{signal.pair}</span>
-                    <span className={`px-2 py-1 rounded text-[10px] font-bold ${signal.type === 'BUY' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
-                      {signal.type}
-                    </span>
-                  </div>
-                  
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-white/40">Entry</span>
-                      <span className="font-mono text-white">{signal.entry}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-white/40">Target</span>
-                      <span className="font-mono text-purple-400">{signal.tp}</span>
-                    </div>
-                  </div>
+              {/* Liquidity Heatmap Simulation */}
+              <div className="md:col-span-3 glass-card p-6 border-purple-500/20 bg-purple-900/5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-display font-bold text-white uppercase tracking-widest flex items-center gap-2">
+                    <BarChart3 size={16} className="text-purple-400" /> Dark Pool Liquidity Heatmap
+                  </h3>
+                  <span className="text-[10px] text-purple-400/40 uppercase font-bold">Real-time Scanning</span>
+                </div>
+                <div className="grid grid-cols-10 gap-1 h-32">
+                  {heatmapData.map((val, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ delay: i * 0.01 }}
+                      className="rounded-sm transition-colors duration-500"
+                      style={{ 
+                        backgroundColor: `rgba(168, 85, 247, ${val / 100})`,
+                        boxShadow: val > 80 ? '0 0 10px rgba(168, 85, 247, 0.4)' : 'none'
+                      }}
+                      title={`Liquidity: ${val}%`}
+                    />
+                  ))}
+                </div>
+                <div className="flex justify-between text-[8px] text-white/20 uppercase tracking-widest font-bold">
+                  <span>Low Liquidity</span>
+                  <span>Institutional Cluster</span>
+                </div>
+              </div>
 
-                  <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                    <div className="flex items-center gap-2">
-                      <Skull className="text-red-400/40" size={14} />
-                      <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">{signal.risk}</span>
+              {loading ? (
+                <div className="col-span-full text-center py-20">
+                  <Sparkles className="w-12 h-12 text-purple-500/20 animate-spin mx-auto mb-4" />
+                  <p className="text-purple-400/40 italic">Scanning the dark pools...</p>
+                </div>
+              ) : activeSignals.length > 0 ? (
+                activeSignals.map((signal, i) => (
+                  <motion.div
+                    key={signal.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    className="glass-card p-6 border-purple-500/20 bg-purple-900/5 space-y-6 group hover:border-purple-500/50 transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white/40">{signal.pair}</span>
+                      <span className={`px-2 py-1 rounded text-[10px] font-bold ${signal.type === 'BUY' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
+                        {signal.type}
+                      </span>
                     </div>
-                    <span className="text-xs font-bold text-purple-400">{signal.reward} R:R</span>
-                  </div>
+                    
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-white/40">Entry</span>
+                        <span className="font-mono text-white">{signal.entry}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-white/40">Target</span>
+                        <span className="font-mono text-purple-400">{signal.tp}</span>
+                      </div>
+                    </div>
 
-                  <button className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all">
-                    Execute Abyssal Trade
-                  </button>
-                </motion.div>
-              ))}
+                    <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                      <div className="flex items-center gap-2">
+                        <Skull className="text-red-400/40" size={14} />
+                        <span className="text-[10px] font-bold text-red-400 uppercase tracking-widest">{signal.risk}</span>
+                      </div>
+                      <span className="text-xs font-bold text-purple-400">{signal.reward} R:R</span>
+                    </div>
+
+                    <button 
+                      onClick={() => addToast(`Executing ${signal.type} on ${signal.pair}...`, 'info')}
+                      className="w-full py-3 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all"
+                    >
+                      Execute Abyssal Trade
+                    </button>
+                  </motion.div>
+                ))
+              ) : (
+                <div className="col-span-full text-center py-20 glass-card border-purple-500/10">
+                  <Ghost className="w-12 h-12 text-purple-500/10 mx-auto mb-4" />
+                  <p className="text-purple-400/20 italic">The Abyss is silent. No signals detected in the dark pools.</p>
+                </div>
+              )}
             </div>
 
             <div className="glass-card p-8 border-purple-500/10 bg-purple-900/10 space-y-6">

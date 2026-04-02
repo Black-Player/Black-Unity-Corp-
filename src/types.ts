@@ -1,10 +1,24 @@
+export type UserRole = 'creator' | 'investor' | 'student' | 'subscriber';
+
+export type StudentTier = 'initiate' | 'oracle' | 'zion' | 'ascended';
+
+export type StudentRank = 'Initiate' | 'Developing' | 'Disciplined' | 'Elite' | 'Ascended';
+
 export type Tier = 'free' | 'oracle' | 'zion' | 'legendary' | 'mythic' | 'creator';
+
+export type AppTheme = 'cosmic' | 'nebula-bleach' | 'nebula-jjk' | 'nebula-demonslayer' | 'nebula-naruto' | 'nebula-dbs' | 'nebula-kof' | 'nebula-sf' | 'nebula-mvc' | 'heavenly';
 
 export interface UserProfile {
   uid: string;
   email: string;
   username?: string;
+  role: UserRole;
   tier: Tier;
+  student_tier?: StudentTier;
+  student_rank?: StudentRank;
+  ap: number; // Advancement Points
+  penalties: number;
+  theme?: AppTheme;
   signals_used_today: number;
   last_reset_date: string;
   created_at: string;
@@ -60,8 +74,39 @@ export interface UserProfile {
   xp: number;
   level: number;
   followed_traders?: string[];
+  followers_count?: number;
+  following_count?: number;
   completed_lessons?: string[];
   active_challenges?: string[];
+  owned_items?: string[];
+  bio?: string;
+  avatar_url?: string;
+  is_public?: boolean;
+  weekly_pnl?: number;
+  monthly_pnl?: number;
+  notification_count?: number;
+}
+
+export interface AccessKey {
+  id: string;
+  key: string;
+  type: 'student' | 'investor';
+  expiry?: string;
+  usage_limit: number;
+  usage_count: number;
+  created_at: string;
+  signature: string;
+}
+
+export interface AdvancementRequest {
+  id: string;
+  user_id: string;
+  current_tier: StudentTier;
+  target_tier: StudentTier;
+  ap_score?: number; // Deprecated in favor of ap_at_request
+  ap_at_request: number;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
 }
 
 export interface Signal {
@@ -79,11 +124,19 @@ export interface Signal {
   strategy: string;
   ai_bot: string;
   confidence: number;
-  market_structure?: string;
+  market_structure?: string; // BOS / CHOCH
+  liquidity_presence?: boolean;
+  volatility_validation?: boolean;
+  session_timing?: string;
+  confirmations_count?: number;
   analysis: string;
   recommended_lot_size: number;
   status: 'active' | 'tp_hit' | 'sl_hit';
   created_at: string;
+  is_shared?: boolean;
+  likes_count?: number;
+  shares_count?: number;
+  telegram_message_id?: string;
 }
 
 export interface Trade {
@@ -105,6 +158,9 @@ export interface Trade {
   account_type: 'demo' | 'live';
   created_at: string;
   closed_at?: string;
+  exit_price?: number;
+  close_reason?: string;
+  tp_hits?: string[];
 }
 
 export interface Bot {
@@ -114,6 +170,7 @@ export interface Bot {
   tier_requirement: Tier;
   description: string;
   icon: string;
+  character?: string;
   risk_profile?: string;
   preferred_pairs?: string[];
   created_at?: string;
@@ -240,4 +297,34 @@ export interface UserProgress {
   xp: number;
   level: number;
   completed_lessons: string[];
+}
+
+export interface SharedPost {
+  id: string;
+  user_id: string;
+  username: string;
+  avatar_url?: string;
+  content: string;
+  signal_id?: string;
+  likes: string[]; // array of user ids
+  comments: Comment[];
+  created_at: string;
+}
+
+export interface Comment {
+  id: string;
+  user_id: string;
+  username: string;
+  content: string;
+  created_at: string;
+}
+
+export interface LeaderboardEntry {
+  uid: string;
+  username: string;
+  avatar_url?: string;
+  total_pnl: number;
+  win_rate: number;
+  level: number;
+  tier: Tier;
 }

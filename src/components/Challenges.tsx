@@ -1,218 +1,230 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
-import { Trophy, Target, Zap, Shield, Star, CheckCircle2, Lock, ArrowRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { UserProfile, Challenge } from '../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { Challenge, UserProfile } from '../types';
+import { collection, query, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { motion } from 'motion/react';
+import { Trophy, Zap, Clock, Users, Shield, Award, ArrowRight, CheckCircle2, Lock, Flame } from 'lucide-react';
+
+interface UserChallengeStatus {
+  challenge_id: string;
+  status: 'active' | 'completed' | 'failed';
+  progress: number;
+}
 
 interface ChallengesProps {
   userProfile: UserProfile;
+  addToast: (message: string, type: 'success' | 'error' | 'info') => void;
 }
 
-export const Challenges: React.FC<ChallengesProps> = ({ userProfile }) => {
+export const Challenges: React.FC<ChallengesProps> = ({ userProfile, addToast }) => {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [userChallenges, setUserChallenges] = useState<Record<string, UserChallengeStatus>>({});
   const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState<string | null>(null);
 
   useEffect(() => {
+    // Fetch global challenges
     const q = query(collection(db, 'challenges'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Challenge));
-      setChallenges(data);
+      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Challenge));
+      setChallenges(fetched);
       setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'challenges'));
+    }, (err) => {
+      handleFirestoreError(err, OperationType.LIST, 'challenges');
+      setLoading(false);
+    });
 
-    return () => unsubscribe();
-  }, []);
+    // Fetch user's active challenges
+    const userChallengesQ = query(collection(db, 'users', userProfile.uid, 'challenges'));
+    const unsubscribeUser = onSnapshot(userChallengesQ, (snapshot) => {
+      const statuses: Record<string, UserChallengeStatus> = {};
+      snapshot.docs.forEach(doc => {
+        statuses[doc.id] = doc.data() as UserChallengeStatus;
+      });
+      setUserChallenges(statuses);
+    });
 
-  const handleStartChallenge = async (challengeId: string) => {
-    setStarting(challengeId);
+    return () => {
+      unsubscribe();
+      unsubscribeUser();
+    };
+  }, [userProfile.uid]);
+
+  const handleJoinChallenge = async (challenge: Challenge) => {
+    // Check tier requirements if they exist in the challenge data
+    const requiredTier = (challenge as any).required_tier || 'free';
+    if (userProfile.tier === 'free' && requiredTier !== 'free') {
+      addToast(`This challenge requires ${requiredTier.toUpperCase()} tier.`, 'error');
+      return;
+    }
+
     try {
-      const userRef = doc(db, 'users', userProfile.uid);
-      await updateDoc(userRef, {
-        active_challenges: arrayUnion(challengeId)
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
-      
-      // In a real app, we'd also create a progress document
-    } catch (err: any) {
+      const challengeRef = doc(db, 'users', userProfile.uid, 'challenges', challenge.id);
+      await setDoc(challengeRef, {
+        challenge_id: challenge.id,
+        status: 'active',
+        progress: 0,
+        joined_at: new Date().toISOString()
+      });
+      addToast(`Challenge "${challenge.title}" accepted. Good luck, Warrior.`, 'success');
+    } catch (err) {
       console.error(err);
-    } finally {
-      setStarting(null);
+      addToast('Failed to join challenge.', 'error');
     }
   };
 
-  const handleClaimReward = async (challengeId: string) => {
-    const challenge = displayChallenges.find(c => c.id === challengeId);
-    if (!challenge) return;
-
-    try {
-      const userRef = doc(db, 'users', userProfile.uid);
-      await updateDoc(userRef, {
-        xp: (userProfile.xp || 0) + 500,
-        credits: (userProfile.credits || 0) + 100,
-        active_challenges: arrayRemove(challengeId)
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
-      
-      alert(`Reward claimed for "${challenge.title}"! +500 XP, +100 Credits.`);
-    } catch (err: any) {
-      console.error(err);
+  const getDifficultyColor = (difficulty: string) => {
+    switch (difficulty) {
+      case 'Beginner': return 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20';
+      case 'Intermediate': return 'text-gold bg-gold/10 border-gold/20';
+      case 'Elite': return 'text-rose-400 bg-rose-400/10 border-rose-400/20';
+      default: return 'text-white/40 bg-white/5 border-white/10';
     }
   };
-
-  // Mock data if Firestore is empty
-  const defaultChallenges: Challenge[] = [
-    {
-      id: '1',
-      title: 'The Genesis Trial',
-      description: 'Achieve a 5% profit on your demo account within 24 hours.',
-      target_pnl: 50,
-      reward: '500 XP + 100 Credits',
-      active: true
-    },
-    {
-      id: '2',
-      title: 'Consistency King',
-      description: 'Maintain a 70% win rate over 20 trades.',
-      target_pnl: 0,
-      reward: '1000 XP + 250 Credits',
-      active: true
-    },
-    {
-      id: '3',
-      title: 'The Whale Hunter',
-      description: 'Capture a single trade with a 1:5 Risk/Reward ratio.',
-      target_pnl: 0,
-      reward: '2000 XP + 500 Credits',
-      active: true
-    }
-  ];
-
-  const displayChallenges = challenges.length > 0 ? challenges : defaultChallenges;
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-gold/20 rounded-lg border border-gold/30">
-          <Trophy className="w-5 h-5 text-gold" />
+    <div className="space-y-8 pb-12">
+      <header>
+        <h1 className="text-3xl font-display font-bold gold-gradient">Warrior Trials</h1>
+        <p className="text-white/40">Complete challenges to earn exclusive badges, Zion points, and cosmic rewards.</p>
+      </header>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="glass-card p-6 bg-gold/5 border-gold/20 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-gold/20 flex items-center justify-center text-gold">
+            <Flame size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Current Streak</p>
+            <p className="text-xl font-display font-bold">12 Days</p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-xl font-bold text-white tracking-tight">Celestial Challenges</h2>
-          <p className="text-sm text-white/40">Prove your worth and ascend the ranks</p>
+        <div className="glass-card p-6 border-white/5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-white/40">
+            <Award size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Total Badges</p>
+            <p className="text-xl font-display font-bold">8 Earned</p>
+          </div>
+        </div>
+        <div className="glass-card p-6 border-white/5 flex items-center gap-4">
+          <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-white/40">
+            <Trophy size={24} />
+          </div>
+          <div>
+            <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Zion Points</p>
+            <p className="text-xl font-display font-bold">2,450 ZP</p>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {displayChallenges.map((challenge, index) => {
-          const isActive = userProfile.active_challenges?.includes(challenge.id);
-          const isCompleted = false; // In a real app, check progress
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {loading ? (
+          <div className="col-span-2 py-20 flex justify-center">
+            <Zap className="text-gold animate-pulse" size={48} />
+          </div>
+        ) : challenges.length === 0 ? (
+          <div className="col-span-2 glass-card p-20 text-center space-y-4">
+            <Trophy className="mx-auto text-white/10" size={64} />
+            <p className="text-white/40">No trials available in the current cycle.</p>
+          </div>
+        ) : challenges.map((challenge) => {
+          const status = userChallenges[challenge.id];
+          const requiredTier = (challenge as any).required_tier || 'free';
+          const isLocked = userProfile.tier === 'free' && requiredTier !== 'free';
 
           return (
             <motion.div
               key={challenge.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="glass-card p-6 flex flex-col justify-between group border-white/5 hover:border-gold/30 transition-all duration-500"
+              className={`glass-card p-6 border-white/5 hover:border-gold/20 transition-all relative overflow-hidden group ${isLocked ? 'opacity-60' : ''}`}
             >
-                <div className="space-y-6">
-                  <div className="flex items-start justify-between">
-                    <div className="p-3 bg-white/5 rounded-xl border border-white/10 group-hover:bg-gold/10 group-hover:border-gold/20 transition-all">
-                      {index === 0 ? <Zap className="w-6 h-6 text-gold" /> : 
-                       index === 1 ? <Shield className="w-6 h-6 text-blue-400" /> : 
-                       <Star className="w-6 h-6 text-purple-400" />}
-                    </div>
-                    <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                      isActive ? 'bg-gold/10 border border-gold/20 text-gold' : 'bg-white/5 border border-white/10 text-white/20'
-                    }`}>
-                      {isActive ? 'In Progress' : 'Available'}
-                    </div>
+              <div className="flex items-start justify-between mb-6">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest border ${getDifficultyColor((challenge as any).difficulty || 'Beginner')}`}>
+                      {(challenge as any).difficulty || 'Beginner'}
+                    </span>
+                    <span className="text-[8px] text-white/20 font-bold uppercase tracking-widest">{(challenge as any).type || 'Profit'}</span>
                   </div>
+                  <h3 className="text-xl font-display font-bold">{challenge.title}</h3>
+                  <p className="text-sm text-white/40">{challenge.description}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold">Reward</p>
+                  <p className="text-lg font-display font-bold text-gold">{challenge.reward}</p>
+                </div>
+              </div>
 
-                  <div className="space-y-2">
-                    <h3 className="text-xl font-bold text-white group-hover:text-gold transition-colors">
-                      {challenge.title}
-                    </h3>
-                    <p className="text-sm text-white/40 leading-relaxed">
-                      {challenge.description}
-                    </p>
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="flex items-center gap-2 text-white/40">
+                  <Users size={14} />
+                  <span className="text-[10px] font-bold">{(challenge as any).participants || 0} Joined</span>
+                </div>
+                <div className="flex items-center gap-2 text-white/40">
+                  <Clock size={14} />
+                  <span className="text-[10px] font-bold">{(challenge as any).time_left || '24h'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-white/40">
+                  <Shield size={14} />
+                  <span className="text-[10px] font-bold">Verified</span>
+                </div>
+              </div>
+
+              {status ? (
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest">
+                    <span className="text-white/40">Progress</span>
+                    <span className="text-gold">{status.progress}%</span>
                   </div>
-
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between text-xs font-bold uppercase tracking-widest">
-                      <span className="text-white/20">Progress</span>
-                      <span className="text-gold">{isActive ? '65%' : '0%'}</span>
-                    </div>
-                    <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: isActive ? '65%' : '0%' }}
-                        className="h-full bg-gold shadow-[0_0_10px_rgba(255,215,0,0.5)]"
-                      />
-                    </div>
+                  <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                    <motion.div 
+                      initial={{ width: 0 }}
+                      animate={{ width: `${status.progress}%` }}
+                      className="h-full bg-gold shadow-[0_0_10px_rgba(212,175,55,0.5)]"
+                    />
                   </div>
-
-                  <div className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-2">
-                    <div className="text-[10px] font-bold uppercase tracking-widest text-white/20">Reward</div>
-                    <div className="flex items-center gap-2 text-sm font-bold text-white">
-                      <Star className="w-4 h-4 text-gold" />
-                      {challenge.reward}
-                    </div>
+                  <div className="flex items-center justify-center gap-2 text-emerald-400 text-[10px] font-bold uppercase tracking-widest pt-2">
+                    <CheckCircle2 size={14} /> Challenge Active
                   </div>
                 </div>
-
-                <div className="mt-8 grid grid-cols-1 gap-3">
-                  {isActive ? (
-                    <button 
-                      onClick={() => handleClaimReward(challenge.id)}
-                      className="w-full py-3 bg-gold text-black rounded-xl text-xs font-bold hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-gold/20 flex items-center justify-center gap-2"
-                    >
-                      <Trophy className="w-4 h-4" />
-                      Claim Reward (Simulated)
-                    </button>
+              ) : (
+                <button 
+                  onClick={() => handleJoinChallenge(challenge)}
+                  disabled={isLocked}
+                  className={`w-full py-4 rounded-xl text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${
+                    isLocked 
+                      ? 'bg-white/5 text-white/20 cursor-not-allowed' 
+                      : 'bg-gold/10 border border-gold/20 text-gold hover:bg-gold hover:text-black'
+                  }`}
+                >
+                  {isLocked ? (
+                    <><Lock size={14} /> Upgrade to Unlock</>
                   ) : (
-                    <button 
-                      onClick={() => handleStartChallenge(challenge.id)}
-                      disabled={starting === challenge.id}
-                      className="w-full py-3 bg-white/5 border border-white/10 text-white/60 rounded-xl text-xs font-bold hover:bg-gold hover:text-black hover:border-gold transition-all flex items-center justify-center gap-2 group"
-                    >
-                      {starting === challenge.id ? (
-                        <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                      ) : (
-                        <>
-                          Start Challenge
-                          <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                        </>
-                      )}
-                    </button>
+                    <><Zap size={14} /> Accept Trial</>
                   )}
-                </div>
-              </motion.div>
-            );
-          })}
+                </button>
+              )}
+            </motion.div>
+          );
+        })}
       </div>
 
-      <div className="glass-card p-8 border-gold/10 relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-10 opacity-5 pointer-events-none">
-          <Lock className="w-40 h-40 text-gold" />
+      <div className="glass-card p-8 border-gold/20 bg-gold/5 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-8 opacity-5">
+          <Trophy size={120} />
         </div>
-        <div className="relative z-10 space-y-4 max-w-2xl">
-          <h3 className="text-2xl font-bold text-white">Unlock Legendary Challenges</h3>
-          <p className="text-white/40 leading-relaxed">
-            Legendary challenges are only available to Oracles who have proven their consistency. 
-            Complete the Genesis Trial to unlock the next tier of celestial tasks.
+        <div className="relative z-10 max-w-2xl space-y-4">
+          <h2 className="text-2xl font-display font-bold">The Grand Oracle Tournament</h2>
+          <p className="text-white/60">
+            The ultimate test of skill. Compete against the top 1% of traders for a share of the 50,000 USDT prize pool and the title of Grand Oracle.
           </p>
-          <div className="flex flex-wrap gap-4 pt-4">
-            <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10 text-xs font-bold text-white/40">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              Verified Account
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-white/5 rounded-full border border-white/10 text-xs font-bold text-white/40">
-              <Lock className="w-4 h-4 text-gold" />
-              Tier 2 Access
-            </div>
-          </div>
+          <button className="px-8 py-3 bg-gold text-black rounded-xl font-bold uppercase tracking-widest text-xs hover:scale-105 transition-all flex items-center gap-2">
+            Register Now <ArrowRight size={16} />
+          </button>
         </div>
       </div>
     </div>
   );
-};
+}

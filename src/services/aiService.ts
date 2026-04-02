@@ -14,15 +14,21 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
     - AI Bot: ${bot}
     ${chartAnalysis ? `- Oracle Eye Visionary Analysis: ${JSON.stringify(chartAnalysis)}` : ''}
     
-    Task: Generate a high-probability "NOW" trading signal.
+    Task: Generate a high-probability "NOW" trading signal with extreme precision.
     The "entry" MUST be the current price: ${currentPrice}.
     
+    PRE-ANALYSIS FILTERS (Strict):
+    1. **Market Structure Alignment**: Signal must align with the HTF (Higher Time Frame) bias. If HTF is bearish, only SELL signals are valid unless a clear CHoCH has occurred.
+    2. **Liquidity Sweep Confirmation**: A signal is only valid if a recent liquidity sweep (Buy-side or Sell-side) has occurred, indicating institutional participation.
+    3. **Volume & Volatility**: Confirm that the current volume and volatility (ATR/Bollinger) support a directional move. Avoid "choppy" or "sideways" markets.
+    4. **Session Timing**: Prefer signals during London or New York Killzones. Asian session signals must have higher confluence.
+    
     Technical Analysis Requirements:
-    1. **Smart Money Concepts (SMC) & ICT**: Identify Market Structure (BOS, CHoCH), Order Blocks (OB), Fair Value Gaps (FVG), Liquidity Sweeps (Buy-side/Sell-side), and Mitigation Blocks. Look for "Inducement" and "Internal Structure" vs "Swing Structure". Focus on "HTF (Higher Time Frame) Bias" and "LTF (Lower Time Frame) Entry".
+    1. **Smart Money Concepts (SMC) & ICT**: Identify Market Structure (BOS, CHoCH), Order Blocks (OB), Fair Value Gaps (FVG), Liquidity Sweeps (Buy-side/Sell-side), and Mitigation Blocks. Look for "Inducement" and "Internal Structure" vs "Swing Structure". Focus on "HTF Bias" and "LTF Entry".
     2. **Market Maker Model (MMM)**: Analyze the Accumulation, Manipulation, and Distribution (AMD) phases. Look for "Power of 3" setups and "Judas Swings". Identify if we are in a "Market Maker Buy Model" or "Market Maker Sell Model".
-    3. **Supply & Demand (S&D)**: Identify high-probability zones of Supply and Demand. Look for "Rally-Base-Drop" or "Drop-Base-Rally" patterns. Check for "Freshness" of the zones.
-    4. **Confluence**: Use RSI for divergence, MACD for momentum shifts, and Bollinger Bands for volatility expansion/contraction as secondary confirmation. Use "Time of Day" (London/New York Open) as a major confluence factor.
-    5. **Fibonacci**: Use OTE (Optimal Trade Entry) levels (62% - 79%) for precise entry and TP/SL placement. Look for "Equilibrium" vs "Discount/Premium" zones.
+    3. **Supply & Demand (S&D)**: Identify high-probability zones of Supply and Demand. Look for "Freshness" of the zones.
+    4. **Confluence**: Use RSI for divergence, MACD for momentum shifts, and Bollinger Bands for volatility expansion/contraction as secondary confirmation.
+    5. **Fibonacci**: Use OTE (Optimal Trade Entry) levels (62% - 79%) for precise entry and TP/SL placement.
     6. Provide 4 Take Profit levels (tp1, tp2, tp3, tp4) with increasing risk/reward. TP1 should be a "scalp" target, TP4 should be a "swing" target.
     7. Provide a **tight and precise** Stop Loss (stop_loss). It should be placed logically just beyond the most recent structural high/low, Order Block, or FVG to minimize drawdown.
     8. Calculate a recommended lot size based on a standard $1000 account with 1% risk.
@@ -41,6 +47,10 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
     - risk_reward: number
     - confidence: number (0-100)
     - market_structure: string (e.g., "Bullish BOS", "Bearish CHoCH", "Ranging")
+    - liquidity_presence: boolean (true if liquidity sweep/pool identified)
+    - volatility_validation: boolean (true if volatility is sufficient)
+    - session_timing: string (e.g., "London Open", "NY Killzone", "Asian Range")
+    - confirmations_count: number (total number of confluence factors)
     - analysis: string (detailed explanation including indicator confluence)
     - recommended_lot_size: number (suggested lot size for a $1000 account with 1% risk)`;
 
@@ -49,7 +59,7 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       model,
       contents: prompt,
       config: {
-        systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in SIGNAL MODE. Provide precise, data-backed trade setups.",
+        systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in SIGNAL MODE. Provide precise, data-backed trade setups with strict pre-analysis filters.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -63,10 +73,14 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
             risk_reward: { type: Type.NUMBER },
             confidence: { type: Type.INTEGER },
             market_structure: { type: Type.STRING },
+            liquidity_presence: { type: Type.BOOLEAN },
+            volatility_validation: { type: Type.BOOLEAN },
+            session_timing: { type: Type.STRING },
+            confirmations_count: { type: Type.INTEGER },
             analysis: { type: Type.STRING },
             recommended_lot_size: { type: Type.NUMBER },
           },
-          required: ["entry", "stop_loss", "tp1", "tp2", "tp3", "tp4", "risk_reward", "confidence", "market_structure", "analysis", "recommended_lot_size"],
+          required: ["entry", "stop_loss", "tp1", "tp2", "tp3", "tp4", "risk_reward", "confidence", "market_structure", "liquidity_presence", "volatility_validation", "session_timing", "confirmations_count", "analysis", "recommended_lot_size"],
         },
       },
     });
@@ -86,6 +100,13 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
 
 export async function chatWithBot(botName: string, strategy: string, message: string, history: { role: 'user' | 'model', parts: { text: string }[] }[]) {
   const model = "gemini-3-flash-preview";
+  
+  // Format history for the SDK
+  const formattedHistory = history.map(h => ({
+    role: h.role,
+    parts: h.parts
+  }));
+
   const chat = ai.chats.create({
     model,
     config: {
@@ -94,15 +115,9 @@ export async function chatWithBot(botName: string, strategy: string, message: st
       You provide high-level market analysis and insights. 
       Tagline: "Where mortals trade, gods speak."`,
     },
+    history: formattedHistory,
   });
 
-  // Since ai.chats.create doesn't take history directly in the create call in this SDK version,
-  // we might need to send messages sequentially or use a different approach if the SDK supports it.
-  // Actually, the example shows chat.sendMessage.
-  
-  // For simplicity in MVP, we'll just send the current message with context if needed, 
-  // but let's try to use the chat object properly.
-  
   const response = await chat.sendMessage({ message });
   return response.text;
 }
@@ -299,5 +314,46 @@ export async function analyzeChartImage(base64Image: string, mimeType: string, u
   } catch (error: any) {
     console.error("Chart Vision Error:", error);
     throw new Error(error.message || "Failed to analyze the cosmic patterns in this image.");
+  }
+}
+
+export async function getAbyssalSignals(): Promise<any[]> {
+  const model = "gemini-3-flash-preview";
+  const prompt = `Generate 3-5 high-risk, high-reward 'Abyssal' trading signals for Volatility indices (10, 25, 50, 75, 100). 
+  These are dark pool signals with extreme risk. 
+  Include pair, type (BUY/SELL), entry, tp, sl, risk (e.g. 'EXTREME', 'INSANE'), and reward (e.g. '1:5', '1:10'). 
+  Return ONLY JSON in this format: 
+  [{"id": string, "pair": string, "type": "BUY" | "SELL", "entry": number, "tp": number, "sl": number, "risk": string, "reward": string}]`;
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: prompt,
+    config: {
+      systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in ANALYST MODE. Provide extreme-risk dark pool signals.",
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            id: { type: Type.STRING },
+            pair: { type: Type.STRING },
+            type: { type: Type.STRING, enum: ["BUY", "SELL"] },
+            entry: { type: Type.NUMBER },
+            tp: { type: Type.NUMBER },
+            sl: { type: Type.NUMBER },
+            risk: { type: Type.STRING },
+            reward: { type: Type.STRING },
+          },
+          required: ["id", "pair", "type", "entry", "tp", "sl", "risk", "reward"],
+        },
+      },
+    },
+  });
+
+  try {
+    return JSON.parse(response.text || '[]');
+  } catch (err) {
+    return [];
   }
 }

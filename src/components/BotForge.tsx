@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Bot, Plus, Save, Trash2, Zap, Cpu, Eye, Activity, Shield, Layout, Info, Sparkles } from 'lucide-react';
+import { Bot, Plus, Save, Trash2, Zap, Cpu, Eye, Activity, Shield, Layout, Info, Sparkles, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, Bot as BotType } from '../types';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { THEMES } from '../constants/themes';
+import { getBotCharacter } from '../lib/themeUtils';
 
 interface BotForgeProps {
   userProfile: UserProfile;
@@ -174,7 +176,7 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
                     <IconComp size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg">{bot.name}</h3>
+                    <h3 className="font-bold text-lg">{getBotCharacter(bot.name, userProfile.theme)}</h3>
                     <p className="text-[10px] text-gold uppercase tracking-widest font-bold">{bot.strategy}</p>
                   </div>
                 </div>
@@ -212,12 +214,12 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm overflow-y-auto"
         >
           <motion.div 
             initial={{ scale: 0.9, y: 20 }}
             animate={{ scale: 1, y: 0 }}
-            className="glass-card p-8 w-full max-w-xl space-y-6 border-gold/30"
+            className="glass-card p-8 w-full max-w-xl space-y-6 border-gold/30 my-auto"
           >
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-display font-bold gold-gradient flex items-center gap-2">

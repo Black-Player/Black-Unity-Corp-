@@ -1,21 +1,47 @@
-import React, { useMemo } from 'react';
-import { Wallet, TrendingUp, TrendingDown, PieChart, ArrowUpRight, ArrowDownRight, Briefcase, Activity, Target, Shield } from 'lucide-react';
-import { motion } from 'motion/react';
-import { UserProfile } from '../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Wallet, TrendingUp, TrendingDown, PieChart, ArrowUpRight, ArrowDownRight, Briefcase, Activity, Target, Shield, Clock, XCircle, Zap } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { UserProfile, Trade } from '../types';
 import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { db, handleFirestoreError, OperationType } from '../firebase';
+import { collection, query, orderBy, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+
+import { useMarketContext } from '../MarketContext';
 
 interface PortfolioProps {
   userProfile: UserProfile;
-  marketPrices: Record<string, any>;
+  addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  handleCloseTrade: (trade: Trade, reason?: string) => Promise<void>;
 }
 
 const COLORS = ['#FFD700', '#4ADE80', '#60A5FA', '#A78BFA', '#F472B6', '#FB923C'];
 
-export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, marketPrices }) => {
+export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, handleCloseTrade }) => {
+  const { marketPrices } = useMarketContext();
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [loading, setLoading] = useState(true);
   const portfolio = userProfile.portfolio || [];
   const currentAccountType = userProfile.account_type;
   
+  useEffect(() => {
+    const tradesRef = collection(db, 'users', userProfile.uid, 'trades');
+    const q = query(tradesRef, orderBy('created_at', 'desc'));
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Trade));
+      setTrades(data);
+      setLoading(false);
+    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${userProfile.uid}/trades`));
+    
+    return () => unsubscribe();
+  }, [userProfile.uid]);
+
   const filteredPortfolio = portfolio.filter(p => p.account_type === currentAccountType);
+  const openTrades = trades.filter(t => t.status === 'open' && t.account_type === currentAccountType);
+  const closedTrades = trades.filter(t => t.status === 'closed' && t.account_type === currentAccountType);
 
   const totalValue = filteredPortfolio.reduce((acc, item) => {
     const currentPrice = marketPrices[item.symbol]?.price || item.avg_price;
@@ -26,18 +52,41 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, marketPrices 
     return acc + (item.amount * item.avg_price);
   }, 0);
 
-  const totalPnl = totalValue - totalCost;
+  const tradesPnl = openTrades.reduce((acc, trade) => {
+    const currentPrice = marketPrices[trade.pair]?.price || trade.entry_price;
+    const pnl = trade.type === 'buy' 
+      ? (currentPrice - trade.entry_price) 
+      : (trade.entry_price - currentPrice);
+    return acc + pnl;
+  }, 0);
+
+  const totalPnl = (totalValue - totalCost) + tradesPnl;
   const pnlPercentage = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
 
   const chartData = useMemo(() => {
-    return filteredPortfolio.map(item => {
+    const data = filteredPortfolio.map(item => {
       const currentPrice = marketPrices[item.symbol]?.price || item.avg_price;
       return {
         name: item.symbol.replace('_', ' ').toUpperCase(),
         value: item.amount * currentPrice
       };
-    }).sort((a, b) => b.value - a.value);
-  }, [filteredPortfolio, marketPrices]);
+    });
+    
+    openTrades.forEach(trade => {
+      const currentPrice = marketPrices[trade.pair]?.price || trade.entry_price;
+      const existing = data.find(d => d.name === trade.pair.replace('_', ' ').toUpperCase());
+      if (existing) {
+        existing.value += trade.entry_price; // Simplified value for trades
+      } else {
+        data.push({
+          name: trade.pair.replace('_', ' ').toUpperCase(),
+          value: trade.entry_price
+        });
+      }
+    });
+
+    return data.sort((a, b) => b.value - a.value);
+  }, [filteredPortfolio, openTrades, marketPrices]);
 
   return (
     <div className="space-y-8">
@@ -51,7 +100,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, marketPrices 
             <Wallet size={18} />
             <span className="text-xs uppercase tracking-widest">Portfolio Value</span>
           </div>
-          <p className="text-3xl font-bold font-display text-gold">${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          <p className="text-3xl font-bold font-display text-gold">${(totalValue + openTrades.length * 10).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </motion.div>
 
         <motion.div 
@@ -82,9 +131,9 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, marketPrices 
         >
           <div className="flex items-center gap-3 text-white/40">
             <PieChart size={18} />
-            <span className="text-xs uppercase tracking-widest">Assets Held</span>
+            <span className="text-xs uppercase tracking-widest">Active Rituals</span>
           </div>
-          <p className="text-3xl font-bold font-display">{filteredPortfolio.length}</p>
+          <p className="text-3xl font-bold font-display">{filteredPortfolio.length + openTrades.length}</p>
         </motion.div>
       </div>
 
@@ -159,32 +208,101 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, marketPrices 
 
       <div className="glass-card p-6 space-y-6">
         <h3 className="text-lg font-display font-bold flex items-center gap-2">
-          <Briefcase className="text-gold" size={20} /> Current Holdings ({currentAccountType.toUpperCase()})
+          <Zap className="text-gold" size={20} /> Active Rituals (Open Trades)
         </h3>
 
-        <div className="hidden md:block overflow-x-auto">
+        <div className="space-y-4">
+          {openTrades.map((trade) => {
+            const currentPrice = marketPrices[trade.pair]?.price || trade.entry_price;
+            const pnl = trade.type === 'buy' 
+              ? (currentPrice - trade.entry_price) 
+              : (trade.entry_price - currentPrice);
+            const pnlPerc = (pnl / trade.entry_price) * 100;
+
+            return (
+              <motion.div 
+                key={trade.id}
+                layout
+                className="p-4 rounded-xl bg-white/5 border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4"
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${trade.type === 'buy' ? 'bg-emerald-400/10 text-emerald-400' : 'text-red-400 bg-red-400/10'}`}>
+                    {trade.type === 'buy' ? <ArrowUpRight size={20} /> : <ArrowDownRight size={20} />}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-lg">{trade.pair.replace('_', ' ').toUpperCase()}</span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-widest ${trade.type === 'buy' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
+                        {trade.type}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-white/40 uppercase tracking-widest font-bold flex gap-3">
+                      <span>Entry: ${trade.entry_price.toFixed(2)}</span>
+                      <span>Current: ${currentPrice.toFixed(2)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between md:justify-end gap-8">
+                  <div className="text-right">
+                    <div className={`text-lg font-bold ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(2)}
+                    </div>
+                    <div className={`text-[10px] font-bold ${pnl >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}`}>
+                      {pnl >= 0 ? '+' : ''}{pnlPerc.toFixed(2)}%
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => handleCloseTrade(trade)}
+                    className="p-2 rounded-lg bg-white/5 text-white/40 hover:bg-red-400/10 hover:text-red-400 transition-all"
+                    title="Conclude Ritual"
+                  >
+                    <XCircle size={20} />
+                  </button>
+                </div>
+              </motion.div>
+            );
+          })}
+
+          {openTrades.length === 0 && (
+            <div className="py-12 text-center text-white/20 italic border border-dashed border-white/5 rounded-xl">
+              No active rituals in the physical realm.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="glass-card p-6 space-y-6">
+        <h3 className="text-lg font-display font-bold flex items-center gap-2">
+          <Clock className="text-gold" size={20} /> Ritual History (Closed Trades)
+        </h3>
+
+        <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="text-left text-[10px] text-white/40 uppercase tracking-widest border-b border-white/5">
                 <th className="pb-4">Asset</th>
-                <th className="pb-4">Amount</th>
-                <th className="pb-4">Avg Price</th>
-                <th className="pb-4">Current Price</th>
-                <th className="pb-4 text-right">P/L</th>
+                <th className="pb-4">Type</th>
+                <th className="pb-4">Entry</th>
+                <th className="pb-4">Exit</th>
+                <th className="pb-4 text-right">Result</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              {filteredPortfolio.map((item, i) => {
-                const currentPrice = marketPrices[item.symbol]?.price || item.avg_price;
-                const pnl = (currentPrice - item.avg_price) * item.amount;
-                const pnlPerc = ((currentPrice - item.avg_price) / item.avg_price) * 100;
+              {closedTrades.map((trade) => {
+                const pnl = trade.pnl || 0;
+                const pnlPerc = trade.pnl_percentage || 0;
 
                 return (
-                  <tr key={i} className="text-sm">
-                    <td className="py-4 font-bold">{item.symbol.replace('_', ' ').toUpperCase()}</td>
-                    <td className="py-4 font-mono">{item.amount.toFixed(4)}</td>
-                    <td className="py-4 font-mono">${item.avg_price.toFixed(2)}</td>
-                    <td className="py-4 font-mono">${currentPrice.toFixed(2)}</td>
+                  <tr key={trade.id} className="text-sm">
+                    <td className="py-4 font-bold">{trade.pair.replace('_', ' ').toUpperCase()}</td>
+                    <td className="py-4">
+                      <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-widest ${trade.type === 'buy' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
+                        {trade.type}
+                      </span>
+                    </td>
+                    <td className="py-4 font-mono">${trade.entry_price.toFixed(2)}</td>
+                    <td className="py-4 font-mono">${(trade.entry_price + pnl).toFixed(2)}</td>
                     <td className="py-4 text-right">
                       <div className={`flex flex-col items-end ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         <span className="font-bold">{pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(2)}</span>
@@ -198,43 +316,9 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, marketPrices 
           </table>
         </div>
 
-        <div className="md:hidden space-y-4">
-          {filteredPortfolio.map((item, i) => {
-            const currentPrice = marketPrices[item.symbol]?.price || item.avg_price;
-            const pnl = (currentPrice - item.avg_price) * item.amount;
-            const pnlPerc = ((currentPrice - item.avg_price) / item.avg_price) * 100;
-
-            return (
-              <div key={i} className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-gold">{item.symbol.replace('_', ' ').toUpperCase()}</span>
-                  <div className={`flex flex-col items-end ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    <span className="font-bold">{pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(2)}</span>
-                    <span className="text-[10px] opacity-60">({pnl >= 0 ? '+' : ''}{pnlPerc.toFixed(2)}%)</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-[10px] uppercase tracking-widest text-white/40">
-                  <div>
-                    <p>Amount</p>
-                    <p className="text-white font-mono mt-1">{item.amount.toFixed(4)}</p>
-                  </div>
-                  <div>
-                    <p>Avg Price</p>
-                    <p className="text-white font-mono mt-1">${item.avg_price.toFixed(2)}</p>
-                  </div>
-                  <div className="text-right">
-                    <p>Current</p>
-                    <p className="text-white font-mono mt-1">${currentPrice.toFixed(2)}</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {filteredPortfolio.length === 0 && (
+        {closedTrades.length === 0 && (
           <div className="py-12 text-center text-white/20 italic">
-            No active holdings in your {currentAccountType} portfolio.
+            Your ritual history is empty.
           </div>
         )}
       </div>

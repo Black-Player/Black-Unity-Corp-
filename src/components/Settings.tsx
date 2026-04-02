@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import { signOut } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
-import { UserProfile } from '../types';
+import { UserProfile, AppTheme } from '../types';
 import { Settings as SettingsIcon, Bell, Volume2, Mail, Shield, CreditCard, User, Zap, LogOut, Trash2, Palette, Moon, Sun, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -21,7 +21,7 @@ const THEMES = [
 export default function Settings({ userProfile, addToast }: SettingsProps) {
   const [settings, setSettings] = useState(userProfile.notification_settings);
   const [saving, setSaving] = useState(false);
-  const [activeTheme, setActiveTheme] = useState('cosmic');
+  const [activeTheme, setActiveTheme] = useState<AppTheme>(userProfile.theme || 'cosmic');
 
   const handleToggle = async (key: keyof UserProfile['notification_settings']) => {
     const newSettings = { ...settings, [key]: !settings[key] };
@@ -43,10 +43,19 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
     }
   };
 
-  const handleThemeChange = (themeId: string) => {
-    setActiveTheme(themeId);
+  const handleThemeChange = async (themeId: string) => {
+    setActiveTheme(themeId as AppTheme);
     document.documentElement.setAttribute('data-theme', themeId);
-    addToast(`Theme shifted to ${themeId}.`, 'success');
+    
+    try {
+      await updateDoc(doc(db, 'users', userProfile.uid), {
+        theme: themeId
+      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
+      addToast(`Theme shifted to ${themeId}.`, 'success');
+    } catch (err) {
+      console.error(err);
+      addToast('Failed to save theme preference.', 'error');
+    }
   };
 
   const handleSignOut = async () => {

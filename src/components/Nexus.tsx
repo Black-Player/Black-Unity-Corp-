@@ -2,12 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Globe, Users, Zap, TrendingUp, TrendingDown, MessageSquare, Send, Sparkles, Activity, Shield, Trophy, Target, Bot, User, Share2, ExternalLink } from 'lucide-react';
 import { UserProfile } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 interface NexusMessage {
   id: string;
-  user_id: string;
+  uid: string;
   username: string;
   text: string;
   type: 'signal' | 'chat' | 'system';
@@ -23,21 +22,41 @@ export default function Nexus({ userProfile, addToast }: { userProfile: UserProf
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'nexus_chat'), orderBy('created_at', 'asc'), limit(100));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as NexusMessage));
-      setMessages(data);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'nexus_chat'));
+    // Initial fetch
+    const fetchMessages = async () => {
+      const { data, error } = await supabase
+        .from('chat_messages')
+        .select('*')
+        .order('created_at', { ascending: true })
+        .limit(100);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.LIST, 'chat_messages');
+      } else {
+        setMessages(data as NexusMessage[]);
+      }
+    };
+
+    fetchMessages();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('public:chat_messages')
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'chat_messages' 
+      }, (payload) => {
+        setMessages(prev => [...prev, payload.new as NexusMessage].slice(-100));
+      })
+      .subscribe();
 
     const interval = setInterval(() => {
       setOnlineCount(prev => prev + Math.floor(Math.random() * 11) - 5);
     }, 5000);
 
     return () => {
-      unsubscribe();
+      supabase.removeChannel(channel);
       clearInterval(interval);
     };
   }, []);
@@ -53,14 +72,17 @@ export default function Nexus({ userProfile, addToast }: { userProfile: UserProf
     if (!input.trim()) return;
 
     try {
-      await addDoc(collection(db, 'nexus_chat'), {
-        user_id: userProfile.uid,
-        username: userProfile.username || userProfile.email.split('@')[0],
-        text: input,
-        type: 'chat',
-        created_at: serverTimestamp()
-      }).catch(err => handleFirestoreError(err, OperationType.CREATE, 'nexus_chat'));
+      const { error } = await supabase
+        .from('chat_messages')
+        .insert([{
+          uid: userProfile.uid,
+          username: userProfile.username || userProfile.email.split('@')[0],
+          text: input,
+          type: 'chat',
+          created_at: new Date().toISOString()
+        }]);
       
+      if (error) throw error;
       setInput('');
     } catch (error) {
       console.error(error);
@@ -160,22 +182,22 @@ export default function Nexus({ userProfile, addToast }: { userProfile: UserProf
                 key={msg.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`flex gap-4 ${msg.user_id === userProfile.uid ? 'flex-row-reverse' : ''}`}
+                className={`flex gap-4 ${msg.uid === userProfile.uid ? 'flex-row-reverse' : ''}`}
               >
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-                  msg.user_id === userProfile.uid ? 'bg-gold text-black' : 'bg-white/10 text-gold'
+                  msg.uid === userProfile.uid ? 'bg-gold text-black' : 'bg-white/10 text-gold'
                 }`}>
-                  {msg.user_id === userProfile.uid ? <User size={20} /> : <Bot size={20} />}
+                  {msg.uid === userProfile.uid ? <User size={20} /> : <Bot size={20} />}
                 </div>
-                <div className={`max-w-[80%] space-y-1 ${msg.user_id === userProfile.uid ? 'items-end' : ''}`}>
-                  <div className={`flex items-center gap-2 mb-1 ${msg.user_id === userProfile.uid ? 'flex-row-reverse' : ''}`}>
+                <div className={`max-w-[80%] space-y-1 ${msg.uid === userProfile.uid ? 'items-end' : ''}`}>
+                  <div className={`flex items-center gap-2 mb-1 ${msg.uid === userProfile.uid ? 'flex-row-reverse' : ''}`}>
                     <span className="text-[10px] font-bold text-gold uppercase tracking-widest">{msg.username}</span>
                     <span className="text-[8px] text-white/20 uppercase font-bold">
-                      {msg.created_at?.toDate ? new Date(msg.created_at.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                      {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
                   <div className={`p-4 rounded-2xl ${
-                    msg.user_id === userProfile.uid 
+                    msg.uid === userProfile.uid 
                       ? 'bg-gold/10 border border-gold/20 text-white' 
                       : 'bg-white/5 border border-white/10 text-white/90'
                   }`}>

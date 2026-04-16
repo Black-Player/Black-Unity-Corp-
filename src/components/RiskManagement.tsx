@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { motion } from 'motion/react';
 import { 
   Shield, 
@@ -38,13 +37,18 @@ export const RiskManagement: React.FC<RiskManagementProps> = ({ userProfile, add
   const handleSave = async () => {
     setSaving(true);
     try {
-      const userRef = doc(db, 'users', userProfile.uid);
-      await updateDoc(userRef, {
-        risk_settings: settings
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
+      const { error } = await supabase
+        .from('users')
+        .update({
+          risk_settings: settings
+        })
+        .eq('uid', userProfile.uid);
+      
+      if (error) throw error;
       
       addToast('Risk Management Settings Updated!', 'success');
     } catch (err: any) {
+      handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
       addToast(err.message, 'error');
     } finally {
       setSaving(false);

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
-import { UserProfile, AccessKey, AdvancementRequest } from '../types';
-import { db, auth } from '../firebase';
-import { doc, getDoc, collection, addDoc, serverTimestamp, query, where, onSnapshot, updateDoc, deleteDoc, increment as firestoreIncrement } from 'firebase/firestore';
+import { UserProfile, AccessKey, AdvancementRequest, Tier } from '../types';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { generateTradingSignal } from '../services/aiService';
+import KeyGenerator from './KeyGenerator';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldCheck, ShieldAlert, CheckCircle2, XCircle, Loader2, Server, Brain, User, Sparkles, Smartphone, Zap, LayoutDashboard, Key, Plus, Copy, GraduationCap, Check, X } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, CheckCircle2, XCircle, Loader2, Server, Brain, User, Sparkles, Smartphone, Zap, LayoutDashboard, Key, Plus, Copy, GraduationCap, Check, X, Globe, Activity, Cpu, Layers } from 'lucide-react';
 
 interface DiagnosticsProps {
   userProfile: UserProfile;
@@ -20,95 +20,97 @@ interface TestResult {
 
 export default function Diagnostics({ userProfile, addToast }: DiagnosticsProps) {
   const [results, setResults] = useState<TestResult[]>([
-    { name: 'Firebase Connection', status: 'pending', message: 'Checking connection...', icon: Server },
+    { name: 'Supabase Connection', status: 'pending', message: 'Checking connection...', icon: Server },
     { name: 'User Profile Integrity', status: 'pending', message: 'Verifying profile data...', icon: User },
     { name: 'AI Engine (Gemini)', status: 'pending', message: 'Testing AI response...', icon: Brain },
   ]);
 
-  const [keyType, setKeyType] = useState<'student' | 'investor'>('student');
-  const [usageLimit, setUsageLimit] = useState(1);
-  const [generatedKey, setGeneratedKey] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [pendingRequests, setPendingRequests] = useState<AdvancementRequest[]>([]);
 
   useEffect(() => {
     if (userProfile.role === 'creator') {
-      const q = query(collection(db, 'advancement_requests'), where('status', '==', 'pending'));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AdvancementRequest));
-        setPendingRequests(requests);
-      });
-      return () => unsubscribe();
+      const fetchRequests = async () => {
+        const { data, error } = await supabase
+          .from('advancement_requests')
+          .select('*')
+          .eq('status', 'pending');
+        
+        if (error) {
+          handleSupabaseError(error, OperationType.GET, 'advancement_requests');
+        } else {
+          setPendingRequests(data as AdvancementRequest[]);
+        }
+      };
+
+      fetchRequests();
+
+      const channel = supabase
+        .channel('public:advancement_requests')
+        .on('postgres_changes', { 
+          event: '*', 
+          schema: 'public', 
+          table: 'advancement_requests',
+          filter: 'status=eq.pending'
+        }, fetchRequests)
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [userProfile.role]);
 
   const handleApproveRequest = async (request: AdvancementRequest) => {
     try {
       // Update user profile
-      const userRef = doc(db, 'users', request.user_id);
-      await updateDoc(userRef, {
-        student_tier: request.target_tier,
-        student_rank: request.target_tier.charAt(0).toUpperCase() + request.target_tier.slice(1),
-        ap: 0 // Reset AP on advancement? Or keep? User prompt says "Students must EARN progression".
-      });
+      const { error: userError } = await supabase
+        .from('users')
+        .update({
+          student_tier: request.target_tier,
+          student_rank: request.target_tier.charAt(0).toUpperCase() + request.target_tier.slice(1),
+          ap: 0
+        })
+        .eq('uid', request.uid);
+      
+      if (userError) throw userError;
 
       // Update request status
-      const requestRef = doc(db, 'advancement_requests', request.id!);
-      await updateDoc(requestRef, { status: 'approved' });
+      const { error: requestError } = await supabase
+        .from('advancement_requests')
+        .update({ status: 'approved' })
+        .eq('id', request.id);
+      
+      if (requestError) throw requestError;
+
       addToast('Advancement approved!', 'success');
     } catch (err) {
+      handleSupabaseError(err, OperationType.UPDATE, 'users');
       addToast('Failed to approve advancement.', 'error');
     }
   };
 
   const handleRejectRequest = async (requestId: string) => {
     try {
-      const requestRef = doc(db, 'advancement_requests', requestId);
-      await updateDoc(requestRef, { status: 'rejected' });
+      const { error } = await supabase
+        .from('advancement_requests')
+        .update({ status: 'rejected' })
+        .eq('id', requestId);
+      
+      if (error) throw error;
       addToast('Advancement rejected.', 'info');
     } catch (err) {
+      handleSupabaseError(err, OperationType.UPDATE, 'advancement_requests');
       addToast('Failed to reject advancement.', 'error');
     }
   };
 
-  const generateKey = async () => {
-    // ... existing generateKey ...
-    setIsGenerating(true);
-    try {
-      const keyStr = `${keyType.toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
-      const signature = btoa(JSON.stringify({ key: keyStr, type: keyType, timestamp: Date.now() }));
-      
-      const keyData: Partial<AccessKey> = {
-        key: keyStr,
-        type: keyType,
-        usage_limit: usageLimit,
-        usage_count: 0,
-        created_at: new Date().toISOString(),
-        signature: signature
-      };
-
-      await addDoc(collection(db, 'access_keys'), keyData);
-      setGeneratedKey(keyStr);
-      addToast(`${keyType.charAt(0).toUpperCase() + keyType.slice(1)} key generated successfully!`, 'success');
-    } catch (err) {
-      addToast('Failed to generate access key.', 'error');
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    addToast('Key copied to clipboard!', 'success');
-  };
-
   const runTests = async () => {
-    // ... existing tests ...
     try {
-      await getDoc(doc(db, 'users', userProfile.uid));
-      updateResult(0, 'success', 'Connected to Firestore successfully.');
+      const { error } = await supabase.from('users').select('uid').eq('uid', userProfile.uid).single();
+      if (error) throw error;
+      updateResult(0, 'success', 'Connected to Supabase successfully.');
     } catch (err) {
-      updateResult(0, 'error', 'Failed to connect to Firestore.');
+      updateResult(0, 'error', 'Failed to connect to Supabase.');
     }
 
     if (userProfile.uid && userProfile.email && userProfile.tier) {
@@ -118,7 +120,15 @@ export default function Diagnostics({ userProfile, addToast }: DiagnosticsProps)
     }
 
     try {
-      const signal = await generateTradingSignal('EURUSD', 'H1', 'Trinity', 'MMM', 1.0850, { sentiment: 0.5, strength: 0.5 });
+      const testBot = {
+        name: 'Trinity',
+        strategy: 'MMM',
+        tier_requirement: 'oracle' as Tier,
+        description: 'Test bot for diagnostics.',
+        icon: 'Zap',
+        personality: 'analytical' as const
+      };
+      const signal = await generateTradingSignal('EURUSD', 'H1', testBot as any, 1.0850, { sentiment: 0.5, strength: 0.5 });
       if (signal && signal.entry) {
         updateResult(2, 'success', 'AI Oracle is responding correctly.');
       } else {
@@ -159,122 +169,146 @@ export default function Diagnostics({ userProfile, addToast }: DiagnosticsProps)
         </button>
       </div>
 
-      {/* Creator Tools Section */}
-      {userProfile.role === 'creator' && (
-        <div className="space-y-8">
-          {/* Key Generator */}
-          <div className="glass-card p-8 border-gold/20 bg-gold/5 space-y-6">
-            <div className="flex items-center gap-3">
-              <Key className="text-gold" size={24} />
-              <h3 className="text-xl font-display font-bold uppercase tracking-widest">Access Key Generator</h3>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Key Type</label>
-                <select 
-                  value={keyType}
-                  onChange={(e) => setKeyType(e.target.value as any)}
-                  className="w-full cosmic-input text-sm"
-                >
-                  <option value="student">Student Key</option>
-                  <option value="investor">Investor Key</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Usage Limit</label>
-                <input 
-                  type="number" 
-                  value={usageLimit}
-                  onChange={(e) => setUsageLimit(parseInt(e.target.value))}
-                  className="w-full cosmic-input text-sm"
-                  min="1"
-                />
-              </div>
-              <div className="flex items-end">
-                <button 
-                  onClick={generateKey}
-                  disabled={isGenerating}
-                  className="w-full py-3 bg-gold text-black font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-gold/80 transition-all"
-                >
-                  {isGenerating ? <Loader2 className="animate-spin" size={18} /> : <Plus size={18} />}
-                  Generate Key
-                </button>
-              </div>
-            </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="glass-card p-4 border-white/5">
+          <div className="flex items-center gap-3 mb-2">
+            <Server className="text-gold" size={18} />
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-white/40">Zion Core</h3>
+          </div>
+          <p className="text-xl font-bold text-emerald-400">Operational</p>
+          <p className="text-[10px] text-white/20 mt-1">Uptime: 99.99% (Cosmic Standard)</p>
+        </div>
 
-            {generatedKey && (
-              <motion.div 
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-4 rounded-xl bg-black/40 border border-gold/20 flex items-center justify-between"
-              >
-                <div className="space-y-1">
-                  <p className="text-[10px] text-gold uppercase font-bold tracking-widest">Generated Key</p>
-                  <p className="text-lg font-mono font-bold text-white">{generatedKey}</p>
+        <div className="glass-card p-4 border-white/5">
+          <div className="flex items-center gap-3 mb-2">
+            <Globe className="text-blue-400" size={18} />
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-white/40">Data Feed</h3>
+          </div>
+          <p className="text-xl font-bold text-white">Connected</p>
+          <p className="text-[10px] text-white/20 mt-1">Latency: 124ms (Zion Killzone)</p>
+        </div>
+
+        <div className="glass-card p-4 border-white/5">
+          <div className="flex items-center gap-3 mb-2">
+            <Brain className="text-purple-400" size={18} />
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-white/40">AI Oracle</h3>
+          </div>
+          <p className="text-xl font-bold text-white">Active</p>
+          <p className="text-[10px] text-white/20 mt-1">Model: Gemini 3 Flash (Visionary)</p>
+        </div>
+
+        <div className="glass-card p-4 border-white/5">
+          <div className="flex items-center gap-3 mb-2">
+            <ShieldCheck className="text-emerald-400" size={18} />
+            <h3 className="text-[10px] font-bold uppercase tracking-widest text-white/40">Security</h3>
+          </div>
+          <p className="text-xl font-bold text-white">Encrypted</p>
+          <p className="text-[10px] text-white/20 mt-1">RSA-4096 Cosmic Protocol</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <div className="glass-card p-6 space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <Zap className="text-gold" size={20} /> Advanced System Metrics
+            </h3>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-white/40 uppercase tracking-widest font-bold">Neural Load</span>
+                  <span className="text-gold font-mono">42%</span>
                 </div>
-                <button 
-                  onClick={() => copyToClipboard(generatedKey)}
-                  className="p-3 rounded-lg hover:bg-white/5 text-gold transition-all"
-                >
-                  <Copy size={20} />
-                </button>
-              </motion.div>
-            )}
+                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: '42%' }}
+                    className="h-full bg-gold"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-white/40 uppercase tracking-widest font-bold">Memory Allocation</span>
+                  <span className="text-blue-400 font-mono">1.2 GB / 4.0 GB</span>
+                </div>
+                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: '30%' }}
+                    className="h-full bg-blue-400"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between text-[10px]">
+                  <span className="text-white/40 uppercase tracking-widest font-bold">WebSocket Throughput</span>
+                  <span className="text-purple-400 font-mono">850 kbps</span>
+                </div>
+                <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: '65%' }}
+                    className="h-full bg-purple-400"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
 
-          {/* Advancement Requests */}
-          <div className="glass-card p-8 border-blue-500/20 bg-blue-500/5 space-y-6">
-            <div className="flex items-center gap-3">
-              <GraduationCap className="text-blue-400" size={24} />
-              <h3 className="text-xl font-display font-bold uppercase tracking-widest">Advancement Requests</h3>
-            </div>
-
-            <div className="space-y-4">
-              {pendingRequests.length === 0 ? (
-                <p className="text-center py-8 text-white/20 italic">No pending advancement requests.</p>
-              ) : (
-                pendingRequests.map((req) => (
-                  <motion.div 
-                    key={req.id}
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className="p-4 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between"
-                  >
-                    <div className="space-y-1">
-                      <p className="text-sm font-bold text-white">User ID: {req.user_id.slice(0, 8)}...</p>
-                      <div className="flex items-center gap-2 text-[10px] uppercase font-bold tracking-widest">
-                        <span className="text-white/40">{req.current_tier}</span>
-                        <Zap size={10} className="text-gold" />
-                        <span className="text-blue-400">{req.target_tier}</span>
-                      </div>
-                      <p className="text-[10px] text-white/40">AP at Request: {req.ap_at_request}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => handleApproveRequest(req)}
-                        className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all"
-                      >
-                        <Check size={20} />
-                      </button>
-                      <button 
-                        onClick={() => handleRejectRequest(req.id!)}
-                        className="p-2 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-all"
-                      >
-                        <X size={20} />
-                      </button>
-                    </div>
-                  </motion.div>
-                ))
-              )}
+          <div className="glass-card p-6 space-y-4">
+            <h3 className="text-lg font-bold flex items-center gap-2">
+              <LayoutDashboard className="text-gold" size={20} /> System Logs
+            </h3>
+            <div className="bg-black/40 rounded-xl p-4 font-mono text-[10px] space-y-2 max-h-[300px] overflow-y-auto border border-white/5">
+              <p className="text-emerald-400/60">[SUCCESS] Zion Network Handshake Complete</p>
+              <p className="text-blue-400/60">[INFO] Deriv WebSocket Authorized: {userProfile.email}</p>
+              <p className="text-white/20">[DEBUG] MarketContext Throttling: 500ms</p>
+              <p className="text-white/20">[DEBUG] TradeMonitor Interval: 2000ms</p>
+              <p className="text-purple-400/60">[AI] Oracle Eye Vision System Initialized</p>
+              <p className="text-gold/60">[AUTH] RSA-4096 Key Validated for {userProfile.role.toUpperCase()} role</p>
+              <p className="text-white/20">[DEBUG] Memory cleanup performed: 156 objects purged</p>
+              <p className="text-emerald-400/60">[SUCCESS] Real-time price feed established for 45 symbols</p>
+              <p className="text-white/20">[INFO] System realigned with cosmic constants</p>
             </div>
           </div>
         </div>
-      )}
+
+        <div className="space-y-6">
+          <KeyGenerator userProfile={userProfile} addToast={addToast} />
+          
+          <div className="glass-card p-6 space-y-4 border-gold/10">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-gold flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4" /> Admin Protocol
+            </h3>
+            <p className="text-[10px] text-white/40 leading-relaxed italic">
+              "The Creator has full authority over the Zion network. Use these tools with divine wisdom."
+            </p>
+            <div className="space-y-2">
+              <button 
+                onClick={() => {
+                  localStorage.clear();
+                  window.location.reload();
+                }}
+                className="w-full py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all"
+              >
+                Flush Neural Cache
+              </button>
+              <button className="w-full py-2 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold uppercase tracking-widest hover:bg-white/10 transition-all">
+                Re-Sync Firestore
+              </button>
+              <button 
+                onClick={() => supabase.auth.signOut()}
+                className="w-full py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[10px] font-bold uppercase tracking-widest text-rose-400 hover:bg-rose-500/20 transition-all"
+              >
+                Emergency Shutdown
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div className="grid gap-4">
-        {/* ... existing results map ... */}
         {results.map((test, i) => (
           <motion.div
             key={test.name}

@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { auth, db, handleFirestoreError, OperationType } from './firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot, updateDoc, increment, addDoc, collection } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType, isSupabaseConfigured } from './supabase';
+import { User } from '@supabase/supabase-js';
 import { Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, EconomicEvent, PriceAlert, MasterStrategy, Tribe, Challenge, MarketplaceItem, MarketNews, UserProgress, UserProfile } from './types';
 import Auth from './components/Auth';
 import Sidebar from './components/Sidebar';
@@ -21,7 +20,6 @@ import { Portfolio } from './components/Portfolio';
 import Referrals from './components/Referrals';
 import NotificationCenter from './components/NotificationCenter';
 import { EconomicCalendar } from './components/EconomicCalendar';
-import StrategyBuilder from './components/StrategyBuilder';
 import AlertsManager from './components/AlertsManager';
 import GlobalSearch from './components/GlobalSearch';
 import TradingSessions from './components/TradingSessions';
@@ -65,6 +63,19 @@ export default function App() {
 
   useEffect(() => {
     derivService.connect();
+    
+    // Connection test
+    const testConnection = async () => {
+      try {
+        const { error } = await supabase.from('users').select('uid').limit(1).single();
+        if (error && error.message.includes('failed to fetch')) {
+          console.error("Supabase connection failed. Please check your configuration.");
+        }
+      } catch (err) {
+        console.error("Supabase connection error:", err);
+      }
+    };
+    if (isSupabaseConfigured) testConnection();
   }, []);
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -91,35 +102,74 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user);
-      if (!user) {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) {
         setUserProfile(null);
         setLoading(false);
       }
     });
-    return () => unsubscribe();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (!session?.user) {
+        setUserProfile(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
     if (user) {
       setError(null);
-      const unsubscribe = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
-        if (snapshot.exists()) {
-          setUserProfile(snapshot.data() as UserProfile);
+      
+      // Initial fetch
+      const fetchProfile = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('uid', user.id)
+            .single();
+          
+          if (error) {
+            if (error.code === 'PGRST116') {
+              console.warn('User profile not found in Supabase');
+              setError('User profile not found. Please ensure you are registered correctly.');
+            } else {
+              await handleSupabaseError(error, OperationType.GET, 'users');
+            }
+          } else {
+            setUserProfile(data as UserProfile);
+          }
           setLoading(false);
-        } else {
-          console.warn('User profile not found in Firestore');
-          setError('User profile not found. Please ensure you are registered correctly.');
+        } catch (err) {
+          console.error('Supabase fetch error:', err);
+          setError('Could not reach the database. Please check your connection or configuration.');
           setLoading(false);
         }
-      }, (error) => {
-        console.error('Firestore snapshot error:', error);
-        handleFirestoreError(error, OperationType.GET, `users/${user.uid}`);
-        setError('Could not reach the database. Please check your connection or configuration.');
-        setLoading(false);
-      });
-      return () => unsubscribe();
+      };
+
+      fetchProfile();
+
+      // Subscribe to changes
+      const channel = supabase
+        .channel(`public:users:uid=eq.${user.id}`)
+        .on('postgres_changes', { 
+          event: '*', 
+          schema: 'public', 
+          table: 'users', 
+          filter: `uid=eq.${user.id}` 
+        }, (payload) => {
+          setUserProfile(payload.new as UserProfile);
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [user]);
 
@@ -133,15 +183,21 @@ export default function App() {
         
         if (today !== lastReset && lastResetRef.current !== today) {
           lastResetRef.current = today;
-          const userRef = doc(db, 'users', user.uid);
-          updateDoc(userRef, {
-            signals_used_today: 0,
-            last_reset_date: new Date().toISOString()
-          }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`));
+          
+          supabase
+            .from('users')
+            .update({
+              signals_used_today: 0,
+              last_reset_date: new Date().toISOString()
+            })
+            .eq('uid', user.id)
+            .then(({ error }) => {
+              if (error) await handleSupabaseError(error, OperationType.UPDATE, 'users');
+            });
         }
       }
     }
-  }, [user?.uid, userProfile?.last_reset_date]);
+  }, [user?.id, userProfile?.last_reset_date]);
 
   useEffect(() => {
     if (userProfile?.theme) {
@@ -158,28 +214,44 @@ export default function App() {
       const finalPnlPercentage = trade.pnl_percentage || 0;
       const exitPrice = trade.exit_price || trade.entry_price;
 
-      await updateDoc(doc(db, 'users', userProfile.uid, 'trades', trade.id), {
-        status: 'closed',
-        closed_at: new Date().toISOString(),
-        pnl: finalPnl,
-        pnl_percentage: finalPnlPercentage,
-        exit_price: exitPrice,
-        close_reason: reason
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}/trades`));
+      const { error: tradeError } = await supabase
+        .from('trades')
+        .update({
+          status: 'closed',
+          closed_at: new Date().toISOString(),
+          pnl: finalPnl,
+          pnl_percentage: finalPnlPercentage,
+          exit_price: exitPrice,
+          close_reason: reason
+        })
+        .eq('id', trade.id);
+      
+      if (tradeError) throw tradeError;
       
       // Update User Stats
-      const userRef = doc(db, 'users', userProfile.uid);
       const isWin = finalPnl > 0;
-      
       const balanceField = trade.account_type === 'live' ? 'live_balance' : 'demo_balance';
       
-      await updateDoc(userRef, {
-        [balanceField]: increment(finalPnl),
-        'stats.total_trades': increment(1),
-        'stats.wins': increment(isWin ? 1 : 0),
-        'stats.losses': increment(isWin ? 0 : 1),
-        total_pnl: increment(finalPnl)
-      }).catch(() => {});
+      const { error: userError } = await supabase.rpc('increment_user_stats', {
+        user_id: userProfile.uid,
+        pnl_change: finalPnl,
+        is_win: isWin,
+        balance_field: balanceField
+      });
+
+      if (userError) {
+        // Fallback if RPC doesn't exist yet
+        await supabase
+          .from('users')
+          .update({
+            [balanceField]: (userProfile as any)[balanceField] + finalPnl,
+            total_pnl: userProfile.total_pnl + finalPnl,
+            'stats.total_trades': (userProfile.stats?.total_trades || 0) + 1,
+            'stats.wins': (userProfile.stats?.wins || 0) + (isWin ? 1 : 0),
+            'stats.losses': (userProfile.stats?.losses || 0) + (isWin ? 0 : 1)
+          })
+          .eq('uid', userProfile.uid);
+      }
 
       // Heavenly Order Motivation
       if (userProfile.theme === 'heavenly') {
@@ -188,26 +260,57 @@ export default function App() {
       }
 
       // Create notification
-      await addDoc(collection(db, 'users', userProfile.uid, 'notifications'), {
-        title: `Trade Closed: ${reason}`,
-        message: `${(trade.account_type || 'demo').toUpperCase()} trade for ${trade.pair} closed with ${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)} P/L. Reason: ${reason}`,
-        type: 'trade',
-        read: false,
-        created_at: new Date().toISOString()
-      });
+      await supabase
+        .from('notifications')
+        .insert([{
+          uid: userProfile.uid,
+          title: `Trade Closed: ${reason}`,
+          message: `${(trade.account_type || 'demo').toUpperCase()} trade for ${trade.pair} closed with ${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)} P/L. Reason: ${reason}`,
+          type: 'trade',
+          read: false,
+          created_at: new Date().toISOString()
+        }]);
 
       addToast(`Trade closed: ${trade.pair} (${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)}) - ${reason}`, trade.pnl >= 0 ? 'success' : 'error');
     } catch (err) {
       console.error(err);
       addToast('Failed to close trade.', 'error');
     }
-  }, [userProfile?.uid, userProfile?.theme, addToast]);
+  }, [userProfile, addToast]);
 
   useTradeMonitor(userProfile || {} as UserProfile, addToast, handleCloseTrade);
 
+  if (!isSupabaseConfigured) {
+    return (
+      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6">
+        <div className="max-w-md w-full glass-card p-8 space-y-6 text-center">
+          <div className="w-16 h-16 bg-gold/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Settings2 className="w-8 h-8 text-gold animate-spin-slow" />
+          </div>
+          <h1 className="text-2xl font-bold text-gold tracking-tight">Supabase Setup Required</h1>
+          <p className="text-white/60 leading-relaxed">
+            To activate the Zion Trading System, you must connect your Supabase instance.
+          </p>
+          <div className="bg-black/40 rounded-xl p-4 text-left space-y-4 border border-white/5">
+            <p className="text-xs font-bold uppercase tracking-widest text-white/40">Instructions:</p>
+            <ol className="text-sm space-y-3 text-white/80 list-decimal list-inside">
+              <li>Open the <span className="text-gold">Settings</span> menu (bottom left).</li>
+              <li>Go to the <span className="text-gold">Secrets</span> tab.</li>
+              <li>Add <code className="bg-white/10 px-1 rounded text-gold">VITE_SUPABASE_URL</code></li>
+              <li>Add <code className="bg-white/10 px-1 rounded text-gold">VITE_SUPABASE_ANON_KEY</code></li>
+            </ol>
+          </div>
+          <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold">
+            The system will automatically restart once configured.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-cosmic-black flex items-center justify-center">
+      <div className="min-h-screen bg-cosmic-black flex flex-col items-center justify-center space-y-6 p-8">
         <motion.div 
           animate={{ rotate: 360 }}
           transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
@@ -215,6 +318,19 @@ export default function App() {
         >
           <Loader2 size={48} />
         </motion.div>
+        <div className="text-center space-y-4">
+          <h2 className="text-2xl font-display font-bold gold-gradient animate-pulse">Synchronizing Zion Network</h2>
+          <p className="text-white/40 text-xs uppercase tracking-[0.3em] font-bold">Connecting to the Oracle Feed...</p>
+          
+          <div className="pt-8">
+            <button 
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] text-white/40 font-bold uppercase tracking-widest transition-all"
+            >
+              Force Reconnect
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -269,6 +385,8 @@ export default function App() {
         return <Council {...props} />;
       case 'analytics':
         return <Analytics {...props} />;
+      case 'vision':
+        return <AdvancedChart />;
       case 'portfolio':
         return <Portfolio {...props} />;
       case 'arena':
@@ -289,8 +407,6 @@ export default function App() {
         return <Alchemist {...props} />;
       case 'nexus':
         return <Nexus {...props} />;
-      case 'strategy-builder':
-        return <StrategyBuilder {...props} />;
       case 'marketplace':
         return <Marketplace userProfile={userProfile} addToast={addToast} />;
       default:
@@ -382,7 +498,6 @@ export default function App() {
                     { id: 'signal-oracle', label: 'Signal Oracle', icon: Target },
                     { id: 'gallery', label: 'The Gallery', icon: ShoppingBag },
                     { id: 'alchemist', label: 'The Alchemist', icon: Settings2 },
-                    { id: 'strategy-builder', label: 'The Weaver', icon: Layers },
                     { id: 'marketplace', label: 'Marketplace', icon: Search },
                     { id: 'council', label: 'Council', icon: Users },
                     { id: 'abyss', label: 'The Abyss', icon: Ghost },
@@ -411,7 +526,7 @@ export default function App() {
                 </div>
                 <div className="p-6 border-t border-white/10">
                   <button 
-                    onClick={() => auth.signOut()}
+                    onClick={() => supabase.auth.signOut()}
                     className="w-full py-3 bg-red-500/10 text-red-400 font-bold rounded-xl border border-red-500/20"
                   >
                     Logout

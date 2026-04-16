@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Layers, Plus, Trash2, Shield, Zap, Cpu, Eye, Activity, Grid, Layout, X } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { MasterStrategy as MasterStrategyType, UserProfile, BOTS } from '../types';
 
 interface MasterStrategyProps {
@@ -20,13 +19,34 @@ export const MasterStrategy: React.FC<MasterStrategyProps> = ({ userProfile, add
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'users', userProfile.uid, 'strategies'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MasterStrategyType));
-      setStrategies(data);
-    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${userProfile.uid}/strategies`));
+    const fetchStrategies = async () => {
+      const { data, error } = await supabase
+        .from('strategies')
+        .select('*')
+        .eq('uid', userProfile.uid);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'strategies');
+      } else {
+        setStrategies(data as MasterStrategyType[]);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchStrategies();
+
+    const channel = supabase
+      .channel(`public:strategies:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'strategies', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, fetchStrategies)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -37,17 +57,21 @@ export const MasterStrategy: React.FC<MasterStrategyProps> = ({ userProfile, add
     }
 
     try {
-      await addDoc(collection(db, 'users', userProfile.uid, 'strategies'), {
-        ...newStrategy,
-        user_id: userProfile.uid,
-        created_at: new Date().toISOString()
-      }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userProfile.uid}/strategies`));
+      const { error } = await supabase
+        .from('strategies')
+        .insert([{
+          ...newStrategy,
+          uid: userProfile.uid,
+          created_at: new Date().toISOString()
+        }]);
+      
+      if (error) throw error;
       
       setShowAdd(false);
       setNewStrategy({ name: '', bots: [], risk_weight: 1.0 });
       addToast('Master Strategy forged!', 'success');
     } catch (error) {
-      console.error(error);
+      handleSupabaseError(error, OperationType.CREATE, 'strategies');
       addToast('Failed to forge strategy', 'error');
     }
   };
@@ -63,11 +87,15 @@ export const MasterStrategy: React.FC<MasterStrategyProps> = ({ userProfile, add
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'users', userProfile.uid, 'strategies', id))
-        .catch(err => handleFirestoreError(err, OperationType.DELETE, `users/${userProfile.uid}/strategies/${id}`));
+      const { error } = await supabase
+        .from('strategies')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
       addToast('Strategy dissolved', 'info');
     } catch (error) {
-      console.error(error);
+      handleSupabaseError(error, OperationType.DELETE, 'strategies');
       addToast('Failed to dissolve strategy', 'error');
     }
   };

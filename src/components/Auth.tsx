@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { auth, googleProvider, db } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, query, where, getDocs, updateDoc, increment as firestoreIncrement } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, AccessKey, UserRole } from '../types';
 import { LogIn, UserPlus, Chrome, Key } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -17,14 +15,15 @@ export default function Auth() {
   const validateAccessKey = async (keyStr: string): Promise<{ role: UserRole; keyId?: string } | null> => {
     if (!keyStr) return { role: 'subscriber' };
 
-    const keysRef = collection(db, 'access_keys');
-    const q = query(keysRef, where('key', '==', keyStr));
-    const querySnapshot = await getDocs(q);
+    const { data, error } = await supabase
+      .from('access_keys')
+      .select('*')
+      .eq('key', keyStr)
+      .single();
 
-    if (querySnapshot.empty) return null;
+    if (error || !data) return null;
 
-    const keyDoc = querySnapshot.docs[0];
-    const keyData = keyDoc.data() as AccessKey;
+    const keyData = data as AccessKey;
 
     // Check expiry
     if (keyData.expiry && new Date(keyData.expiry) < new Date()) return null;
@@ -34,15 +33,18 @@ export default function Auth() {
 
     return { 
       role: keyData.type === 'student' ? 'student' : 'investor',
-      keyId: keyDoc.id 
+      keyId: data.id 
     };
   };
 
   const createUserProfile = async (user: any, keyStr: string) => {
-    const userRef = doc(db, 'users', user.uid);
-    const userSnap = await getDoc(userRef);
+    const { data: userSnap, error: fetchError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('uid', user.id)
+      .single();
     
-    if (!userSnap.exists()) {
+    if (fetchError && fetchError.code === 'PGRST116') { // Not found
       const keyResult = await validateAccessKey(keyStr);
       if (!keyResult && keyStr) {
         throw new Error('Invalid or expired Access Key.');
@@ -53,7 +55,7 @@ export default function Auth() {
       const finalRole: UserRole = creatorEmails.includes(user.email) ? 'creator' : role;
 
       const profile: UserProfile = {
-        uid: user.uid,
+        uid: user.id,
         email: user.email,
         role: finalRole,
         tier: finalRole === 'creator' ? 'creator' : (finalRole === 'investor' ? 'zion' : 'free'),
@@ -69,7 +71,7 @@ export default function Auth() {
         total_pnl: 0,
         win_rate: 0,
         credits: 0,
-        referral_code: user.uid.slice(0, 8).toUpperCase(),
+        referral_code: user.id.slice(0, 8).toUpperCase(),
         notification_settings: {
           new_signals: true,
           signal_updates: true,
@@ -102,14 +104,16 @@ export default function Auth() {
         },
       };
 
-      await setDoc(userRef, profile);
+      const { error: insertError } = await supabase
+        .from('users')
+        .insert([profile]);
+
+      if (insertError) handleSupabaseError(insertError, OperationType.CREATE, 'users');
 
       // Update key usage
       if (keyResult?.keyId) {
-        const keyRef = doc(db, 'access_keys', keyResult.keyId);
-        await updateDoc(keyRef, {
-          usage_count: firestoreIncrement(1)
-        });
+        const { error: updateError } = await supabase.rpc('increment_usage_count', { key_id: keyResult.keyId });
+        if (updateError) handleSupabaseError(updateError, OperationType.UPDATE, 'access_keys');
       }
     }
   };
@@ -120,11 +124,19 @@ export default function Auth() {
     setError('');
     try {
       if (isLogin) {
-        const { user } = await signInWithEmailAndPassword(auth, email, password);
-        await createUserProfile(user, accessKey);
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+        if (data.user) await createUserProfile(data.user, accessKey);
       } else {
-        const { user } = await createUserWithEmailAndPassword(auth, email, password);
-        await createUserProfile(user, accessKey);
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (error) throw error;
+        if (data.user) await createUserProfile(data.user, accessKey);
       }
     } catch (err: any) {
       setError(err.message);
@@ -137,8 +149,10 @@ export default function Auth() {
     setLoading(true);
     setError('');
     try {
-      const { user } = await signInWithPopup(auth, googleProvider);
-      await createUserProfile(user, accessKey);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+      });
+      if (error) throw error;
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -100,7 +100,7 @@ export interface AccessKey {
 
 export interface AdvancementRequest {
   id: string;
-  user_id: string;
+  uid: string;
   current_tier: StudentTier;
   target_tier: StudentTier;
   ap_score?: number; // Deprecated in favor of ap_at_request
@@ -111,7 +111,7 @@ export interface AdvancementRequest {
 
 export interface Signal {
   id: string;
-  user_id: string;
+  uid: string;
   pair: string;
   timeframe: string;
   entry: number;
@@ -141,7 +141,7 @@ export interface Signal {
 
 export interface Trade {
   id: string;
-  user_id: string;
+  uid: string;
   signal_id: string;
   pair: string;
   entry_price: number;
@@ -161,6 +161,12 @@ export interface Trade {
   exit_price?: number;
   close_reason?: string;
   tp_hits?: string[];
+  mae?: number;
+  mfe?: number;
+  max_pnl?: number;
+  min_pnl?: number;
+  notes?: string;
+  emotion?: 'neutral' | 'confident' | 'anxious' | 'greedy' | 'fearful';
 }
 
 export interface Bot {
@@ -173,6 +179,8 @@ export interface Bot {
   character?: string;
   risk_profile?: string;
   preferred_pairs?: string[];
+  preferred_timeframes?: string[];
+  personality?: 'stoic' | 'aggressive' | 'mystical' | 'analytical';
   created_at?: string;
 }
 
@@ -187,7 +195,7 @@ export interface EconomicEvent {
 
 export interface PriceAlert {
   id: string;
-  user_id: string;
+  uid: string;
   pair: string;
   price: number;
   condition: 'above' | 'below';
@@ -197,7 +205,7 @@ export interface PriceAlert {
 
 export interface MasterStrategy {
   id: string;
-  user_id: string;
+  uid: string;
   name: string;
   bots: string[];
   risk_weight: number;
@@ -301,7 +309,7 @@ export interface UserProgress {
 
 export interface SharedPost {
   id: string;
-  user_id: string;
+  uid: string;
   username: string;
   avatar_url?: string;
   content: string;
@@ -313,7 +321,7 @@ export interface SharedPost {
 
 export interface Comment {
   id: string;
-  user_id: string;
+  uid: string;
   username: string;
   content: string;
   created_at: string;
@@ -327,4 +335,6 @@ export interface LeaderboardEntry {
   win_rate: number;
   level: number;
   tier: Tier;
+  win_streak?: number;
+  best_asset?: string;
 }

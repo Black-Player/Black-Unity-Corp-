@@ -1,6 +1,5 @@
 import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock, User, Ghost } from 'lucide-react';
-import { auth } from '../firebase';
-import { signOut } from 'firebase/auth';
+import { supabase } from '../supabase';
 import { UserProfile, Tier, hasTierAccess } from '../types';
 import { motion } from 'motion/react';
 
@@ -28,6 +27,7 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
       items: [
         { id: 'portfolio', label: 'Portfolio', icon: Wallet },
         { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+        { id: 'vision', label: 'Oracle Vision', icon: Sparkles },
         { id: 'eye', label: 'Oracle Eye', icon: Eye },
         { id: 'sessions', label: 'Sessions', icon: Clock },
         { id: 'signal-stream', label: 'Signal Stream', icon: Zap, requiredTier: 'oracle' },
@@ -175,7 +175,7 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
         )}
 
         <button 
-          onClick={() => signOut(auth)}
+          onClick={() => supabase.auth.signOut()}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-400/10 transition-all"
         >
           <LogOut size={20} />

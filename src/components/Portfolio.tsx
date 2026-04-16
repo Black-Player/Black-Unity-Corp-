@@ -3,8 +3,7 @@ import { Wallet, TrendingUp, TrendingDown, PieChart, ArrowUpRight, ArrowDownRigh
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, Trade } from '../types';
 import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, orderBy, onSnapshot, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 import { useMarketContext } from '../MarketContext';
 
@@ -24,19 +23,36 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
   const currentAccountType = userProfile.account_type;
   
   useEffect(() => {
-    const tradesRef = collection(db, 'users', userProfile.uid, 'trades');
-    const q = query(tradesRef, orderBy('created_at', 'desc'));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Trade));
-      setTrades(data);
+    const fetchTrades = async () => {
+      const { data, error } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.LIST, `trades`);
+      } else {
+        setTrades(data as Trade[]);
+      }
       setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, `users/${userProfile.uid}/trades`));
+    };
+
+    fetchTrades();
+
+    const channel = supabase
+      .channel(`public:trades:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'trades', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, fetchTrades)
+      .subscribe();
     
-    return () => unsubscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const filteredPortfolio = portfolio.filter(p => p.account_type === currentAccountType);

@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, orderBy } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Book, Plus, Trash2, TrendingUp, TrendingDown, Clock, Tag, MessageSquare, Brain, Sparkles, Filter, Save } from 'lucide-react';
 
 interface JournalEntry {
   id: string;
-  user_id: string;
+  uid: string;
   pair: string;
   type: 'buy' | 'sell';
   pnl: number;
@@ -23,7 +22,7 @@ interface JournalEntry {
 export default function Archive({ userProfile, addToast }: { userProfile: UserProfile, addToast: any }) {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [isAdding, setIsAdding] = useState(false);
-  const [newEntry, setNewEntry] = useState<Omit<JournalEntry, 'id' | 'user_id' | 'created_at'>>({
+  const [newEntry, setNewEntry] = useState<Omit<JournalEntry, 'id' | 'uid' | 'created_at'>>({
     pair: 'BTCUSD',
     type: 'buy',
     pnl: 0,
@@ -36,26 +35,51 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
   });
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'users', userProfile.uid, 'journal'),
-      orderBy('created_at', 'desc')
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as JournalEntry));
-      setEntries(data);
-    });
-    return () => unsubscribe();
+    const fetchEntries = async () => {
+      const { data, error } = await supabase
+        .from('journal')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'journal');
+      } else {
+        setEntries(data as JournalEntry[]);
+      }
+    };
+
+    fetchEntries();
+
+    const channel = supabase
+      .channel(`public:journal:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'journal', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, fetchEntries)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const handleAddEntry = async () => {
     if (!newEntry.pair || !newEntry.notes) return;
 
     try {
-      await addDoc(collection(db, 'users', userProfile.uid, 'journal'), {
-        ...newEntry,
-        user_id: userProfile.uid,
-        created_at: new Date().toISOString()
-      });
+      const { error } = await supabase
+        .from('journal')
+        .insert([{
+          ...newEntry,
+          uid: userProfile.uid,
+          created_at: new Date().toISOString()
+        }]);
+      
+      if (error) throw error;
+
       setIsAdding(false);
       setNewEntry({
         pair: 'BTCUSD',
@@ -70,15 +94,22 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
       });
       addToast('Journal entry etched in the cosmic archive.', 'success');
     } catch (err) {
+      handleSupabaseError(err, OperationType.CREATE, 'journal');
       addToast('Failed to save entry.', 'error');
     }
   };
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'users', userProfile.uid, 'journal', id));
+      const { error } = await supabase
+        .from('journal')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
       addToast('Entry removed from the archive.', 'info');
     } catch (err) {
+      handleSupabaseError(err, OperationType.DELETE, 'journal');
       addToast('Failed to delete entry.', 'error');
     }
   };

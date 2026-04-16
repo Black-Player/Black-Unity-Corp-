@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Key, Plus, Copy, Check, Trash2, Shield, Clock, Users, Zap, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, addDoc, onSnapshot, query, orderBy, deleteDoc, doc, Timestamp } from 'firebase/firestore';
-import { AccessKey } from '../types';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { AccessKey, UserProfile } from '../types';
 
-export default function KeyGenerator({ addToast }: { addToast: any }) {
+export default function KeyGenerator({ addToast, userProfile }: { addToast: any, userProfile?: UserProfile }) {
   const [keys, setKeys] = useState<AccessKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -17,20 +16,44 @@ export default function KeyGenerator({ addToast }: { addToast: any }) {
   const [expiryDays, setExpiryDays] = useState(7);
 
   useEffect(() => {
-    const q = query(collection(db, 'access_keys'), orderBy('created_at', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newKeys: AccessKey[] = [];
-      snapshot.forEach((doc) => {
-        newKeys.push({ id: doc.id, ...doc.data() } as AccessKey);
-      });
-      setKeys(newKeys);
+    // Initial fetch
+    const fetchKeys = async () => {
+      const { data, error } = await supabase
+        .from('access_keys')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.LIST, 'access_keys');
+      } else {
+        setKeys(data as AccessKey[]);
+      }
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'access_keys');
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
+    fetchKeys();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('public:access_keys')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'access_keys' 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setKeys(prev => [payload.new as AccessKey, ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+          setKeys(prev => prev.map(k => k.id === (payload.new as AccessKey).id ? payload.new as AccessKey : k));
+        } else if (payload.eventType === 'DELETE') {
+          setKeys(prev => prev.filter(k => k.id !== (payload.old as AccessKey).id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const generateKey = async () => {
@@ -50,13 +73,17 @@ export default function KeyGenerator({ addToast }: { addToast: any }) {
         usage_count: 0,
         expiry: expiryDate.toISOString(),
         created_at: new Date().toISOString(),
-        signature: 'BP-RSA-SECURE-SIG' // In a real app, this would be a server-side HMAC
+        signature: 'BP-RSA-SECURE-SIG'
       };
 
-      await addDoc(collection(db, 'access_keys'), newKey);
+      const { error } = await supabase
+        .from('access_keys')
+        .insert([newKey]);
+      
+      if (error) throw error;
       addToast(`Generated ${type} key: ${keyString}`, 'success');
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'access_keys');
+      handleSupabaseError(error, OperationType.CREATE, 'access_keys');
     } finally {
       setGenerating(false);
     }
@@ -64,10 +91,15 @@ export default function KeyGenerator({ addToast }: { addToast: any }) {
 
   const deleteKey = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'access_keys', id));
+      const { error } = await supabase
+        .from('access_keys')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
       addToast('Access key revoked', 'info');
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `access_keys/${id}`);
+      handleSupabaseError(error, OperationType.DELETE, `access_keys/${id}`);
     }
   };
 

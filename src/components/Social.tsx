@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { MessageSquare, Heart, Share2, Send, User, Zap, TrendingUp, TrendingDown, Clock, MoreHorizontal, Image as ImageIcon, Link as LinkIcon, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SharedPost, UserProfile, Signal } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, orderBy, limit, onSnapshot, addDoc, serverTimestamp, updateDoc, doc, arrayUnion, arrayRemove, where } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 interface SocialProps {
   userProfile: UserProfile;
@@ -22,39 +21,42 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
   const [feedFilter, setFeedFilter] = useState<'all' | 'following'>('all');
 
   useEffect(() => {
-    let q = query(
-      collection(db, 'posts'),
-      orderBy('created_at', 'desc'),
-      limit(50)
-    );
+    const fetchPosts = async () => {
+      let query = supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(50);
 
-    if (feedFilter === 'following' && userProfile.followed_traders?.length) {
-      q = query(
-        collection(db, 'posts'),
-        where('user_id', 'in', userProfile.followed_traders),
-        orderBy('created_at', 'desc'),
-        limit(50)
-      );
-    } else if (feedFilter === 'following' && !userProfile.followed_traders?.length) {
-      setPosts([]);
-      setLoading(false);
-      return;
-    }
+      if (feedFilter === 'following' && userProfile.followed_traders?.length) {
+        query = query.in('uid', userProfile.followed_traders);
+      } else if (feedFilter === 'following' && !userProfile.followed_traders?.length) {
+        setPosts([]);
+        setLoading(false);
+        return;
+      }
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newPosts = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as SharedPost));
-      setPosts(newPosts);
+      const { data, error } = await query;
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'posts');
+      } else {
+        setPosts(data as SharedPost[]);
+      }
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'posts');
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
-  }, []);
+    fetchPosts();
+
+    const channel = supabase
+      .channel('public:posts')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, fetchPosts)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [feedFilter, userProfile.followed_traders]);
 
   const handleCreatePost = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,18 +64,22 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, 'posts'), {
-        user_id: userProfile.uid,
-        username: userProfile.username || userProfile.email.split('@')[0],
-        avatar_url: userProfile.avatar_url,
-        content: newPostContent,
-        likes: [],
-        comments: [],
-        created_at: serverTimestamp()
-      });
+      const { error } = await supabase
+        .from('posts')
+        .insert([{
+          uid: userProfile.uid,
+          username: userProfile.username || userProfile.email.split('@')[0],
+          avatar_url: userProfile.avatar_url,
+          content: newPostContent,
+          likes: [],
+          comments: [],
+          created_at: new Date().toISOString()
+        }]);
+      
+      if (error) throw error;
       setNewPostContent('');
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'posts');
+      handleSupabaseError(error, OperationType.CREATE, 'posts');
     } finally {
       setIsSubmitting(false);
     }
@@ -81,12 +87,21 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
 
   const handleLike = async (postId: string, isLiked: boolean) => {
     try {
-      const postRef = doc(db, 'posts', postId);
-      await updateDoc(postRef, {
-        likes: isLiked ? arrayRemove(userProfile.uid) : arrayUnion(userProfile.uid)
-      });
+      const post = posts.find(p => p.id === postId);
+      if (!post) return;
+
+      const newLikes = isLiked 
+        ? post.likes.filter(id => id !== userProfile.uid)
+        : [...new Set([...post.likes, userProfile.uid])];
+
+      const { error } = await supabase
+        .from('posts')
+        .update({ likes: newLikes })
+        .eq('id', postId);
+      
+      if (error) throw error;
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'posts');
+      handleSupabaseError(error, OperationType.UPDATE, 'posts');
     }
   };
 
@@ -95,21 +110,28 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
 
     setIsCommenting(true);
     try {
-      const postRef = doc(db, 'posts', postId);
+      const post = posts.find(p => p.id === postId);
+      if (!post) return;
+
       const newComment = {
         id: Math.random().toString(36).substring(7),
-        user_id: userProfile.uid,
+        uid: userProfile.uid,
         username: userProfile.username || userProfile.email.split('@')[0],
         content: commentContent,
         created_at: new Date().toISOString()
       };
 
-      await updateDoc(postRef, {
-        comments: arrayUnion(newComment)
-      });
+      const { error } = await supabase
+        .from('posts')
+        .update({
+          comments: [...(post.comments || []), newComment]
+        })
+        .eq('id', postId);
+      
+      if (error) throw error;
       setCommentContent('');
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'posts');
+      handleSupabaseError(error, OperationType.UPDATE, 'posts');
     } finally {
       setIsCommenting(false);
     }
@@ -219,7 +241,7 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
               >
                 {/* Post Header */}
                 <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3 cursor-pointer group/user" onClick={() => handleUserClick(post.user_id)}>
+                  <div className="flex items-center gap-3 cursor-pointer group/user" onClick={() => handleUserClick(post.uid)}>
                     <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center border border-white/10 group-hover/user:border-gold/50 transition-colors">
                       {post.avatar_url ? (
                         <img src={post.avatar_url} alt={post.username} className="w-full h-full rounded-full object-cover" />
@@ -312,7 +334,7 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
                           <div key={comment.id} className="flex gap-3">
                             <div 
                               className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center border border-white/10 shrink-0 cursor-pointer hover:border-gold/50 transition-colors"
-                              onClick={() => handleUserClick(comment.user_id)}
+                              onClick={() => handleUserClick(comment.uid)}
                             >
                               <User className="w-4 h-4 text-white/40" />
                             </div>
@@ -320,7 +342,7 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
                               <div className="flex items-center justify-between mb-1">
                                 <span 
                                   className="text-xs font-bold text-white cursor-pointer hover:text-gold transition-colors"
-                                  onClick={() => handleUserClick(comment.user_id)}
+                                  onClick={() => handleUserClick(comment.uid)}
                                 >
                                   {comment.username}
                                 </span>

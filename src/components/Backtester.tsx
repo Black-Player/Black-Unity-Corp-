@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, query, onSnapshot, addDoc } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, BOTS } from '../types';
 import { DERIV_SYMBOLS } from '../constants';
 import { motion, AnimatePresence } from 'motion/react';
@@ -9,7 +8,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 interface BacktestResult {
   id: string;
-  user_id: string;
+  uid: string;
   strategy_id: string;
   pnl: number;
   win_rate: number;
@@ -27,12 +26,35 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
   const [prophetVision, setProphetVision] = useState<string | null>(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'users', userProfile.uid, 'backtests'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BacktestResult));
-      setResults(data);
-    });
-    return () => unsubscribe();
+    const fetchResults = async () => {
+      const { data, error } = await supabase
+        .from('backtests')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.LIST, 'backtests');
+      } else {
+        setResults(data as BacktestResult[]);
+      }
+    };
+
+    fetchResults();
+
+    const channel = supabase
+      .channel(`public:backtests:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'backtests', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, fetchResults)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const runBacktest = async () => {
@@ -47,7 +69,7 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
       const tradesCount = Math.floor(Math.random() * 50) + 20;
       
       const mockResult: Omit<BacktestResult, 'id'> = {
-        user_id: userProfile.uid,
+        uid: userProfile.uid,
         strategy_id: selectedBot,
         pnl,
         win_rate: winRate,
@@ -85,9 +107,14 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
       }
 
       try {
-        await addDoc(collection(db, 'users', userProfile.uid, 'backtests'), mockResult);
+        const { error } = await supabase
+          .from('backtests')
+          .insert([mockResult]);
+        
+        if (error) throw error;
         addToast('The Prophet has spoken. Backtest complete.', 'success');
       } catch (err) {
+        handleSupabaseError(err, OperationType.CREATE, 'backtests');
         addToast('Failed to save backtest result.', 'error');
       }
       setIsRunning(false);

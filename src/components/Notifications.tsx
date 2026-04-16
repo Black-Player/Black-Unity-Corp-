@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bell, Heart, MessageSquare, UserPlus, Zap, Trash2, CheckCircle2, Clock } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, doc, deleteDoc, updateDoc, orderBy, limit, where } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile } from '../types';
 
 interface Notification {
@@ -34,28 +33,50 @@ export const Notifications: React.FC<NotificationsProps> = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'users', userProfile.uid, 'notifications'),
-      orderBy('created_at', 'desc'),
-      limit(50)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification));
-      setNotifications(data);
+    const fetchNotifications = async () => {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, `notifications`);
+      } else {
+        setNotifications(data as Notification[]);
+      }
       setLoading(false);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.GET, `users/${userProfile.uid}/notifications`);
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
+    fetchNotifications();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`public:notifications:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'notifications', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, () => {
+        fetchNotifications();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const markAsRead = async (id: string) => {
     try {
-      const notifRef = doc(db, 'users', userProfile.uid, 'notifications', id);
-      await updateDoc(notifRef, { read: true });
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', id);
+      
+      if (error) throw error;
     } catch (err) {
       console.error(err);
     }
@@ -63,8 +84,12 @@ export const Notifications: React.FC<NotificationsProps> = ({
 
   const deleteNotification = async (id: string) => {
     try {
-      const notifRef = doc(db, 'users', userProfile.uid, 'notifications', id);
-      await deleteDoc(notifRef);
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
       addToast('Notification removed', 'info');
     } catch (err) {
       console.error(err);
@@ -74,11 +99,13 @@ export const Notifications: React.FC<NotificationsProps> = ({
 
   const markAllAsRead = async () => {
     try {
-      const unread = notifications.filter(n => !n.read);
-      for (const n of unread) {
-        const notifRef = doc(db, 'users', userProfile.uid, 'notifications', n.id);
-        await updateDoc(notifRef, { read: true });
-      }
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('uid', userProfile.uid)
+        .eq('read', false);
+      
+      if (error) throw error;
       addToast('All notifications marked as read', 'success');
     } catch (err) {
       console.error(err);

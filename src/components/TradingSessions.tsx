@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Globe, Clock, Sun, Moon, Zap, Bell, BellOff } from 'lucide-react';
 import { UserProfile } from '../types';
-import { db } from '../firebase';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 interface Session {
   name: string;
@@ -75,21 +74,29 @@ export default function TradingSessions({ userProfile, addToast }: TradingSessio
 
   const toggleSubscription = async (sessionName: string) => {
     const isSubscribed = userProfile.subscribed_sessions?.includes(sessionName);
-    const userRef = doc(db, 'users', userProfile.uid);
-
+    
     try {
+      let newSubscribed: string[];
       if (isSubscribed) {
-        await updateDoc(userRef, {
-          subscribed_sessions: arrayRemove(sessionName)
-        });
+        newSubscribed = (userProfile.subscribed_sessions || []).filter(s => s !== sessionName);
+      } else {
+        newSubscribed = [...new Set([...(userProfile.subscribed_sessions || []), sessionName])];
+      }
+
+      const { error } = await supabase
+        .from('users')
+        .update({ subscribed_sessions: newSubscribed })
+        .eq('uid', userProfile.uid);
+      
+      if (error) throw error;
+
+      if (isSubscribed) {
         addToast(`Unsubscribed from ${sessionName} session rituals.`, 'info');
       } else {
-        await updateDoc(userRef, {
-          subscribed_sessions: arrayUnion(sessionName)
-        });
         addToast(`Subscribed to ${sessionName} session rituals. Oracle will monitor closely.`, 'success');
       }
     } catch (err) {
+      handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
       addToast('Failed to update cosmic subscription.', 'error');
     }
   };

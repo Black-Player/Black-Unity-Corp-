@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { supabase } from '../supabase';
 import { Signal, BOTS, UserProfile } from '../types';
 import { getBotCharacter } from '../lib/themeUtils';
 import { motion } from 'motion/react';
@@ -19,16 +18,21 @@ export default function AssetDetails({ pair, onBack, userProfile }: AssetDetails
 
   useEffect(() => {
     const fetchSignals = async () => {
-      const q = query(
-        collection(db, 'signals'),
-        where('pair', '==', pair),
-        orderBy('created_at', 'desc'),
-        limit(10)
-      );
-      const snapshot = await getDocs(q);
-      const signalsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Signal));
-      setSignals(signalsData);
-      setLoading(false);
+      try {
+        const { data, error } = await supabase
+          .from('signals')
+          .select('*')
+          .eq('pair', pair)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        
+        if (error) throw error;
+        setSignals(data as Signal[]);
+      } catch (err) {
+        console.error('Error fetching signals:', err);
+      } finally {
+        setLoading(false);
+      }
     };
 
     fetchSignals();

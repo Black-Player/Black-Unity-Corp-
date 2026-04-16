@@ -2,11 +2,11 @@ import { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Hammer, Plus, Trash2, TrendingUp, Clock, Tag, MessageSquare, Brain, Sparkles, Filter, Save, Layers, Activity, Target, Zap, Cpu, Eye, Layout } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, orderBy } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 interface Indicator {
   id: string;
+  uid: string;
   name: string;
   type: 'Trend' | 'Momentum' | 'Volatility' | 'Volume';
   logic: string;
@@ -21,17 +21,38 @@ export default function Forge({ userProfile, addToast }: { userProfile: UserProf
   const [newIndicator, setNewIndicator] = useState({ name: '', type: 'Trend' as const, logic: '' });
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'users', userProfile.uid, 'indicators'),
-      orderBy('created_at', 'desc')
-    );
+    const fetchIndicators = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('indicators')
+          .select('*')
+          .eq('uid', userProfile.uid)
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        setIndicators(data as Indicator[]);
+      } catch (err) {
+        handleSupabaseError(err, OperationType.GET, `indicators`);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Indicator));
-      setIndicators(data);
-    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${userProfile.uid}/indicators`));
+    fetchIndicators();
 
-    return () => unsubscribe();
+    const channel = supabase
+      .channel('indicators-updates')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'indicators',
+        filter: `uid=eq.${userProfile.uid}`
+      }, () => {
+        fetchIndicators();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const handleForge = async () => {
@@ -39,25 +60,38 @@ export default function Forge({ userProfile, addToast }: { userProfile: UserProf
     
     const forgedData = {
       ...newIndicator,
+      uid: userProfile.uid,
       confidence: Math.floor(Math.random() * 20) + 75,
       created_at: new Date().toISOString()
     };
 
     try {
-      await addDoc(collection(db, 'users', userProfile.uid, 'indicators'), forgedData);
+      const { error } = await supabase
+        .from('indicators')
+        .insert([forgedData]);
+      
+      if (error) throw error;
+
       setIsForging(false);
       setNewIndicator({ name: '', type: 'Trend', logic: '' });
       addToast('Indicator forged in the cosmic fire.', 'success');
     } catch (err) {
+      handleSupabaseError(err, OperationType.WRITE, 'indicators');
       addToast('Failed to forge indicator.', 'error');
     }
   };
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'users', userProfile.uid, 'indicators', id));
+      const { error } = await supabase
+        .from('indicators')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
       addToast('Indicator unraveled.', 'info');
     } catch (err) {
+      handleSupabaseError(err, OperationType.DELETE, 'indicators');
       addToast('Failed to delete indicator.', 'error');
     }
   };

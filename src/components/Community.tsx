@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, Signal } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -25,34 +24,58 @@ export const Community: React.FC<CommunityProps> = ({ userProfile, compact = fal
 
   useEffect(() => {
     // Global Signals Feed
-    const q = query(
-      collection(db, 'signals'),
-      orderBy('created_at', 'desc'),
-      limit(compact ? 5 : 20)
-    );
-    
-    const unsubscribe = onSnapshot(q, (snap) => {
-      setGlobalSignals(snap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Signal)));
-    });
+    const fetchSignals = async () => {
+      const { data, error } = await supabase
+        .from('signals')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(compact ? 5 : 20);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'signals');
+      } else {
+        setGlobalSignals(data as Signal[]);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchSignals();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('public:signals:community')
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'signals' 
+      }, (payload) => {
+        setGlobalSignals(prev => [payload.new as Signal, ...prev.slice(0, (compact ? 5 : 20) - 1)]);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [compact]);
 
   useEffect(() => {
-    if (compact) return;
+    if (compact || activeTab !== 'leaderboard') return;
     // Leaderboard
     const fetchLeaderboard = async () => {
-      const q = query(
-        collection(db, 'users'),
-        orderBy('win_rate', 'desc'),
-        limit(10)
-      );
-      const snap = await getDocs(q);
-      setLeaderboard(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order('win_rate', { ascending: false })
+        .limit(10);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'users');
+      } else {
+        setLeaderboard(data || []);
+      }
     };
     
     fetchLeaderboard();
-  }, [compact]);
+  }, [compact, activeTab]);
 
   return (
     <div className={compact ? "space-y-4" : "space-y-8"}>

@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { ShieldAlert, RefreshCcw } from 'lucide-react';
+import { AlertTriangle, RefreshCcw } from 'lucide-react';
 
 interface Props {
   children: ReactNode;
@@ -24,40 +24,57 @@ export default class ErrorBoundary extends Component<Props, State> {
     console.error('Uncaught error:', error, errorInfo);
   }
 
+  private handleReset = () => {
+    this.setState({ hasError: false, error: null });
+    window.location.reload();
+  };
+
   public render() {
     if (this.state.hasError) {
-      let errorDetails = null;
+      let errorMessage = 'An unexpected error occurred.';
+      let isSupabaseError = false;
+
       try {
-        errorDetails = JSON.parse(this.state.error?.message || '{}');
-      } catch (e) {
-        // Not a JSON error
+        if (this.state.error?.message) {
+          const parsed = JSON.parse(this.state.error.message);
+          if (parsed.error && parsed.operationType) {
+            errorMessage = `Database Error: ${parsed.error}`;
+            isSupabaseError = true;
+          }
+        }
+      } catch {
+        errorMessage = this.state.error?.message || errorMessage;
       }
 
       return (
-        <div className="min-h-screen bg-cosmic-black flex items-center justify-center p-8">
-          <div className="glass-card p-12 max-w-2xl w-full text-center space-y-6 border-red-400/20 bg-red-400/5">
-            <div className="w-20 h-20 bg-red-400/10 rounded-full flex items-center justify-center mx-auto">
-              <ShieldAlert className="text-red-400" size={40} />
+        <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6">
+          <div className="max-w-md w-full glass-card p-8 text-center space-y-6">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-8 h-8 text-red-500" />
             </div>
-            <h1 className="text-3xl font-display font-bold text-white">Cosmic Interference Detected</h1>
-            <p className="text-white/60">
-              The Oracle has encountered an unexpected anomaly in the data stream.
-            </p>
             
-            {errorDetails && (
-              <div className="bg-black/40 p-4 rounded-xl text-left font-mono text-xs space-y-2 border border-white/5">
-                <p className="text-red-400 font-bold uppercase">Error: {errorDetails.error}</p>
-                <p className="text-white/40">Operation: {errorDetails.operationType}</p>
-                <p className="text-white/40">Path: {errorDetails.path}</p>
+            <div className="space-y-2">
+              <h2 className="text-xl font-bold text-white tracking-tight">System Interruption</h2>
+              <p className="text-sm text-white/60 leading-relaxed">
+                {errorMessage}
+              </p>
+            </div>
+
+            {isSupabaseError && (
+              <div className="bg-black/40 rounded-xl p-4 text-left border border-white/5">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Technical Details:</p>
+                <code className="text-[10px] text-red-400/80 break-all font-mono">
+                  {this.state.error?.message}
+                </code>
               </div>
             )}
 
             <button
-              onClick={() => window.location.reload()}
-              className="gold-button px-8 py-3 flex items-center justify-center gap-2 mx-auto"
+              onClick={this.handleReset}
+              className="w-full py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-sm font-medium transition-all flex items-center justify-center gap-2"
             >
-              <RefreshCcw size={20} />
-              Realign Systems
+              <RefreshCcw className="w-4 h-4" />
+              Restart System
             </button>
           </div>
         </div>

@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { BarChart3, TrendingUp, TrendingDown, Activity, Shield, Zap, Target, Trophy, Users, Search, Filter, Sparkles, MessageSquare, Lock, Unlock, ArrowUpRight, ArrowDownRight, Calendar, Clock, DollarSign, Percent, PieChart, LineChart } from 'lucide-react';
 import { UserProfile } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart as ReLineChart, Line, AreaChart, Area, PieChart as RePieChart, Pie, Cell } from 'recharts';
 
 export default function Analytics({ userProfile, addToast }: { userProfile: UserProfile, addToast: any }) {
@@ -12,22 +11,41 @@ export default function Analytics({ userProfile, addToast }: { userProfile: User
   const [timeframe, setTimeframe] = useState('7D');
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'trades'), 
-      where('user_id', '==', userProfile.uid),
-      orderBy('timestamp', 'desc'),
-      limit(100)
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setTrades(data);
-      setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'trades'));
+    const fetchTrades = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('trades')
+          .select('*')
+          .eq('uid', userProfile.uid)
+          .order('created_at', { ascending: false })
+          .limit(100);
 
-    return () => unsubscribe();
+        if (error) throw error;
+        setTrades(data || []);
+      } catch (err) {
+        handleSupabaseError(err, OperationType.LIST, 'trades');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTrades();
+
+    const channel = supabase
+      .channel('trades-analytics')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'trades',
+        filter: `uid=eq.${userProfile.uid}`
+      }, () => {
+        fetchTrades();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const stats = {

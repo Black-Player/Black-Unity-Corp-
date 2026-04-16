@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { UserProfile, TIER_BOT_LIMITS, TIER_FEATURES } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, updateDoc } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { Check, Zap, Shield, Sparkles, Star, Crown, ArrowRight, Info, CreditCard, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -62,15 +61,19 @@ export default function Subscription({ userProfile, addToast }: SubscriptionProp
       // For this demo, we'll simulate a successful upgrade
       await new Promise(resolve => setTimeout(resolve, 2000));
       
-      const userRef = doc(db, 'users', userProfile.uid);
-      await updateDoc(userRef, {
-        tier: tierId,
-        updated_at: new Date().toISOString()
-      });
+      const { error } = await supabase
+        .from('users')
+        .update({
+          tier: tierId,
+          updated_at: new Date().toISOString()
+        })
+        .eq('uid', userProfile.uid);
+      
+      if (error) throw error;
 
       addToast(`Ascension complete! You are now a ${tiers.find(t => t.id === tierId)?.name}.`, "success");
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
+      handleSupabaseError(err, OperationType.UPDATE, 'users');
       addToast("The cosmic upgrade failed. Please try again.", "error");
     } finally {
       setLoading(null);

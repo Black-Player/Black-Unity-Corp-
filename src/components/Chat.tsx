@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { BOTS, UserProfile, TIER_BOT_LIMITS } from '../types';
 import { chatWithBot } from '../services/aiService';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, where, onSnapshot, addDoc, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { Bot, Send, User, Sparkles, MessageSquare, Zap, Globe, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
@@ -30,47 +29,74 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
 
   useEffect(() => {
     if (chatMode === 'ai') {
-      const messagesRef = collection(db, 'users', userProfile.uid, 'messages');
-      const q = query(
-        messagesRef,
-        where('bot_name', '==', selectedBot.name),
-        orderBy('created_at', 'asc'),
-        limit(100)
-      );
+      const fetchAiMessages = async () => {
+        const { data, error } = await supabase
+          .from('ai_messages')
+          .select('*')
+          .eq('uid', userProfile.uid)
+          .eq('bot_name', selectedBot.name)
+          .order('created_at', { ascending: true })
+          .limit(100);
+        
+        if (error) {
+          await handleSupabaseError(error, OperationType.LIST, `ai_messages`);
+        } else {
+          setMessages(data as Message[]);
+        }
+      };
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const loadedMessages = snapshot.docs.map(doc => ({
-          role: doc.data().role as 'user' | 'model',
-          text: doc.data().text,
-          created_at: doc.data().created_at
-        }));
-        setMessages(loadedMessages);
-      }, (err) => {
-        handleFirestoreError(err, OperationType.LIST, `users/${userProfile.uid}/messages`);
-      });
+      fetchAiMessages();
 
-      return () => unsubscribe();
+      // Subscribe to changes
+      const channel = supabase
+        .channel(`public:ai_messages:uid=eq.${userProfile.uid}`)
+        .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'ai_messages', 
+          filter: `uid=eq.${userProfile.uid}` 
+        }, (payload) => {
+          if ((payload.new as any).bot_name === selectedBot.name) {
+            setMessages(prev => [...prev, payload.new as Message].slice(-100));
+          }
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     } else {
-      const messagesRef = collection(db, 'community_chat');
-      const q = query(
-        messagesRef,
-        orderBy('created_at', 'asc'),
-        limit(100)
-      );
+      const fetchCommunityMessages = async () => {
+        const { data, error } = await supabase
+          .from('community_chat')
+          .select('*')
+          .order('created_at', { ascending: true })
+          .limit(100);
+        
+        if (error) {
+          await handleSupabaseError(error, OperationType.LIST, 'community_chat');
+        } else {
+          setCommunityMessages(data as Message[]);
+        }
+      };
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const loadedMessages = snapshot.docs.map(doc => ({
-          role: doc.data().role as 'user' | 'system',
-          text: doc.data().text,
-          username: doc.data().username,
-          created_at: doc.data().created_at
-        }));
-        setCommunityMessages(loadedMessages);
-      }, (err) => {
-        handleFirestoreError(err, OperationType.LIST, 'community_chat');
-      });
+      fetchCommunityMessages();
 
-      return () => unsubscribe();
+      // Subscribe to changes
+      const channel = supabase
+        .channel('public:community_chat')
+        .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'community_chat' 
+        }, (payload) => {
+          setCommunityMessages(prev => [...prev, payload.new as Message].slice(-100));
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [selectedBot, userProfile.uid, chatMode]);
 
@@ -88,16 +114,18 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
     setInput('');
     
     if (chatMode === 'ai') {
-      const messagesRef = collection(db, 'users', userProfile.uid, 'messages');
-      
       try {
-        await addDoc(messagesRef, {
-          user_id: userProfile.uid,
-          bot_name: selectedBot.name,
-          role: 'user',
-          text: userMessage,
-          created_at: new Date().toISOString()
-        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userProfile.uid}/messages`));
+        const { error: userMsgError } = await supabase
+          .from('ai_messages')
+          .insert([{
+            uid: userProfile.uid,
+            bot_name: selectedBot.name,
+            role: 'user',
+            text: userMessage,
+            created_at: new Date().toISOString()
+          }]);
+        
+        if (userMsgError) throw userMsgError;
 
         setLoading(true);
 
@@ -108,13 +136,17 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
           messages.map(m => ({ role: m.role as any, parts: [{ text: m.text }] }))
         );
 
-        await addDoc(messagesRef, {
-          user_id: userProfile.uid,
-          bot_name: selectedBot.name,
-          role: 'model',
-          text: response,
-          created_at: new Date().toISOString()
-        }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userProfile.uid}/messages`));
+        const { error: modelMsgError } = await supabase
+          .from('ai_messages')
+          .insert([{
+            uid: userProfile.uid,
+            bot_name: selectedBot.name,
+            role: 'model',
+            text: response,
+            created_at: new Date().toISOString()
+          }]);
+        
+        if (modelMsgError) throw modelMsgError;
 
       } catch (err) {
         console.error(err);
@@ -123,15 +155,18 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
         setLoading(false);
       }
     } else {
-      const messagesRef = collection(db, 'community_chat');
       try {
-        await addDoc(messagesRef, {
-          user_id: userProfile.uid,
-          username: userProfile.username || 'Anonymous Oracle',
-          role: 'user',
-          text: userMessage,
-          created_at: new Date().toISOString()
-        }).catch(err => handleFirestoreError(err, OperationType.CREATE, 'community_chat'));
+        const { error } = await supabase
+          .from('community_chat')
+          .insert([{
+            uid: userProfile.uid,
+            username: userProfile.username || 'Anonymous Oracle',
+            role: 'user',
+            text: userMessage,
+            created_at: new Date().toISOString()
+          }]);
+        
+        if (error) throw error;
       } catch (err) {
         console.error(err);
       }

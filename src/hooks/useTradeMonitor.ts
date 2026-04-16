@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from 'react';
-import { db } from '../firebase';
-import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp, arrayUnion } from 'firebase/firestore';
+import { supabase } from '../supabase';
 import { Trade, UserProfile } from '../types';
 import { useMarketContext } from '../MarketContext';
+import { speak } from '../lib/voice';
 
 export function useTradeMonitor(
   userProfile: UserProfile, 
@@ -20,17 +20,52 @@ export function useTradeMonitor(
   useEffect(() => {
     if (!userProfile.uid) return;
 
-    const tradesRef = collection(db, 'users', userProfile.uid, 'trades');
-    const q = query(tradesRef, where('status', '==', 'open'));
+    // Initial fetch
+    const fetchTrades = async () => {
+      const { data, error } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .eq('status', 'open');
+      
+      if (error) {
+        console.error("Trade monitor fetch error:", error);
+      } else {
+        setOpenTrades(data as Trade[]);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const trades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Trade));
-      setOpenTrades(trades);
-    }, (err) => {
-      console.error("Trade monitor snapshot error:", err);
-    });
+    fetchTrades();
 
-    return () => unsubscribe();
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`public:trades:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'trades', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, (payload) => {
+        // This is a bit more complex because we need to filter by status 'open'
+        // For simplicity, we'll just re-fetch or update the local state
+        if (payload.eventType === 'INSERT' && (payload.new as Trade).status === 'open') {
+          setOpenTrades(prev => [...prev, payload.new as Trade]);
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as Trade;
+          if (updated.status === 'open') {
+            setOpenTrades(prev => prev.map(t => t.id === updated.id ? updated : t));
+          } else {
+            setOpenTrades(prev => prev.filter(t => t.id !== updated.id));
+          }
+        } else if (payload.eventType === 'DELETE') {
+          setOpenTrades(prev => prev.filter(t => t.id !== (payload.old as Trade).id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   // Monitor trades for TP/SL and update P/L
@@ -81,11 +116,16 @@ export function useTradeMonitor(
 
             if (hit && !alreadyHit) {
               try {
-                const tradeRef = doc(db, 'users', userProfile.uid, 'trades', trade.id);
-                await updateDoc(tradeRef, {
-                  tp_hits: arrayUnion(tp.level)
-                });
+                const newTpHits = [...(trade.tp_hits || []), tp.level];
+                await supabase
+                  .from('trades')
+                  .update({
+                    tp_hits: newTpHits
+                  })
+                  .eq('id', trade.id);
+                
                 addToast(`Oracle Prophecy: ${trade.pair} hit ${tp.level}!`, 'success');
+                speak(`Oracle Prophecy: ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has hit ${tp.level}.`, userProfile.notification_settings.sound);
               } catch (err) {
                 console.error(`Error updating TP hit for ${tp.level}:`, err);
               }
@@ -105,26 +145,39 @@ export function useTradeMonitor(
             pnl: finalPnl, 
             pnl_percentage: finalPnlPercentage,
             exit_price: currentPrice,
-            close_reason: reason
+            close_reason: reason,
+            mae: trade.mae ? Math.min(trade.mae, finalPnl) : finalPnl,
+            mfe: trade.mfe ? Math.max(trade.mfe, finalPnl) : finalPnl
           };
 
           if (onCloseTrade) {
             await onCloseTrade(updatedTrade, reason);
+            speak(`Ritual complete. ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} closed due to ${reason}.`, userProfile.notification_settings.sound);
           }
         } else {
-          // Update current P/L in Firestore for real-time dashboard updates
-          const pnl = trade.type === 'buy' 
+          // Update current P/L and MAE/MFE while open
+          const currentPnl = trade.type === 'buy' 
             ? (currentPrice - trade.entry_price) * 100 
             : (trade.entry_price - currentPrice) * 100;
-          const pnl_percentage = (pnl / (trade.entry_price * 100)) * 100;
+          
+          const newMae = trade.mae !== undefined ? Math.min(trade.mae, currentPnl) : currentPnl;
+          const newMfe = trade.mfe !== undefined ? Math.max(trade.mfe, currentPnl) : currentPnl;
 
-          if (Math.abs((trade.pnl || 0) - pnl) > 0.1) { // Increased threshold to 0.1 for fewer updates
-            const tradeRef = doc(db, 'users', userProfile.uid, 'trades', trade.id);
-            updateDoc(tradeRef, {
-              current_price: currentPrice,
-              pnl,
-              pnl_percentage
-            }).catch(() => {});
+          if (newMae !== trade.mae || newMfe !== trade.mfe) {
+            try {
+              await supabase
+                .from('trades')
+                .update({
+                  mae: newMae,
+                  mfe: newMfe,
+                  current_price: currentPrice,
+                  pnl: currentPnl,
+                  pnl_percentage: (currentPnl / (trade.entry_price * 100)) * 100
+                })
+                .eq('id', trade.id);
+            } catch (err) {
+              console.error("Error updating trade metrics:", err);
+            }
           }
         }
       });

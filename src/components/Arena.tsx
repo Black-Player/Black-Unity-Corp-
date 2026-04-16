@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, deleteDoc, getDocs } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, Users, TrendingUp, Star, Shield, Zap, ExternalLink, Filter, Search, Sparkles, Target, Activity, ArrowUpRight } from 'lucide-react';
 
@@ -26,37 +25,78 @@ export default function Arena({ userProfile, addToast }: { userProfile: UserProf
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch elite oracles from users collection
-    const q = query(collection(db, 'users'), where('is_elite', '==', true));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const oracles = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().username || 'Anonymous Oracle',
-        win_rate: doc.data().win_rate || 0,
-        total_pnl: doc.data().total_pnl || 0,
-        followers: doc.data().followers_count || 0,
-        risk_score: doc.data().risk_score || 1,
-        strategy: doc.data().strategy_description || 'Master Strategy',
-        avatar: doc.data().avatar_url || `https://picsum.photos/seed/${doc.id}/100/100`,
-        verified: doc.data().tier === 'zion' || doc.data().tier === 'creator'
-      }));
-      setEliteOracles(oracles);
-      setLoading(false);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'users');
-      setLoading(false);
-    });
+    const fetchEliteOracles = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('is_elite', true);
+        
+        if (error) throw error;
 
-    // Fetch following relationships
-    const followQ = query(collection(db, 'followers'), where('follower_id', '==', userProfile.uid));
-    const unsubscribeFollow = onSnapshot(followQ, (snapshot) => {
-      const ids = new Set(snapshot.docs.map(doc => doc.data().oracle_id));
-      setFollowingIds(ids);
-    });
+        const oracles = data.map(doc => ({
+          id: doc.uid,
+          name: doc.username || 'Anonymous Oracle',
+          win_rate: doc.win_rate || 0,
+          total_pnl: doc.total_pnl || 0,
+          followers: doc.followers_count || 0,
+          risk_score: doc.risk_score || 1,
+          strategy: doc.strategy_description || 'Master Strategy',
+          avatar: doc.avatar_url || `https://picsum.photos/seed/${doc.uid}/100/100`,
+          verified: doc.tier === 'zion' || doc.tier === 'creator'
+        }));
+        setEliteOracles(oracles);
+      } catch (err) {
+        handleSupabaseError(err, OperationType.LIST, 'users');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const fetchFollowing = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('followers')
+          .select('oracle_id')
+          .eq('follower_id', userProfile.uid);
+        
+        if (error) throw error;
+        setFollowingIds(new Set(data.map(d => d.oracle_id)));
+      } catch (err) {
+        handleSupabaseError(err, OperationType.LIST, 'followers');
+      }
+    };
+
+    fetchEliteOracles();
+    fetchFollowing();
+
+    const oracleChannel = supabase
+      .channel('elite-oracles')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'users',
+        filter: 'is_elite=eq.true'
+      }, () => {
+        fetchEliteOracles();
+      })
+      .subscribe();
+
+    const followChannel = supabase
+      .channel('following-updates')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'followers',
+        filter: `follower_id=eq.${userProfile.uid}`
+      }, () => {
+        fetchFollowing();
+      })
+      .subscribe();
 
     return () => {
-      unsubscribe();
-      unsubscribeFollow();
+      supabase.removeChannel(oracleChannel);
+      supabase.removeChannel(followChannel);
     };
   }, [userProfile.uid]);
 
@@ -64,42 +104,52 @@ export default function Arena({ userProfile, addToast }: { userProfile: UserProf
     try {
       if (followingIds.has(oracle.id)) {
         // Unfollow
-        const q = query(
-          collection(db, 'followers'), 
-          where('follower_id', '==', userProfile.uid),
-          where('oracle_id', '==', oracle.id)
-        );
-        const snapshot = await getDocs(q);
-        snapshot.docs.forEach(async (d) => {
-          await deleteDoc(doc(db, 'followers', d.id));
-        });
+        const { error: deleteError } = await supabase
+          .from('followers')
+          .delete()
+          .eq('follower_id', userProfile.uid)
+          .eq('oracle_id', oracle.id);
+        
+        if (deleteError) throw deleteError;
         
         // Update oracle's follower count
-        const oracleRef = doc(db, 'users', oracle.id);
-        await updateDoc(oracleRef, {
-          followers_count: Math.max(0, (oracle.followers || 0) - 1)
-        });
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            followers_count: Math.max(0, (oracle.followers || 0) - 1)
+          })
+          .eq('uid', oracle.id);
+        
+        if (updateError) throw updateError;
 
         addToast(`You are no longer following ${oracle.name}.`, 'info');
       } else {
         // Follow
-        await addDoc(collection(db, 'followers'), {
-          follower_id: userProfile.uid,
-          oracle_id: oracle.id,
-          mirror_active: true,
-          created_at: new Date().toISOString()
-        });
+        const { error: insertError } = await supabase
+          .from('followers')
+          .insert([{
+            follower_id: userProfile.uid,
+            oracle_id: oracle.id,
+            mirror_active: true,
+            created_at: new Date().toISOString()
+          }]);
+        
+        if (insertError) throw insertError;
 
         // Update oracle's follower count
-        const oracleRef = doc(db, 'users', oracle.id);
-        await updateDoc(oracleRef, {
-          followers_count: (oracle.followers || 0) + 1
-        });
+        const { error: updateError } = await supabase
+          .from('users')
+          .update({
+            followers_count: (oracle.followers || 0) + 1
+          })
+          .eq('uid', oracle.id);
+        
+        if (updateError) throw updateError;
 
         addToast(`You are now following ${oracle.name}. Mirror protocol active.`, 'success');
       }
     } catch (err) {
-      console.error(err);
+      handleSupabaseError(err, OperationType.WRITE, 'followers');
       addToast('The cosmic connection failed.', 'error');
     }
   };

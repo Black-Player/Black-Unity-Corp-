@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bell, Plus, Trash2, AlertCircle, TrendingUp, TrendingDown, X } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { PriceAlert, UserProfile } from '../types';
 import { DERIV_SYMBOLS } from '../constants';
 
@@ -21,24 +20,59 @@ export const PriceAlerts: React.FC<PriceAlertsProps> = ({ userProfile, addToast 
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'users', userProfile.uid, 'alerts'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PriceAlert));
-      setAlerts(data);
-    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${userProfile.uid}/alerts`));
+    // Initial fetch
+    const fetchAlerts = async () => {
+      const { data, error } = await supabase
+        .from('alerts')
+        .select('*')
+        .eq('uid', userProfile.uid);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'alerts');
+      } else {
+        setAlerts(data as PriceAlert[]);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchAlerts();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`public:alerts:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'alerts', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setAlerts(prev => [...prev, payload.new as PriceAlert]);
+        } else if (payload.eventType === 'UPDATE') {
+          setAlerts(prev => prev.map(a => a.id === (payload.new as PriceAlert).id ? payload.new as PriceAlert : a));
+        } else if (payload.eventType === 'DELETE') {
+          setAlerts(prev => prev.filter(a => a.id !== (payload.old as PriceAlert).id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const handleAddAlert = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'users', userProfile.uid, 'alerts'), {
-        ...newAlert,
-        user_id: userProfile.uid,
-        active: true,
-        created_at: new Date().toISOString()
-      }).catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userProfile.uid}/alerts`));
+      const { error } = await supabase
+        .from('alerts')
+        .insert([{
+          ...newAlert,
+          uid: userProfile.uid,
+          active: true,
+          created_at: new Date().toISOString()
+        }]);
+      
+      if (error) throw error;
       
       setShowAdd(false);
       addToast('Price alert set successfully', 'success');
@@ -50,8 +84,12 @@ export const PriceAlerts: React.FC<PriceAlertsProps> = ({ userProfile, addToast 
 
   const handleDeleteAlert = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'users', userProfile.uid, 'alerts', id))
-        .catch(err => handleFirestoreError(err, OperationType.DELETE, `users/${userProfile.uid}/alerts/${id}`));
+      const { error } = await supabase
+        .from('alerts')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
       addToast('Alert removed', 'info');
     } catch (error) {
       console.error(error);

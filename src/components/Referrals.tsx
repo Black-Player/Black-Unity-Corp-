@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Users, Gift, Share2, Copy, Check, Sparkles, TrendingUp, UserPlus, Zap } from 'lucide-react';
@@ -15,17 +14,34 @@ export default function Referrals({ userProfile, addToast }: ReferralsProps) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'users'),
-      where('referred_by', '==', userProfile.referral_code || userProfile.uid)
-    );
+    const fetchReferredUsers = async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('referred_by', userProfile.referral_code || userProfile.uid);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'users');
+      } else {
+        setReferredUsers(data || []);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setReferredUsers(users);
-    });
+    fetchReferredUsers();
 
-    return () => unsubscribe();
+    const channel = supabase
+      .channel(`public:users:referred_by=${userProfile.referral_code || userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'users', 
+        filter: `referred_by=eq.${userProfile.referral_code || userProfile.uid}` 
+      }, fetchReferredUsers)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid, userProfile.referral_code]);
 
   const copyToClipboard = () => {

@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Core user data and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "User's unique ID" },
+        "email": { "type": "string", "format": "email" },
+        "username": { "type": "string" },
+        "role": { "type": "string", "enum": ["creator", "investor", "student", "subscriber"] },
+        "tier": { "type": "string", "enum": ["free", "oracle", "zion", "legendary", "mythic", "creator"] },
+        "ap": { "type": "number" },
+        "credits": { "type": "number" },
+        "account_type": { "type": "string", "enum": ["demo", "live"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "tier"]
+    },
+    "Signal": {
+      "title": "Trading Signal",
+      "description": "AI-generated trading signals",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "pair": { "type": "string" },
+        "entry": { "type": "number" },
+        "status": { "type": "string", "enum": ["active", "tp_hit", "sl_hit"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "pair", "entry", "status"]
+    },
+    "Trade": {
+      "title": "User Trade",
+      "description": "Trades executed by users",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "pair": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "pnl": { "type": "number" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "pair", "status"]
+    }
+  },
+  "tables": {
+    "users": { "schema": "UserProfile", "description": "User profiles" },
+    "signals": { "schema": "Signal", "description": "Trading signals" },
+    "trades": { "schema": "Trade", "description": "User trades" }
+  }
+}

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, getDocs, limit } from 'firebase/firestore';
-import { db } from '../firebase';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, Trade } from '../types';
 import { motion } from 'motion/react';
 import { 
@@ -40,18 +39,20 @@ export const PerformanceStats: React.FC<PerformanceStatsProps> = ({ userProfile 
   useEffect(() => {
     const fetchTrades = async () => {
       try {
-        const q = query(
-          collection(db, 'users', userProfile.uid, 'trades'),
-          where('status', '==', 'closed'),
-          orderBy('closed_at', 'desc'),
-          limit(50)
-        );
-        const querySnap = await getDocs(q);
-        const fetchedTrades = querySnap.docs.map(doc => ({ id: doc.id, ...doc.data() } as Trade));
-        setTrades(fetchedTrades);
+        const { data: fetchedTrades, error } = await supabase
+          .from('trades')
+          .select('*')
+          .eq('uid', userProfile.uid)
+          .eq('status', 'closed')
+          .order('closed_at', { ascending: false })
+          .limit(50);
+        
+        if (error) throw error;
+        
+        setTrades(fetchedTrades as Trade[]);
 
         // Calculate Stats
-        if (fetchedTrades.length > 0) {
+        if (fetchedTrades && fetchedTrades.length > 0) {
           const wins = fetchedTrades.filter(t => t.pnl > 0).length;
           const losses = fetchedTrades.filter(t => t.pnl <= 0).length;
           const totalProfit = fetchedTrades.reduce((acc, t) => acc + t.pnl, 0);
@@ -72,7 +73,7 @@ export const PerformanceStats: React.FC<PerformanceStatsProps> = ({ userProfile 
           });
         }
       } catch (err) {
-        console.error("Error fetching performance stats:", err);
+        handleSupabaseError(err, OperationType.LIST, 'trades');
       } finally {
         setLoading(false);
       }

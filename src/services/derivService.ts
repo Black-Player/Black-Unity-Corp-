@@ -113,8 +113,8 @@ class DerivService {
 
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error('Deriv connection timeout (15s)'));
-      }, 15000);
+        reject(new Error('Deriv connection timeout (60s)'));
+      }, 60000);
 
       const check = () => {
         if (this.socket?.readyState === WebSocket.OPEN && this.isAuthorized) {
@@ -124,7 +124,7 @@ class DerivService {
           clearTimeout(timeout);
           reject(new Error('Deriv connection failed'));
         } else {
-          setTimeout(check, 200);
+          setTimeout(check, 500);
         }
       };
       check();

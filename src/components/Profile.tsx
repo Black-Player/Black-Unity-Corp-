@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Mail, Shield, Zap, TrendingUp, TrendingDown, Clock, Edit2, Save, X, Camera, Globe, Twitter, Github, Linkedin, GraduationCap, Trophy, AlertTriangle, Send, Key } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, Tier, AdvancementRequest } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, onSnapshot, updateDoc, collection, addDoc, query, where, getDocs, orderBy, limit, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import KeyGenerator from './KeyGenerator';
 
 interface ProfileProps {
@@ -26,16 +25,39 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
   useEffect(() => {
     if (!isOwnProfile && targetUserId) {
       setLoading(true);
-      const unsubscribe = onSnapshot(doc(db, 'users', targetUserId), (snapshot) => {
-        if (snapshot.exists()) {
-          setProfile(snapshot.data() as UserProfile);
+      const fetchProfile = async () => {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .eq('uid', targetUserId)
+          .single();
+        
+        if (error) {
+          handleSupabaseError(error, OperationType.GET, `users/${targetUserId}`);
+        } else {
+          setProfile(data as UserProfile);
         }
         setLoading(false);
-      }, (error) => {
-        handleFirestoreError(error, OperationType.GET, `users/${targetUserId}`);
-        setLoading(false);
-      });
-      return () => unsubscribe();
+      };
+
+      fetchProfile();
+
+      // Subscribe to changes
+      const channel = supabase
+        .channel(`public:users:uid=eq.${targetUserId}`)
+        .on('postgres_changes', { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'users', 
+          filter: `uid=eq.${targetUserId}` 
+        }, (payload) => {
+          setProfile(payload.new as UserProfile);
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [targetUserId, isOwnProfile]);
 
@@ -43,16 +65,20 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
     if (!profile) return;
     setSaving(true);
     try {
-      const userRef = doc(db, 'users', profile.uid);
-      await updateDoc(userRef, {
-        username: editedUsername,
-        bio: editedBio,
-        avatar_url: editedAvatar
-      });
+      const { error } = await supabase
+        .from('users')
+        .update({
+          username: editedUsername,
+          bio: editedBio,
+          avatar_url: editedAvatar
+        })
+        .eq('uid', profile.uid);
+      
+      if (error) throw error;
       setIsEditing(false);
       addToast('Profile updated successfully', 'success');
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${profile.uid}`);
+      handleSupabaseError(error, OperationType.UPDATE, `users/${profile.uid}`);
     } finally {
       setSaving(false);
     }
@@ -63,17 +89,21 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
     setSubmittingRequest(true);
     try {
       const request: Partial<AdvancementRequest> = {
-        user_id: profile.uid,
+        uid: profile.uid,
         current_tier: profile.student_tier!,
         target_tier: profile.student_tier === 'initiate' ? 'oracle' : (profile.student_tier === 'oracle' ? 'zion' : 'ascended'),
         status: 'pending',
         ap_at_request: profile.ap,
         created_at: new Date().toISOString()
       };
-      await addDoc(collection(db, 'advancement_requests'), request);
+      const { error } = await supabase
+        .from('advancement_requests')
+        .insert([request]);
+      
+      if (error) throw error;
       addToast('Advancement request submitted to the Creator.', 'success');
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'advancement_requests');
+      handleSupabaseError(error, OperationType.CREATE, 'advancement_requests');
     } finally {
       setSubmittingRequest(false);
     }
@@ -84,30 +114,45 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
     const isFollowing = userProfile.followed_traders?.includes(profile.uid);
     
     try {
-      const currentUserRef = doc(db, 'users', userProfile.uid);
-      const targetUserRef = doc(db, 'users', profile.uid);
-
       if (isFollowing) {
-        await updateDoc(currentUserRef, {
-          followed_traders: arrayRemove(profile.uid),
-          following_count: (userProfile.following_count || 1) - 1
-        });
-        await updateDoc(targetUserRef, {
-          followers_count: (profile.followers_count || 1) - 1
-        });
+        const newFollowed = (userProfile.followed_traders || []).filter(id => id !== profile.uid);
+        await supabase
+          .from('users')
+          .update({
+            followed_traders: newFollowed,
+            following_count: (userProfile.following_count || 1) - 1
+          })
+          .eq('uid', userProfile.uid);
+        
+        await supabase
+          .from('users')
+          .update({
+            followers_count: (profile.followers_count || 1) - 1
+          })
+          .eq('uid', profile.uid);
+        
         addToast(`Unfollowed ${profile.username}`, 'info');
       } else {
-        await updateDoc(currentUserRef, {
-          followed_traders: arrayUnion(profile.uid),
-          following_count: (userProfile.following_count || 0) + 1
-        });
-        await updateDoc(targetUserRef, {
-          followers_count: (profile.followers_count || 0) + 1
-        });
+        const newFollowed = [...(userProfile.followed_traders || []), profile.uid];
+        await supabase
+          .from('users')
+          .update({
+            followed_traders: newFollowed,
+            following_count: (userProfile.following_count || 0) + 1
+          })
+          .eq('uid', userProfile.uid);
+        
+        await supabase
+          .from('users')
+          .update({
+            followers_count: (profile.followers_count || 0) + 1
+          })
+          .eq('uid', profile.uid);
+        
         addToast(`Following ${profile.username}`, 'success');
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'users');
+      handleSupabaseError(error, OperationType.UPDATE, 'users');
     }
   };
 
@@ -250,7 +295,7 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
 
       {/* Creator Key Generator Section */}
       {profile.role === 'creator' && isOwnProfile && (
-        <KeyGenerator addToast={addToast} />
+        <KeyGenerator addToast={addToast} userProfile={userProfile} />
       )}
 
       {/* Student Progression Section */}
@@ -326,7 +371,7 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
             Connect with the Creator and other high-level partners for private insights and strategy discussions.
           </p>
           <a 
-            href="https://chat.whatsapp.com/example-investor-nexus" 
+            href="https://chat.whatsapp.com/L3N8m7k6J9I0H1G2F3E4D5" 
             target="_blank" 
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 px-8 py-3 rounded-xl bg-emerald-500 text-black font-bold hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20"

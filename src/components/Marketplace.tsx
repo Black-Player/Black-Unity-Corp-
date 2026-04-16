@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShoppingBag, Star, Zap, Shield, Search, Filter, ArrowUpRight, Tag, X } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { MarketplaceItem, UserProfile } from '../types';
 
 interface MarketplaceProps {
@@ -24,13 +23,36 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ userProfile, addToast 
   const [listing, setListing] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'marketplace'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MarketplaceItem));
-      setItems(data);
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'marketplace'));
+    const fetchItems = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('marketplace')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        setItems(data as MarketplaceItem[]);
+      } catch (err) {
+        handleSupabaseError(err, OperationType.GET, 'marketplace');
+      }
+    };
 
-    return () => unsubscribe();
+    fetchItems();
+
+    const channel = supabase
+      .channel('marketplace-updates')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'marketplace'
+      }, () => {
+        fetchItems();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleList = async () => {
@@ -41,18 +63,21 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ userProfile, addToast 
 
     setListing(true);
     try {
-      const marketplaceRef = collection(db, 'marketplace');
-      const { addDoc } = await import('firebase/firestore');
-      await addDoc(marketplaceRef, {
-        ...newItem,
-        seller_id: userProfile.uid,
-        created_at: new Date().toISOString()
-      }).catch(err => handleFirestoreError(err, OperationType.WRITE, 'marketplace'));
+      const { error } = await supabase
+        .from('marketplace')
+        .insert([{
+          ...newItem,
+          seller_id: userProfile.uid,
+          created_at: new Date().toISOString()
+        }]);
+      
+      if (error) throw error;
 
       addToast('Your strategy has been listed in the Celestial Marketplace!', 'success');
       setShowListModal(false);
       setNewItem({ name: '', description: '', price: 0, type: 'strategy' });
     } catch (err: any) {
+      handleSupabaseError(err, OperationType.WRITE, 'marketplace');
       addToast(err.message, 'error');
     } finally {
       setListing(false);
@@ -71,16 +96,22 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ userProfile, addToast 
     }
 
     try {
-      const { doc, updateDoc, arrayUnion, increment } = await import('firebase/firestore');
-      const userRef = doc(db, 'users', userProfile.uid);
+      const newOwnedItems = [...(userProfile.owned_items || []), item.id];
+      const newCredits = userProfile.credits - item.price;
+
+      const { error } = await supabase
+        .from('users')
+        .update({
+          credits: newCredits,
+          owned_items: newOwnedItems
+        })
+        .eq('uid', userProfile.uid);
       
-      await updateDoc(userRef, {
-        credits: increment(-item.price),
-        owned_items: arrayUnion(item.id)
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
+      if (error) throw error;
 
       addToast(`Successfully acquired ${item.name}!`, 'success');
     } catch (err: any) {
+      handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
       addToast(err.message, 'error');
     }
   };

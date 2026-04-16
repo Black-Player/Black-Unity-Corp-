@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { auth, db, handleFirestoreError, OperationType } from '../firebase';
-import { signOut } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, AppTheme } from '../types';
 import { Settings as SettingsIcon, Bell, Volume2, Mail, Shield, CreditCard, User, Zap, LogOut, Trash2, Palette, Moon, Sun, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -29,9 +27,13 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
     
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'users', userProfile.uid), {
-        notification_settings: newSettings
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
+      await supabase
+        .from('users')
+        .update({
+          notification_settings: newSettings
+        })
+        .eq('uid', userProfile.uid);
+      
       addToast('Cosmic frequencies adjusted.', 'success');
     } catch (err) {
       console.error(err);
@@ -48,9 +50,13 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
     document.documentElement.setAttribute('data-theme', themeId);
     
     try {
-      await updateDoc(doc(db, 'users', userProfile.uid), {
-        theme: themeId
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
+      await supabase
+        .from('users')
+        .update({
+          theme: themeId
+        })
+        .eq('uid', userProfile.uid);
+      
       addToast(`Theme shifted to ${themeId}.`, 'success');
     } catch (err) {
       console.error(err);
@@ -60,7 +66,7 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      await supabase.auth.signOut();
       addToast('Safely disconnected from the Oracle.', 'success');
     } catch (err) {
       console.error(err);

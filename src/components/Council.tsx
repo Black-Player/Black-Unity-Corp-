@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserProfile } from '../types';
+import { UserProfile, Tier } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Brain, MessageSquare, Shield, Sparkles, TrendingUp, TrendingDown, Zap, Users, Info } from 'lucide-react';
 import { generateTradingSignal } from '../services/aiService';
@@ -77,7 +77,15 @@ export default function Council({ userProfile, addToast }: CouncilProps) {
 
       // Generate the final signal if consensus is strong
       if (finalSentiment !== 'Neutral' && avgConfidence > 70) {
-        const signal = await generateTradingSignal(pair, 'H1', 'Council', 'Multi-Bot Consensus', 1000, { sentiment: finalSentiment });
+        const councilBot = {
+          name: 'The Council',
+          strategy: 'Multi-Bot Consensus',
+          tier_requirement: 'oracle' as Tier,
+          description: 'A collective intelligence formed by the most elite Oracle bots.',
+          icon: 'Users',
+          personality: 'analytical' as const
+        };
+        const signal = await generateTradingSignal(pair, 'H1', councilBot as any, 1000, { sentiment: finalSentiment });
         setConsensus({ sentiment: finalSentiment, confidence: avgConfidence, signal });
       } else {
         setConsensus({ sentiment: finalSentiment, confidence: avgConfidence, signal: null });

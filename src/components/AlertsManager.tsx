@@ -1,13 +1,12 @@
 import { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Bell, BellOff, Plus, Trash2, TrendingUp, TrendingDown, AlertCircle, Check, X, Zap, Save } from 'lucide-react';
 
 interface PriceAlert {
   id: string;
-  user_id: string;
+  uid: string;
   pair: string;
   price: number;
   condition: 'above' | 'below';
@@ -30,23 +29,51 @@ export default function AlertsManager({ userProfile, addToast }: AlertsManagerPr
   });
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'users', userProfile.uid, 'alerts')
-    );
+    const fetchAlerts = async () => {
+      const { data, error } = await supabase
+        .from('alerts')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'alerts');
+      } else {
+        setAlerts(data as PriceAlert[]);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PriceAlert));
-      setAlerts(data);
-    });
+    fetchAlerts();
 
-    return () => unsubscribe();
+    const channel = supabase
+      .channel(`public:alerts:manager:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'alerts', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setAlerts(prev => [payload.new as PriceAlert, ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as PriceAlert;
+          setAlerts(prev => prev.map(a => a.id === updated.id ? updated : a));
+        } else if (payload.eventType === 'DELETE') {
+          setAlerts(prev => prev.filter(a => a.id !== (payload.old as PriceAlert).id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const handleAddAlert = async () => {
     if (!newAlert.price) return;
 
     const alertData: Omit<PriceAlert, 'id'> = {
-      user_id: userProfile.uid,
+      uid: userProfile.uid,
       pair: newAlert.pair,
       price: parseFloat(newAlert.price),
       condition: newAlert.condition,
@@ -55,30 +82,46 @@ export default function AlertsManager({ userProfile, addToast }: AlertsManagerPr
     };
 
     try {
-      await addDoc(collection(db, 'users', userProfile.uid, 'alerts'), alertData);
+      const { error } = await supabase
+        .from('alerts')
+        .insert([alertData]);
+      
+      if (error) throw error;
+
       setNewAlert({ pair: 'EURUSD', price: '', condition: 'above' });
       setIsAdding(false);
       addToast('Celestial Alert set successfully.', 'success');
     } catch (err) {
+      handleSupabaseError(err, OperationType.CREATE, 'alerts');
       addToast('Failed to set alert.', 'error');
     }
   };
 
   const toggleAlert = async (id: string, currentStatus: boolean) => {
     try {
-      await updateDoc(doc(db, 'users', userProfile.uid, 'alerts', id), {
-        active: !currentStatus
-      });
+      const { error } = await supabase
+        .from('alerts')
+        .update({ active: !currentStatus })
+        .eq('id', id);
+      
+      if (error) throw error;
     } catch (err) {
+      handleSupabaseError(err, OperationType.UPDATE, 'alerts');
       addToast('Failed to update alert.', 'error');
     }
   };
 
   const deleteAlert = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'users', userProfile.uid, 'alerts', id));
+      const { error } = await supabase
+        .from('alerts')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
       addToast('Alert removed from the heavens.', 'info');
     } catch (err) {
+      handleSupabaseError(err, OperationType.DELETE, 'alerts');
       addToast('Failed to delete alert.', 'error');
     }
   };

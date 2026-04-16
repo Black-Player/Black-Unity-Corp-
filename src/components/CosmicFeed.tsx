@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MessageSquare, Heart, Share2, TrendingUp, Zap, Globe, Users, Sparkles, Send } from 'lucide-react';
 import { UserProfile } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, doc, updateDoc, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 interface Post {
   id: string;
@@ -25,32 +24,64 @@ export default function CosmicFeed({ userProfile, addToast }: { userProfile: Use
   const [postType, setPostType] = useState<'Analysis' | 'Win' | 'Prophecy' | 'General'>('General');
 
   useEffect(() => {
-    const q = query(collection(db, 'feed'), orderBy('created_at', 'desc'), limit(20));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      } as Post));
-      setPosts(data);
+    // Initial fetch
+    const fetchPosts = async () => {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'posts');
+      } else {
+        setPosts(data as Post[]);
+      }
       setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'feed'));
+    };
 
-    return () => unsubscribe();
+    fetchPosts();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('public:posts')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'posts' 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setPosts(prev => [payload.new as Post, ...prev.slice(0, 19)]);
+        } else if (payload.eventType === 'UPDATE') {
+          setPosts(prev => prev.map(p => p.id === (payload.new as Post).id ? payload.new as Post : p));
+        } else if (payload.eventType === 'DELETE') {
+          setPosts(prev => prev.filter(p => p.id !== (payload.old as Post).id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handlePost = async () => {
     if (!newPost.trim()) return;
     try {
-      await addDoc(collection(db, 'feed'), {
-        author_id: userProfile.uid,
-        author_name: userProfile.email.split('@')[0],
-        author_avatar: `https://picsum.photos/seed/${userProfile.uid}/100/100`,
-        content: newPost,
-        created_at: serverTimestamp(),
-        likes: [],
-        comments_count: 0,
-        type: postType
-      }).catch(err => handleFirestoreError(err, OperationType.CREATE, 'feed'));
+      const { error } = await supabase
+        .from('posts')
+        .insert([{
+          uid: userProfile.uid,
+          username: userProfile.email.split('@')[0],
+          avatar_url: `https://picsum.photos/seed/${userProfile.uid}/100/100`,
+          content: newPost,
+          created_at: new Date().toISOString(),
+          likes: [],
+          comments_count: 0,
+          type: postType
+        }]);
+      
+      if (error) throw error;
       
       setNewPost('');
       addToast('Prophecy shared with the tribe.', 'success');
@@ -62,10 +93,19 @@ export default function CosmicFeed({ userProfile, addToast }: { userProfile: Use
 
   const handleLike = async (postId: string, currentLikes: string[]) => {
     const isLiked = currentLikes.includes(userProfile.uid);
+    const newLikes = isLiked 
+      ? currentLikes.filter(id => id !== userProfile.uid)
+      : [...currentLikes, userProfile.uid];
+
     try {
-      await updateDoc(doc(db, 'feed', postId), {
-        likes: isLiked ? arrayRemove(userProfile.uid) : arrayUnion(userProfile.uid)
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `feed/${postId}`));
+      const { error } = await supabase
+        .from('posts')
+        .update({
+          likes: newLikes
+        })
+        .eq('id', postId);
+      
+      if (error) throw error;
     } catch (error) {
       console.error(error);
     }
@@ -139,7 +179,7 @@ export default function CosmicFeed({ userProfile, addToast }: { userProfile: Use
                       <div>
                         <p className="font-bold text-sm">{post.author_name}</p>
                         <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">
-                          {post.created_at?.toDate ? new Date(post.created_at.toDate()).toLocaleDateString() : 'Just now'}
+                          {new Date(post.created_at).toLocaleDateString()}
                         </p>
                       </div>
                     </div>

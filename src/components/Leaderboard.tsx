@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Trophy, Medal, Crown, TrendingUp, User, Search, Filter, ArrowUpRight, ArrowDownRight, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LeaderboardEntry, Tier } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 interface LeaderboardProps {
   setTargetUserId: (uid: string) => void;
@@ -20,33 +19,49 @@ export default function Leaderboard({ setTargetUserId, setActivePage }: Leaderbo
     setLoading(true);
     const pnlField = timeframe === 'weekly' ? 'weekly_pnl' : timeframe === 'monthly' ? 'monthly_pnl' : 'total_pnl';
     
-    const q = query(
-      collection(db, 'users'),
-      orderBy(pnlField, 'desc'),
-      limit(50)
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const newEntries = snapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          uid: doc.id,
-          username: data.username || data.email?.split('@')[0] || 'Anonymous Trader',
-          avatar_url: data.avatar_url,
-          total_pnl: data[pnlField] || 0,
-          win_rate: data.win_rate || 0,
-          level: data.level || 1,
-          tier: data.tier || 'free'
-        } as LeaderboardEntry;
-      });
-      setEntries(newEntries);
+    const fetchLeaderboard = async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .order(pnlField, { ascending: false })
+        .limit(50);
+      
+      if (error) {
+        await handleSupabaseError(error, OperationType.GET, 'users');
+      } else {
+        const newEntries = (data || []).map(doc => ({
+          uid: doc.uid,
+          username: doc.username || doc.email?.split('@')[0] || 'Anonymous Trader',
+          avatar_url: doc.avatar_url,
+          total_pnl: doc[pnlField] || 0,
+          win_rate: doc.win_rate || 0,
+          level: doc.level || 1,
+          tier: doc.tier || 'free',
+          win_streak: doc.win_streak || 0,
+          best_asset: doc.best_asset || 'N/A'
+        } as LeaderboardEntry));
+        setEntries(newEntries);
+      }
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'users');
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
+    fetchLeaderboard();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel('public:users:leaderboard')
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'users' 
+      }, () => {
+        fetchLeaderboard();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [timeframe]);
 
   const filteredEntries = entries.filter(entry => 
@@ -207,6 +222,8 @@ export default function Leaderboard({ setTargetUserId, setActivePage }: Leaderbo
                 <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest">Legend</th>
                 <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest">Tier</th>
                 <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest text-right">Win Rate</th>
+                <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest text-right">Streak</th>
+                <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest text-right">Best Asset</th>
                 <th className="px-6 py-4 text-xs font-bold text-white/40 uppercase tracking-widest text-right">Total P/L</th>
               </tr>
             </thead>
@@ -224,6 +241,8 @@ export default function Leaderboard({ setTargetUserId, setActivePage }: Leaderbo
                       </td>
                       <td className="px-6 py-4"><div className="h-4 w-16 bg-white/10 rounded" /></td>
                       <td className="px-6 py-4"><div className="h-4 w-12 bg-white/10 rounded ml-auto" /></td>
+                      <td className="px-6 py-4"><div className="h-4 w-8 bg-white/10 rounded ml-auto" /></td>
+                      <td className="px-6 py-4"><div className="h-4 w-16 bg-white/10 rounded ml-auto" /></td>
                       <td className="px-6 py-4"><div className="h-4 w-20 bg-white/10 rounded ml-auto" /></td>
                     </tr>
                   ))
@@ -267,6 +286,17 @@ export default function Leaderboard({ setTargetUserId, setActivePage }: Leaderbo
                       </td>
                       <td className="px-6 py-4 text-right font-mono text-white/80">
                         {entry.win_rate}%
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1 text-gold font-bold font-mono">
+                          <Zap size={10} />
+                          {entry.win_streak}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="text-[10px] font-bold text-white/60 uppercase tracking-widest bg-white/5 px-2 py-1 rounded">
+                          {entry.best_asset?.replace('frx', '').replace('R_', 'Vol ')}
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-right">
                         <div className={`font-mono font-bold ${entry.total_pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>

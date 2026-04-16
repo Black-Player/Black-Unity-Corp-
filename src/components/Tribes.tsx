@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Users, Plus, Trash2, Shield, Zap, MessageSquare, UserPlus, X, Search } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { Tribe, UserProfile } from '../types';
 
 interface TribesProps {
@@ -20,54 +19,89 @@ export const Tribes: React.FC<TribesProps> = ({ userProfile, addToast }) => {
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'tribes'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Tribe));
-      setTribes(data);
-    }, (err) => handleFirestoreError(err, OperationType.GET, 'tribes'));
+    const fetchTribes = async () => {
+      const { data, error } = await supabase
+        .from('tribes')
+        .select('*');
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'tribes');
+      } else {
+        setTribes(data as Tribe[]);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchTribes();
+
+    const channel = supabase
+      .channel('public:tribes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tribes' }, fetchTribes)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'tribes'), {
-        ...newTribe,
-        creator_id: userProfile.uid,
-        members: [userProfile.uid],
-        created_at: new Date().toISOString()
-      }).catch(err => handleFirestoreError(err, OperationType.CREATE, 'tribes'));
+      const { error } = await supabase
+        .from('tribes')
+        .insert([{
+          ...newTribe,
+          creator_id: userProfile.uid,
+          members: [userProfile.uid],
+          created_at: new Date().toISOString()
+        }]);
+      
+      if (error) throw error;
       
       setShowCreate(false);
       setNewTribe({ name: '', description: '' });
       addToast('Tribe formed! Lead your people to glory.', 'success');
     } catch (error) {
-      console.error(error);
+      handleSupabaseError(error, OperationType.CREATE, 'tribes');
       addToast('Failed to form tribe', 'error');
     }
   };
 
   const handleJoin = async (tribeId: string) => {
     try {
-      await updateDoc(doc(db, 'tribes', tribeId), {
-        members: arrayUnion(userProfile.uid)
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `tribes/${tribeId}`));
+      const tribe = tribes.find(t => t.id === tribeId);
+      if (!tribe) return;
+      
+      const newMembers = [...new Set([...tribe.members, userProfile.uid])];
+      
+      const { error } = await supabase
+        .from('tribes')
+        .update({ members: newMembers })
+        .eq('id', tribeId);
+      
+      if (error) throw error;
       addToast('You have joined the tribe!', 'success');
     } catch (error) {
-      console.error(error);
+      handleSupabaseError(error, OperationType.UPDATE, 'tribes');
       addToast('Failed to join tribe', 'error');
     }
   };
 
   const handleLeave = async (tribeId: string) => {
     try {
-      await updateDoc(doc(db, 'tribes', tribeId), {
-        members: arrayRemove(userProfile.uid)
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `tribes/${tribeId}`));
+      const tribe = tribes.find(t => t.id === tribeId);
+      if (!tribe) return;
+      
+      const newMembers = tribe.members.filter(m => m !== userProfile.uid);
+      
+      const { error } = await supabase
+        .from('tribes')
+        .update({ members: newMembers })
+        .eq('id', tribeId);
+      
+      if (error) throw error;
       addToast('You have left the tribe.', 'info');
     } catch (error) {
-      console.error(error);
+      handleSupabaseError(error, OperationType.UPDATE, 'tribes');
       addToast('Failed to leave tribe', 'error');
     }
   };

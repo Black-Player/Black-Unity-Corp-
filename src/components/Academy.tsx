@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { GraduationCap, BookOpen, CheckCircle2, Star, Clock, ArrowRight, Search, Lock } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, doc, updateDoc, setDoc, arrayUnion } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, UserProgress, Tier, hasTierAccess } from '../types';
 import { ACADEMY_ARTICLES, Article } from '../constants';
 
@@ -18,29 +17,62 @@ export const Academy: React.FC<AcademyProps> = ({ userProfile, addToast, setActi
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
 
   useEffect(() => {
-    const docRef = doc(db, 'users', userProfile.uid, 'progress', 'academy');
-    const unsubscribe = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setProgress(snapshot.data() as UserProgress);
+    const fetchProgress = async () => {
+      const { data, error } = await supabase
+        .from('academy_progress')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .maybeSingle();
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, `academy_progress/${userProfile.uid}`);
+      } else if (data) {
+        setProgress(data as UserProgress);
       } else {
         setProgress({ xp: 0, level: 1, completed_lessons: [] });
       }
-    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${userProfile.uid}/progress/academy`));
+    };
 
-    return () => unsubscribe();
+    fetchProgress();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`public:academy_progress:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'academy_progress', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, (payload) => {
+        setProgress(payload.new as UserProgress);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const handleComplete = async (articleId: string) => {
     if (progress?.completed_lessons.includes(articleId)) return;
 
     try {
-      const docRef = doc(db, 'users', userProfile.uid, 'progress', 'academy');
-      await setDoc(docRef, {
-        completed_lessons: arrayUnion(articleId),
-        xp: (progress?.xp || 0) + 100
-      }, { merge: true }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}/progress/academy`));
+      const newCompleted = [...(progress?.completed_lessons || []), articleId];
+      const newXp = (progress?.xp || 0) + 100;
+
+      const { error } = await supabase
+        .from('academy_progress')
+        .upsert({
+          uid: userProfile.uid,
+          completed_lessons: newCompleted,
+          xp: newXp,
+          level: Math.floor(newXp / 1000) + 1
+        });
+      
+      if (error) throw error;
+      addToast('Lesson completed! +100 XP earned.', 'success');
     } catch (error) {
-      console.error(error);
+      handleSupabaseError(error, OperationType.UPDATE, `academy_progress/${userProfile.uid}`);
     }
   };
 

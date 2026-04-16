@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { db } from '../firebase';
-import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, Signal } from '../types';
 import { History as HistoryIcon, Search, Filter, CheckCircle2, XCircle, Clock, BarChart3, Bot, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -16,19 +15,36 @@ export default function History({ userProfile, addToast }: HistoryProps) {
   const [search, setSearch] = useState('');
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'signals'),
-      where('user_id', '==', userProfile.uid),
-      orderBy('created_at', 'desc'),
-      limit(50)
-    );
+    const fetchSignals = async () => {
+      const { data, error } = await supabase
+        .from('signals')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'signals');
+      } else {
+        setSignals(data as Signal[]);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const signalsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Signal));
-      setSignals(signalsData);
-    });
+    fetchSignals();
 
-    return () => unsubscribe();
+    const channel = supabase
+      .channel(`public:signals:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'signals', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, fetchSignals)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const filteredSignals = signals.filter(s => {

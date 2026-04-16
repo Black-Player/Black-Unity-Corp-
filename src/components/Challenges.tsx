@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { UserProfile, Challenge } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, onSnapshot, doc, setDoc } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { motion } from 'motion/react';
 import { Trophy, Zap, Clock, Users, Shield, Award, ArrowRight, CheckCircle2, Lock, Flame } from 'lucide-react';
 
@@ -23,29 +22,60 @@ export const Challenges: React.FC<ChallengesProps> = ({ userProfile, addToast })
 
   useEffect(() => {
     // Fetch global challenges
-    const q = query(collection(db, 'challenges'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Challenge));
-      setChallenges(fetched);
+    const fetchChallenges = async () => {
+      const { data, error } = await supabase
+        .from('challenges')
+        .select('*');
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.LIST, 'challenges');
+      } else {
+        setChallenges(data as Challenge[]);
+      }
       setLoading(false);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'challenges');
-      setLoading(false);
-    });
+    };
+
+    fetchChallenges();
 
     // Fetch user's active challenges
-    const userChallengesQ = query(collection(db, 'users', userProfile.uid, 'challenges'));
-    const unsubscribeUser = onSnapshot(userChallengesQ, (snapshot) => {
-      const statuses: Record<string, UserChallengeStatus> = {};
-      snapshot.docs.forEach(doc => {
-        statuses[doc.id] = doc.data() as UserChallengeStatus;
-      });
-      setUserChallenges(statuses);
-    });
+    const fetchUserChallenges = async () => {
+      const { data, error } = await supabase
+        .from('user_challenges')
+        .select('*')
+        .eq('uid', userProfile.uid);
+      
+      if (error) {
+        handleSupabaseError(error, OperationType.GET, 'user_challenges');
+      } else {
+        const statuses: Record<string, UserChallengeStatus> = {};
+        (data || []).forEach(item => {
+          statuses[item.challenge_id] = item as UserChallengeStatus;
+        });
+        setUserChallenges(statuses);
+      }
+    };
+
+    fetchUserChallenges();
+
+    // Realtime subscriptions
+    const challengesChannel = supabase
+      .channel('public:challenges')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'challenges' }, fetchChallenges)
+      .subscribe();
+
+    const userChallengesChannel = supabase
+      .channel(`public:user_challenges:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'user_challenges', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, fetchUserChallenges)
+      .subscribe();
 
     return () => {
-      unsubscribe();
-      unsubscribeUser();
+      supabase.removeChannel(challengesChannel);
+      supabase.removeChannel(userChallengesChannel);
     };
   }, [userProfile.uid]);
 
@@ -58,16 +88,21 @@ export const Challenges: React.FC<ChallengesProps> = ({ userProfile, addToast })
     }
 
     try {
-      const challengeRef = doc(db, 'users', userProfile.uid, 'challenges', challenge.id);
-      await setDoc(challengeRef, {
-        challenge_id: challenge.id,
-        status: 'active',
-        progress: 0,
-        joined_at: new Date().toISOString()
-      });
+      const { error } = await supabase
+        .from('user_challenges')
+        .insert([{
+          uid: userProfile.uid,
+          challenge_id: challenge.id,
+          status: 'active',
+          progress: 0,
+          joined_at: new Date().toISOString()
+        }]);
+      
+      if (error) throw error;
+
       addToast(`Challenge "${challenge.title}" accepted. Good luck, Warrior.`, 'success');
     } catch (err) {
-      console.error(err);
+      handleSupabaseError(err, OperationType.CREATE, 'user_challenges');
       addToast('Failed to join challenge.', 'error');
     }
   };

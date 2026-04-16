@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { db, auth } from '../firebase';
-import { collection, query, onSnapshot, addDoc, orderBy, limit } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, Trade } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Video, MessageSquare, Users, Send, TrendingUp, TrendingDown, Clock, Shield, Sparkles, Zap, Activity } from 'lucide-react';
 
 interface ChatMessage {
   id: string;
-  user_id: string;
+  uid: string;
   user_name: string;
   text: string;
   created_at: string;
@@ -20,21 +19,71 @@ export default function LiveTradingRoom({ userProfile }: { userProfile: UserProf
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const q = query(collection(db, 'live_chat'), orderBy('created_at', 'desc'), limit(50));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as ChatMessage)).reverse();
-      setMessages(data);
-    });
-    return () => unsubscribe();
+    const fetchMessages = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('live_chat')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50);
+        
+        if (error) throw error;
+        setMessages((data as ChatMessage[]).reverse());
+      } catch (err) {
+        handleSupabaseError(err, OperationType.LIST, 'live_chat');
+      }
+    };
+
+    fetchMessages();
+
+    const channel = supabase
+      .channel('live-chat-updates')
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'live_chat' 
+      }, () => {
+        fetchMessages();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
-    const q = query(collection(db, 'signals'), orderBy('created_at', 'desc'), limit(5));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Trade));
-      setActiveTrades(data);
-    });
-    return () => unsubscribe();
+    const fetchSignals = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('signals')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        
+        if (error) throw error;
+        setActiveTrades(data as Trade[]);
+      } catch (err) {
+        handleSupabaseError(err, OperationType.LIST, 'signals');
+      }
+    };
+
+    fetchSignals();
+
+    const channel = supabase
+      .channel('signals-live-updates')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'signals' 
+      }, () => {
+        fetchSignals();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   useEffect(() => {
@@ -48,15 +97,19 @@ export default function LiveTradingRoom({ userProfile }: { userProfile: UserProf
     if (!newMessage.trim()) return;
 
     try {
-      await addDoc(collection(db, 'live_chat'), {
-        user_id: userProfile.uid,
-        user_name: userProfile.email.split('@')[0],
-        text: newMessage,
-        created_at: new Date().toISOString(),
-      });
+      const { error } = await supabase
+        .from('live_chat')
+        .insert([{
+          uid: userProfile.uid,
+          user_name: userProfile.email.split('@')[0],
+          text: newMessage,
+          created_at: new Date().toISOString(),
+        }]);
+      
+      if (error) throw error;
       setNewMessage('');
     } catch (err) {
-      console.error(err);
+      handleSupabaseError(err, OperationType.WRITE, 'live_chat');
     }
   };
 

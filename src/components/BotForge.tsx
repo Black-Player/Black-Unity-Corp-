@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { Bot, Plus, Save, Trash2, Zap, Cpu, Eye, Activity, Shield, Layout, Info, Sparkles, Palette } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, Bot as BotType } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { THEMES } from '../constants/themes';
 import { getBotCharacter } from '../lib/themeUtils';
 
@@ -42,7 +41,9 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
     icon: 'Bot',
     tier_requirement: 'oracle',
     risk_profile: 'balanced',
-    preferred_pairs: ['BTC/USD', 'ETH/USD']
+    preferred_pairs: ['BTC/USD', 'ETH/USD'],
+    preferred_timeframes: ['M15', 'H1'],
+    personality: 'analytical'
   });
   const [saving, setSaving] = useState(false);
 
@@ -56,14 +57,22 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
 
     setSaving(true);
     try {
-      const userRef = doc(db, 'users', userProfile.uid);
-      await updateDoc(userRef, {
-        custom_bots: arrayUnion({
-          ...newBot,
-          id: crypto.randomUUID(),
-          created_at: new Date().toISOString()
+      const newBotWithId = {
+        ...newBot,
+        id: crypto.randomUUID(),
+        created_at: new Date().toISOString()
+      };
+      
+      const newBots = [...(userProfile.custom_bots || []), newBotWithId];
+      
+      const { error } = await supabase
+        .from('users')
+        .update({
+          custom_bots: newBots
         })
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
+        .eq('uid', userProfile.uid);
+      
+      if (error) throw error;
 
       addToast(`${newBot.name} has been forged in the cosmos!`, 'success');
       setShowCreate(false);
@@ -74,7 +83,9 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
         icon: 'Bot',
         tier_requirement: 'oracle',
         risk_profile: 'balanced',
-        preferred_pairs: ['BTC/USD', 'ETH/USD']
+        preferred_pairs: ['BTC/USD', 'ETH/USD'],
+        preferred_timeframes: ['M15', 'H1'],
+        personality: 'analytical'
       });
     } catch (err: any) {
       addToast(err.message, 'error');
@@ -118,13 +129,19 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
 
   const handleDelete = async (bot: any) => {
     try {
-      const userRef = doc(db, 'users', userProfile.uid);
-      await updateDoc(userRef, {
-        custom_bots: arrayRemove(bot)
-      }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
+      const newBots = (userProfile.custom_bots || []).filter((b: any) => b.id !== bot.id);
+      
+      const { error } = await supabase
+        .from('users')
+        .update({
+          custom_bots: newBots
+        })
+        .eq('uid', userProfile.uid);
+      
+      if (error) throw error;
       addToast('Bot dismantled and returned to the void.', 'info');
     } catch (err: any) {
-      addToast(err.message, 'error');
+      handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
     }
   };
 
@@ -322,6 +339,32 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
                     placeholder="BTC/USD, ETH/USD..."
                     className="w-full cosmic-input"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Preferred Timeframes</label>
+                  <input 
+                    type="text" 
+                    value={newBot.preferred_timeframes?.join(', ')}
+                    onChange={(e) => setNewBot({ ...newBot, preferred_timeframes: e.target.value.split(',').map(s => s.trim()) })}
+                    placeholder="M5, M15, H1..."
+                    className="w-full cosmic-input"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Bot Personality</label>
+                  <select 
+                    value={newBot.personality}
+                    onChange={(e) => setNewBot({ ...newBot, personality: e.target.value as any })}
+                    className="w-full cosmic-input"
+                  >
+                    <option value="analytical">Analytical (Precise)</option>
+                    <option value="aggressive">Aggressive (Bold)</option>
+                    <option value="mystical">Mystical (Prophetic)</option>
+                    <option value="stoic">Stoic (Calm)</option>
+                  </select>
                 </div>
               </div>
             </div>

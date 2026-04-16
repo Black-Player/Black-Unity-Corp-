@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, increment, serverTimestamp, orderBy, limit, getDocs } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, PriceAlert, MarketNews, Tier, hasTierAccess } from '../types';
 import { DERIV_SYMBOLS } from '../constants';
 import { generateTradingSignal, getMarketSentiment, analyzeChartImage, getMarketNews } from '../services/aiService';
@@ -27,6 +26,7 @@ import { Marketplace } from './Marketplace';
 import { Academy } from './Academy';
 import { NewsFeed } from './NewsFeed';
 import PerformanceReports from './PerformanceReports';
+import MarketPulse from './MarketPulse';
 import Subscription from './Subscription';
 
 import { THEMES } from '../constants/themes';
@@ -40,6 +40,36 @@ interface DashboardProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   handleCloseTrade: (trade: Trade, reason?: string) => Promise<void>;
 }
+
+import { memo } from 'react';
+
+import { speak } from '../lib/voice';
+
+const MarketPriceCard = memo(({ symbol, data, onSelect }: { symbol: string, data: any, onSelect: (symbol: string) => void }) => {
+  return (
+    <div 
+      className="glass-card p-2 sm:p-3 flex flex-col items-center justify-center space-y-1 border-white/5 hover:border-gold/20 transition-all cursor-pointer min-w-0"
+      onClick={() => onSelect(symbol)}
+    >
+      <span className="text-[8px] sm:text-[10px] text-white/40 font-bold truncate w-full text-center">{symbol}</span>
+      <span className="text-[10px] sm:text-sm font-mono font-bold">{(data.price || 0).toFixed(symbol.includes('JPY') || symbol.includes('BTC') || symbol.includes('US100') ? 2 : 4)}</span>
+      <span className={`text-[8px] sm:text-[10px] font-bold flex items-center gap-0.5 ${data.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+        {data.change >= 0 ? <TrendingUp size={8} /> : <TrendingDown size={8} />}
+        {(Math.abs(data.change || 0)).toFixed(2)}%
+      </span>
+    </div>
+  );
+});
+
+const MarketPriceGrid = memo(({ marketPrices, onSelect }: { marketPrices: Record<string, any>, onSelect: (symbol: string) => void }) => {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 lg:gap-4">
+      {Object.entries(marketPrices).map(([symbol, data]) => (
+        <MarketPriceCard key={symbol} symbol={symbol} data={data} onSelect={onSelect} />
+      ))}
+    </div>
+  );
+});
 
 export default function Dashboard({ userProfile, addToast, handleCloseTrade }: DashboardProps) {
   const { marketPrices } = useMarketContext();
@@ -83,13 +113,50 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   const [activeAlerts, setActiveAlerts] = useState<PriceAlert[]>([]);
 
   useEffect(() => {
-    const q = query(collection(db, 'users', userProfile.uid, 'alerts'), where('active', '==', true));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PriceAlert));
-      setActiveAlerts(data);
-    }, (err) => handleFirestoreError(err, OperationType.GET, `users/${userProfile.uid}/alerts`));
+    // Initial fetch
+    const fetchAlerts = async () => {
+      const { data, error } = await supabase
+        .from('alerts')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .eq('active', true);
+      
+      if (error) {
+        await handleSupabaseError(error, OperationType.GET, 'alerts');
+      } else {
+        setActiveAlerts(data as PriceAlert[]);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchAlerts();
+
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`public:alerts:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'alerts', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT' && (payload.new as PriceAlert).active) {
+          setActiveAlerts(prev => [...prev, payload.new as PriceAlert]);
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as PriceAlert;
+          if (updated.active) {
+            setActiveAlerts(prev => prev.map(a => a.id === updated.id ? updated : a));
+          } else {
+            setActiveAlerts(prev => prev.filter(a => a.id !== updated.id));
+          }
+        } else if (payload.eventType === 'DELETE') {
+          setActiveAlerts(prev => prev.filter(a => a.id !== (payload.old as PriceAlert).id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const marketPricesRef = useRef(marketPrices);
@@ -115,18 +182,22 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           addToast(`Price Alert: ${alert.pair} is ${alert.condition} ${alert.price}!`, 'success');
           
           // Deactivate alert
-          await updateDoc(doc(db, 'users', userProfile.uid, 'alerts', alert.id), {
-            active: false
-          }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}/alerts/${alert.id}`));
+          await supabase
+            .from('alerts')
+            .update({ active: false })
+            .eq('id', alert.id);
 
           // Create notification
-          await addDoc(collection(db, 'users', userProfile.uid, 'notifications'), {
-            title: 'Price Alert Triggered',
-            message: `${alert.pair} has reached your target of ${alert.price}.`,
-            type: 'system',
-            read: false,
-            created_at: new Date().toISOString()
-          });
+          await supabase
+            .from('notifications')
+            .insert([{
+              uid: userProfile.uid,
+              title: 'Price Alert Triggered',
+              message: `${alert.pair} has reached your target of ${alert.price}.`,
+              type: 'system',
+              read: false,
+              created_at: new Date().toISOString()
+            }]);
         }
       });
     }, 5000); // Check alerts every 5 seconds
@@ -218,6 +289,25 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   }, [sessionAutoPilot, userProfile.subscribed_sessions, generating, activeSignals.length]);
   const [audioEnabled, setAudioEnabled] = useState(true);
 
+  const [syncing, setSyncing] = useState(false);
+
+  const handleManualSync = async () => {
+    setSyncing(true);
+    try {
+      const [sentimentData, newsData] = await Promise.all([
+        getMarketSentiment(pair),
+        getMarketNews(pair)
+      ]);
+      setSentiment(sentimentData);
+      setNews(newsData);
+      addToast('Celestial Alignment Complete. Market data synchronized.', 'success');
+    } catch (err) {
+      addToast('Cosmic interference during synchronization.', 'error');
+    } finally {
+      setTimeout(() => setSyncing(false), 1500); 
+    }
+  };
+
   const playSignalSound = () => {
     if (!audioEnabled) return;
     const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3');
@@ -258,37 +348,100 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   }, [pair]);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'signals'),
-      where('user_id', '==', userProfile.uid),
-      where('status', '==', 'active'),
-      orderBy('created_at', 'desc'),
-      limit(10)
-    );
+    // Initial fetch
+    const fetchSignals = async () => {
+      const { data, error } = await supabase
+        .from('signals')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (error) {
+        await handleSupabaseError(error, OperationType.GET, 'signals');
+      } else {
+        setActiveSignals(data as Signal[]);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const signals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Signal));
-      setActiveSignals(signals);
-    });
+    fetchSignals();
 
-    return () => unsubscribe();
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`public:signals:dashboard:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'signals', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT' && (payload.new as Signal).status === 'active') {
+          setActiveSignals(prev => [payload.new as Signal, ...prev.slice(0, 9)]);
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as Signal;
+          if (updated.status === 'active') {
+            setActiveSignals(prev => prev.map(s => s.id === updated.id ? updated : s));
+          } else {
+            setActiveSignals(prev => prev.filter(s => s.id !== updated.id));
+          }
+        } else if (payload.eventType === 'DELETE') {
+          setActiveSignals(prev => prev.filter(s => s.id !== (payload.old as Signal).id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'users', userProfile.uid, 'trades'),
-      where('status', '==', 'open'),
-      orderBy('created_at', 'desc')
-    );
+    // Initial fetch
+    const fetchTrades = async () => {
+      const { data, error } = await supabase
+        .from('trades')
+        .select('*')
+        .eq('uid', userProfile.uid)
+        .eq('status', 'open')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        await handleSupabaseError(error, OperationType.GET, 'trades');
+      } else {
+        setActiveTrades(data as Trade[]);
+      }
+    };
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const trades = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Trade));
-      setActiveTrades(trades);
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, `users/${userProfile.uid}/trades`);
-    });
+    fetchTrades();
 
-    return () => unsubscribe();
+    // Subscribe to changes
+    const channel = supabase
+      .channel(`public:trades:dashboard:uid=eq.${userProfile.uid}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'trades', 
+        filter: `uid=eq.${userProfile.uid}` 
+      }, (payload) => {
+        if (payload.eventType === 'INSERT' && (payload.new as Trade).status === 'open') {
+          setActiveTrades(prev => [payload.new as Trade, ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+          const updated = payload.new as Trade;
+          if (updated.status === 'open') {
+            setActiveTrades(prev => prev.map(t => t.id === updated.id ? updated : t));
+          } else {
+            setActiveTrades(prev => prev.filter(t => t.id !== updated.id));
+          }
+        } else if (payload.eventType === 'DELETE') {
+          setActiveTrades(prev => prev.filter(t => t.id !== (payload.old as Trade).id));
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   // The Singularity: Automated Signal & Trade Monitoring
@@ -301,19 +454,23 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       
-      const q = query(
-        collection(db, 'users', userProfile.uid, 'trades'),
-        where('status', '==', 'closed'),
-        where('closed_at', '>=', startOfDay.toISOString())
-      );
+      const { data, error } = await supabase
+        .from('trades')
+        .select('pnl')
+        .eq('uid', userProfile.uid)
+        .eq('status', 'closed')
+        .gte('closed_at', startOfDay.toISOString());
       
-      const snap = await getDocs(q);
-      const pnl = snap.docs.reduce((acc, doc) => acc + doc.data().pnl, 0);
-      setDailyPnl(pnl);
+      if (error) {
+        await handleSupabaseError(error, OperationType.GET, 'trades');
+      } else {
+        const pnl = (data || []).reduce((acc, trade) => acc + (trade.pnl || 0), 0);
+        setDailyPnl(pnl);
+      }
     };
     
     fetchDailyPnl();
-  }, [activeTrades, userProfile.uid]);
+  }, [activeTrades.length, userProfile.uid]);
 
   const handleGenerate = async () => {
     if (userProfile.tier !== 'creator' && userProfile.signals_used_today >= TIER_LIMITS[userProfile.tier]) {
@@ -339,13 +496,13 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
     setGenerating(true);
     setError('');
     try {
-      const signalData = await generateTradingSignal(pair, timeframe, selectedBot.name, selectedBot.strategy, currentPrice, sentiment, boostAnalysis);
+      const signalData = await generateTradingSignal(pair, timeframe, selectedBot, currentPrice, sentiment, boostAnalysis);
       
       const newSignal: Omit<Signal, 'id'> = {
-        user_id: userProfile.uid,
+        uid: userProfile.uid,
         pair,
         timeframe,
-        entry: currentPrice, // Use real current price
+        entry: currentPrice,
         stop_loss: signalData.stop_loss,
         tp1: signalData.tp1,
         tp2: signalData.tp2,
@@ -362,42 +519,50 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         created_at: new Date().toISOString(),
       };
 
-      const docRef = await addDoc(collection(db, 'signals'), newSignal).catch(err => handleFirestoreError(err, OperationType.CREATE, 'signals'));
+      const { data: signalResult, error: signalError } = await supabase
+        .from('signals')
+        .insert([newSignal])
+        .select()
+        .single();
       
-      // Create notification
-      if (docRef) {
-        await addDoc(collection(db, 'users', userProfile.uid, 'notifications'), {
-          title: 'New Signal Generated',
-          message: `Oracle ${selectedBot.name} has identified a ${newSignal.tp1 > newSignal.entry ? 'BUY' : 'SELL'} opportunity for ${pair}.`,
-          type: 'signal',
-          read: false,
-          created_at: new Date().toISOString()
-        });
+      if (signalError) throw signalError;
+      
+      if (signalResult) {
+        // Create notification
+        await supabase
+          .from('notifications')
+          .insert([{
+            uid: userProfile.uid,
+            title: 'New Signal Generated',
+            message: `Oracle ${selectedBot.name} has identified a ${newSignal.tp1 > newSignal.entry ? 'BUY' : 'SELL'} opportunity for ${pair}.`,
+            type: 'signal',
+            read: false,
+            created_at: new Date().toISOString()
+          }]);
 
-        await updateDoc(doc(db, 'users', userProfile.uid), {
-          signals_used_today: increment(1)
-        }).catch(err => handleFirestoreError(err, OperationType.UPDATE, `users/${userProfile.uid}`));
+        // Update signals used today
+        await supabase.rpc('increment_signals_used', { user_id: userProfile.uid });
         
         addToast(`New ${pair} signal generated by ${selectedBot.name}!`, 'success');
+        speak(`The Oracle has spoken. New signal generated for ${pair.replace('frx', '').replace('R_', 'Volatility ')} by ${selectedBot.name}.`, userProfile.notification_settings.sound);
         playSignalSound();
-        setBoostAnalysis(null); // Clear boost after use
+        setBoostAnalysis(null);
 
-        // The Singularity 2.0: Auto-Trade Execution
+        // Auto-Trade Execution
         const autoSettings = userProfile.auto_trade_settings || { enabled: false, min_confidence: 90, max_trades_per_day: 5, pairs: [] };
         
         if (autoTrade && signalData.confidence >= autoSettings.min_confidence) {
-          // Check daily auto-trade limit
           const startOfDay = new Date();
           startOfDay.setHours(0, 0, 0, 0);
           
-          const totalTodaySnap = await getDocs(query(
-            collection(db, 'users', userProfile.uid, 'trades'),
-            where('created_at', '>=', startOfDay.toISOString())
-          ));
+          const { count } = await supabase
+            .from('trades')
+            .select('*', { count: 'exact', head: true })
+            .eq('uid', userProfile.uid)
+            .gte('created_at', startOfDay.toISOString());
           
-          if (totalTodaySnap.size < autoSettings.max_trades_per_day) {
-            const signalWithId = { ...newSignal, id: docRef.id } as Signal;
-            handleTakeTrade(signalWithId);
+          if ((count || 0) < autoSettings.max_trades_per_day) {
+            handleTakeTrade(signalResult as Signal);
             addToast(`Singularity 2.0: Auto-executing high-confidence signal!`, 'info');
           } else {
             addToast(`Singularity 2.0: Daily auto-trade limit reached.`, 'info');
@@ -406,7 +571,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       }
     } catch (err: any) {
       setError(err.message || 'Failed to generate signal. Please try again.');
-      console.error(err);
+      await handleSupabaseError(err, OperationType.CREATE, 'signals');
     } finally {
       setGenerating(false);
     }
@@ -431,7 +596,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       : signal.stop_loss + (buffer * 0.0001);
 
     const tradeData: Omit<Trade, 'id'> = {
-      user_id: userProfile.uid,
+      uid: userProfile.uid,
       signal_id: signal.id,
       pair: signal.pair,
       entry_price: signal.entry,
@@ -450,34 +615,44 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
     };
 
     try {
-      await addDoc(collection(db, 'users', userProfile.uid, 'trades'), tradeData)
-        .catch(err => handleFirestoreError(err, OperationType.CREATE, `users/${userProfile.uid}/trades`));
+      const { error: tradeError } = await supabase
+        .from('trades')
+        .insert([tradeData]);
+      
+      if (tradeError) throw tradeError;
       
       // Create notification
-      await addDoc(collection(db, 'users', userProfile.uid, 'notifications'), {
-        title: 'Trade Executed',
-        message: `Paper trade opened for ${signal.pair} at ${signal.entry}.`,
-        type: 'trade',
-        read: false,
-        created_at: new Date().toISOString()
-      });
+      await supabase
+        .from('notifications')
+        .insert([{
+          uid: userProfile.uid,
+          title: 'Trade Executed',
+          message: `Paper trade opened for ${signal.pair} at ${signal.entry}.`,
+          type: 'trade',
+          read: false,
+          created_at: new Date().toISOString()
+        }]);
 
       addToast(`Trade executed: ${type.toUpperCase()} ${signal.pair}`, 'success');
     } catch (err) {
-      console.error(err);
+      await handleSupabaseError(err, OperationType.CREATE, 'trades');
       addToast('Failed to execute trade.', 'error');
     }
   };
 
   const handleThemeChange = async (themeId: AppTheme) => {
     try {
-      await updateDoc(doc(db, 'users', userProfile.uid), {
-        theme: themeId
-      });
+      const { error } = await supabase
+        .from('users')
+        .update({ theme: themeId })
+        .eq('uid', userProfile.uid);
+      
+      if (error) throw error;
+
       addToast(`Aura updated: ${THEMES.find(t => t.id === themeId)?.name}`, 'success');
       setShowThemeSelector(false);
     } catch (err) {
-      console.error(err);
+      await handleSupabaseError(err, OperationType.UPDATE, 'users');
       addToast('Failed to update aura.', 'error');
     }
   };
@@ -488,6 +663,44 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
 
   return (
     <div className="space-y-8">
+      {/* Celestial Alignment Overlay */}
+      <AnimatePresence>
+        {syncing && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex flex-col items-center justify-center"
+          >
+            <div className="relative">
+              <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                className="w-64 h-64 rounded-full border border-gold/20 flex items-center justify-center"
+              >
+                <div className="w-48 h-48 rounded-full border border-gold/40 flex items-center justify-center">
+                  <div className="w-32 h-32 rounded-full border border-gold/60 flex items-center justify-center">
+                    <Zap className="text-gold animate-pulse" size={48} />
+                  </div>
+                </div>
+              </motion.div>
+              <motion.div 
+                animate={{ scale: [1, 1.2, 1] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className="absolute inset-0 bg-gold/5 rounded-full blur-3xl"
+              />
+            </div>
+            <motion.h2 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              className="text-3xl font-display font-bold gold-gradient mt-12"
+            >
+              Celestial Alignment
+            </motion.h2>
+            <p className="text-white/40 uppercase tracking-[0.3em] text-xs mt-4">Synchronizing with the Zion Network</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div className="flex items-center justify-between lg:justify-start gap-8">
           <div>
@@ -520,6 +733,15 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         </div>
         <div className="flex flex-wrap items-center gap-3 lg:gap-4">
           <div className="flex bg-white/5 rounded-lg p-1 border border-white/10 h-fit flex-1 sm:flex-none">
+            <button
+              onClick={handleManualSync}
+              className="px-3 py-1.5 rounded-md text-[10px] font-bold text-gold hover:bg-gold/10 transition-all flex items-center gap-2"
+              title="Manual Sync"
+            >
+              <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
+              SYNC
+            </button>
+            <div className="w-px h-4 bg-white/10 my-auto mx-1" />
             <button
               onClick={() => setAccountType('demo')}
               className={`flex-1 sm:flex-none px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${
@@ -747,26 +969,13 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 lg:gap-4">
-            {Object.entries(marketPrices).map(([symbol, data]) => (
-              <motion.div 
-                key={symbol}
-                layout
-                className="glass-card p-2 sm:p-3 flex flex-col items-center justify-center space-y-1 border-white/5 hover:border-gold/20 transition-all cursor-pointer min-w-0"
-                onClick={() => {
-                  setPair(symbol);
-                  setShowDetails(true);
-                }}
-              >
-                <span className="text-[8px] sm:text-[10px] text-white/40 font-bold truncate w-full text-center">{symbol}</span>
-                <span className="text-[10px] sm:text-sm font-mono font-bold">{(data.price || 0).toFixed(symbol.includes('JPY') || symbol.includes('BTC') || symbol.includes('US100') ? 2 : 4)}</span>
-                <span className={`text-[8px] sm:text-[10px] font-bold flex items-center gap-0.5 ${data.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {data.change >= 0 ? <TrendingUp size={8} /> : <TrendingDown size={8} />}
-                  {(Math.abs(data.change || 0)).toFixed(2)}%
-                </span>
-              </motion.div>
-            ))}
-          </div>
+          <MarketPriceGrid 
+            marketPrices={marketPrices} 
+            onSelect={(symbol) => {
+              setPair(symbol);
+              setShowDetails(true);
+            }} 
+          />
 
           {/* Sentiment & Volatility Gauges */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -821,18 +1030,29 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           <TradingSessions userProfile={userProfile} addToast={addToast} />
 
           <div className="h-[400px] lg:h-[600px] glass-card overflow-hidden relative">
-            <LightweightChart 
-              symbol={pair} 
-              entry={activeSignals.find(s => s.pair === pair && s.status === 'active')?.entry}
-              sl={activeSignals.find(s => s.pair === pair && s.status === 'active')?.stop_loss}
-              tps={[
-                activeSignals.find(s => s.pair === pair && s.status === 'active')?.tp1,
-                activeSignals.find(s => s.pair === pair && s.status === 'active')?.tp2,
-                activeSignals.find(s => s.pair === pair && s.status === 'active')?.tp3,
-                activeSignals.find(s => s.pair === pair && s.status === 'active')?.tp4,
-              ].filter((v): v is number => v !== undefined)}
-              height={typeof window !== 'undefined' && window.innerWidth < 1024 ? 400 : 600}
-            />
+            {(() => {
+              const currentSignal = activeSignals.find(s => s.pair === pair && s.status === 'active');
+              const currentTrade = activeTrades.find(t => t.pair === pair && t.status === 'open');
+              
+              // Prioritize trade levels if they exist, otherwise show signal levels
+              const entry = currentTrade?.entry_price || currentSignal?.entry;
+              const sl = currentTrade?.stop_loss || currentSignal?.stop_loss;
+              const tps = currentTrade ? [currentTrade.tp1, currentTrade.tp2, currentTrade.tp3, currentTrade.tp4].filter((v): v is number => !!v)
+                                       : [currentSignal?.tp1, currentSignal?.tp2, currentSignal?.tp3, currentSignal?.tp4].filter((v): v is number => !!v);
+              const signalType = currentTrade?.type || (currentSignal?.analysis.toLowerCase().includes('sell') ? 'sell' : 'buy');
+
+              return (
+                <LightweightChart 
+                  symbol={pair} 
+                  entry={entry}
+                  sl={sl}
+                  tps={tps}
+                  signalType={signalType as 'buy' | 'sell'}
+                  alerts={activeAlerts.filter(a => a.pair === pair && a.active).map(a => ({ price: a.price, id: a.id! }))}
+                  height={typeof window !== 'undefined' && window.innerWidth < 1024 ? 400 : 600}
+                />
+              );
+            })()}
           </div>
 
           <div className="glass-card p-6 space-y-6">
@@ -944,33 +1164,42 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                 {activeTrades.length === 0 ? (
                   <div className="text-center py-12 text-white/20 italic">No open trades. Take a signal to start paper trading.</div>
                 ) : (
-                  activeTrades.map((trade) => (
-                    <motion.div
-                      key={trade.id}
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, x: 20 }}
-                      className="glass-card p-4 border-white/5 hover:border-gold/20 transition-all"
-                    >
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${trade.type === 'buy' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
-                            {trade.type === 'buy' ? <ArrowUpRight size={20} /> : <ArrowDownRight size={20} />}
+                  activeTrades.map((trade) => {
+                    const currentPrice = marketPrices[trade.pair]?.price;
+                    const pnl = currentPrice 
+                      ? (trade.type === 'buy' ? (currentPrice - trade.entry_price) * 100 : (trade.entry_price - currentPrice) * 100)
+                      : (trade.pnl || 0);
+                    const pnlPercentage = currentPrice 
+                      ? (pnl / (trade.entry_price * 100)) * 100
+                      : (trade.pnl_percentage || 0);
+
+                    return (
+                      <motion.div
+                        key={trade.id}
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, x: 20 }}
+                        className="glass-card p-4 border-white/5 hover:border-gold/20 transition-all"
+                      >
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${trade.type === 'buy' ? 'bg-emerald-400/10 text-emerald-400' : 'bg-red-400/10 text-red-400'}`}>
+                              {trade.type === 'buy' ? <ArrowUpRight size={20} /> : <ArrowDownRight size={20} />}
+                            </div>
+                            <div>
+                              <h3 className="font-bold">{trade.pair} <span className="text-[10px] text-white/40 uppercase tracking-widest">{trade.type}</span></h3>
+                              <p className="text-[10px] text-white/40 font-mono">Entry: {trade.entry_price}</p>
+                            </div>
                           </div>
-                          <div>
-                            <h3 className="font-bold">{trade.pair} <span className="text-[10px] text-white/40 uppercase tracking-widest">{trade.type}</span></h3>
-                            <p className="text-[10px] text-white/40 font-mono">Entry: {trade.entry_price}</p>
+                          <div className="text-right">
+                            <div className={`text-lg font-bold font-mono ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                              {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
+                            </div>
+                            <div className={`text-[10px] font-bold ${pnl >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}`}>
+                              {pnlPercentage.toFixed(2)}%
+                            </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className={`text-lg font-bold font-mono ${trade.pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                            {trade.pnl >= 0 ? '+' : ''}{(trade.pnl || 0).toFixed(2)}
-                          </div>
-                          <div className={`text-[10px] font-bold ${trade.pnl >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}`}>
-                            {(trade.pnl_percentage || 0).toFixed(2)}%
-                          </div>
-                        </div>
-                      </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 mb-4">
                         <div className="bg-white/5 rounded p-1 sm:p-1.5 text-center min-w-0">
@@ -1006,11 +1235,12 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                         </div>
                       </div>
                     </motion.div>
-                  ))
-                )}
-              </AnimatePresence>
-            </div>
+                  );
+                })
+              )}
+            </AnimatePresence>
           </div>
+        </div>
 
           {/* Cosmic News Feed */}
           <div className="glass-card p-6 space-y-6 border-gold/10">
@@ -1303,44 +1533,13 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
             </div>
           </div>
 
-          <div className="glass-card p-6 space-y-4 relative overflow-hidden">
-            {loadingSentiment && (
-              <div className="absolute inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-10">
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
-                  <RefreshCw className="text-gold" size={24} />
-                </motion.div>
-              </div>
-            )}
-            <h3 className="font-display font-bold text-white/70 flex items-center justify-between">
-              Market Sentiment
-              <span className="text-[10px] text-gold uppercase tracking-widest">{pair}</span>
-            </h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-emerald-400"><TrendingUp size={16} /> Bullish</span>
-                <span>{sentiment.bullish}%</span>
-              </div>
-              <div className="h-2 w-full bg-white/10 rounded-full overflow-hidden flex">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${sentiment.bullish}%` }}
-                  className="h-full bg-emerald-400"
-                />
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${sentiment.bearish}%` }}
-                  className="h-full bg-red-400"
-                />
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2 text-red-400"><TrendingDown size={16} /> Bearish</span>
-                <span>{sentiment.bearish}%</span>
-              </div>
-              <p className="text-[10px] text-white/40 italic mt-2 leading-relaxed">
-                {sentiment.summary}
-              </p>
-            </div>
-          </div>
+          <MarketPulse 
+            sentiment={sentiment} 
+            news={news} 
+            loadingSentiment={loadingSentiment} 
+            loadingNews={loadingNews} 
+            pair={pair} 
+          />
         </div>
       </div>
     )}

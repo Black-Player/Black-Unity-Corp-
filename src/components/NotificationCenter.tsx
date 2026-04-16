@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Bell, BellDot, Settings, Trash2, Check, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { db } from '../firebase';
-import { collection, query, where, onSnapshot, orderBy, limit, doc, updateDoc, deleteDoc } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile } from '../types';
 
 interface Notification {
   id: string;
+  uid: string;
   title: string;
   message: string;
   type: 'signal' | 'system' | 'trade';
@@ -24,28 +24,63 @@ export default function NotificationCenter({ userProfile }: NotificationCenterPr
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    const q = query(
-      collection(db, 'users', userProfile.uid, 'notifications'),
-      orderBy('created_at', 'desc'),
-      limit(20)
-    );
+    const fetchNotifications = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('uid', userProfile.uid)
+          .order('created_at', { ascending: false })
+          .limit(20);
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const notifs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Notification));
-      setNotifications(notifs);
-      setUnreadCount(notifs.filter(n => !n.read).length);
-    });
+        if (error) throw error;
+        setNotifications(data as Notification[]);
+        setUnreadCount(data?.filter(n => !n.read).length || 0);
+      } catch (err) {
+        handleSupabaseError(err, OperationType.LIST, 'notifications');
+      }
+    };
 
-    return () => unsubscribe();
+    fetchNotifications();
+
+    const channel = supabase
+      .channel('notifications-center')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'notifications',
+        filter: `uid=eq.${userProfile.uid}`
+      }, () => {
+        fetchNotifications();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const markAsRead = async (id: string) => {
-    await updateDoc(doc(db, 'users', userProfile.uid, 'notifications', id), { read: true });
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', id);
+      if (error) throw error;
+    } catch (err) {
+      handleSupabaseError(err, OperationType.UPDATE, 'notifications');
+    }
   };
 
   const clearAll = async () => {
-    for (const n of notifications) {
-      await deleteDoc(doc(db, 'users', userProfile.uid, 'notifications', n.id));
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .delete()
+        .eq('uid', userProfile.uid);
+      if (error) throw error;
+    } catch (err) {
+      handleSupabaseError(err, OperationType.DELETE, 'notifications');
     }
   };
 

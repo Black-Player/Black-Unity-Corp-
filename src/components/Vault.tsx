@@ -2,17 +2,17 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Shield, Lock, Key, Eye, EyeOff, Copy, Save, Trash2, AlertTriangle, Zap, Fingerprint, Database, Globe, Server } from 'lucide-react';
 import { UserProfile } from '../types';
-import { db, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, where, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 interface ApiKey {
   id: string;
+  uid: string;
   name: string;
   key: string;
   secret?: string;
   provider: 'Deriv' | 'Binance' | 'MetaTrader' | 'Custom';
   status: 'active' | 'revoked';
-  created_at: any;
+  created_at: string;
   last_used?: string;
 }
 
@@ -30,17 +30,40 @@ export default function Vault({ userProfile, addToast }: { userProfile: UserProf
   });
 
   useEffect(() => {
-    const q = query(collection(db, 'api_keys'), where('user_id', '==', userProfile.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as ApiKey));
-      setKeys(data);
-      setLoading(false);
-    }, (err) => handleFirestoreError(err, OperationType.LIST, 'api_keys'));
+    const fetchKeys = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('api_keys')
+          .select('*')
+          .eq('uid', userProfile.uid)
+          .order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        setKeys(data as ApiKey[]);
+      } catch (err) {
+        await handleSupabaseError(err, OperationType.LIST, 'api_keys');
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    return () => unsubscribe();
+    fetchKeys();
+
+    const channel = supabase
+      .channel('api-keys-updates')
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'api_keys',
+        filter: `uid=eq.${userProfile.uid}`
+      }, () => {
+        fetchKeys();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [userProfile.uid]);
 
   const handleAddKey = async () => {
@@ -50,31 +73,40 @@ export default function Vault({ userProfile, addToast }: { userProfile: UserProf
     }
 
     try {
-      await addDoc(collection(db, 'api_keys'), {
-        user_id: userProfile.uid,
-        name: newKey.name,
-        key: newKey.key,
-        secret: newKey.secret,
-        provider: newKey.provider,
-        status: 'active',
-        created_at: serverTimestamp()
-      }).catch(err => handleFirestoreError(err, OperationType.CREATE, 'api_keys'));
+      const { error } = await supabase
+        .from('api_keys')
+        .insert([{
+          uid: userProfile.uid,
+          name: newKey.name,
+          key: newKey.key,
+          secret: newKey.secret,
+          provider: newKey.provider,
+          status: 'active',
+          created_at: new Date().toISOString()
+        }]);
+      
+      if (error) throw error;
 
       setNewKey({ name: '', key: '', secret: '', provider: 'Deriv' });
       setShowNewKeyForm(false);
       addToast('API Key secured in the Zion Vault.', 'success');
     } catch (error) {
-      console.error(error);
+      await handleSupabaseError(error, OperationType.CREATE, 'api_keys');
       addToast('Failed to secure the key.', 'error');
     }
   };
 
   const handleDeleteKey = async (id: string) => {
     try {
-      await deleteDoc(doc(db, 'api_keys', id)).catch(err => handleFirestoreError(err, OperationType.DELETE, `api_keys/${id}`));
+      const { error } = await supabase
+        .from('api_keys')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
       addToast('Key removed from the Vault.', 'info');
     } catch (error) {
-      console.error(error);
+      handleSupabaseError(error, OperationType.DELETE, `api_keys/${id}`);
     }
   };
 
@@ -258,7 +290,7 @@ export default function Vault({ userProfile, addToast }: { userProfile: UserProf
                       <span className="flex items-center gap-1"><Server size={12} /> Edge Node: Africa-South-1</span>
                       <span className="flex items-center gap-1"><Fingerprint size={12} /> Encrypted: AES-256-GCM</span>
                     </div>
-                    <span>Added: {key.created_at?.toDate ? new Date(key.created_at.toDate()).toLocaleDateString() : 'Just now'}</span>
+                    <span>Added: {key.created_at ? new Date(key.created_at).toLocaleDateString() : 'Just now'}</span>
                   </div>
                 </motion.div>
               ))

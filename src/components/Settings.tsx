@@ -36,7 +36,7 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
       
       addToast('Cosmic frequencies adjusted.', 'success');
     } catch (err) {
-      console.error(err);
+      await handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
       addToast('Failed to align settings.', 'error');
       // Rollback
       setSettings(settings);
@@ -59,7 +59,7 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
       
       addToast(`Theme shifted to ${themeId}.`, 'success');
     } catch (err) {
-      console.error(err);
+      await handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
       addToast('Failed to save theme preference.', 'error');
     }
   };

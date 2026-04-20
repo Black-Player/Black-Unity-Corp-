@@ -1,9 +1,10 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Wallet, TrendingUp, TrendingDown, PieChart, ArrowUpRight, ArrowDownRight, Briefcase, Activity, Target, Shield, Clock, XCircle, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { dbService } from '../services/dbService';
+import { where, orderBy } from 'firebase/firestore';
 import { UserProfile, Trade } from '../types';
 import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 import { useMarketContext } from '../MarketContext';
 
@@ -24,35 +25,28 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
   
   useEffect(() => {
     const fetchTrades = async () => {
-      const { data, error } = await supabase
-        .from('trades')
-        .select('*')
-        .eq('uid', userProfile.uid)
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        handleSupabaseError(error, OperationType.LIST, `trades`);
-      } else {
+      try {
+        const data = await dbService.list('trades', [
+          where('uid', '==', userProfile.uid),
+          orderBy('created_at', 'desc')
+        ]);
         setTrades(data as Trade[]);
+      } catch (error) {
+        console.error("Fetch trades failed", error);
       }
       setLoading(false);
     };
 
     fetchTrades();
 
-    const channel = supabase
-      .channel(`public:trades:uid=eq.${userProfile.uid}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'trades', 
-        filter: `uid=eq.${userProfile.uid}` 
-      }, fetchTrades)
-      .subscribe();
+    const unsubscribe = dbService.subscribeCollection('trades', [
+      where('uid', '==', userProfile.uid),
+      orderBy('created_at', 'desc')
+    ], (data) => {
+      setTrades(data as Trade[]);
+    });
     
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [userProfile.uid]);
 
   const filteredPortfolio = portfolio.filter(p => p.account_type === currentAccountType);

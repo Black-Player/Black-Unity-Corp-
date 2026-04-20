@@ -32,7 +32,7 @@ export default function Forge({ userProfile, addToast }: { userProfile: UserProf
         if (error) throw error;
         setIndicators(data as Indicator[]);
       } catch (err) {
-        handleSupabaseError(err, OperationType.GET, `indicators`);
+        await handleSupabaseError(err, OperationType.GET, `indicators`);
       }
     };
 
@@ -76,7 +76,7 @@ export default function Forge({ userProfile, addToast }: { userProfile: UserProf
       setNewIndicator({ name: '', type: 'Trend', logic: '' });
       addToast('Indicator forged in the cosmic fire.', 'success');
     } catch (err) {
-      handleSupabaseError(err, OperationType.WRITE, 'indicators');
+      await handleSupabaseError(err, OperationType.WRITE, 'indicators');
       addToast('Failed to forge indicator.', 'error');
     }
   };
@@ -91,7 +91,7 @@ export default function Forge({ userProfile, addToast }: { userProfile: UserProf
       if (error) throw error;
       addToast('Indicator unraveled.', 'info');
     } catch (err) {
-      handleSupabaseError(err, OperationType.DELETE, 'indicators');
+      await handleSupabaseError(err, OperationType.DELETE, 'indicators');
       addToast('Failed to delete indicator.', 'error');
     }
   };

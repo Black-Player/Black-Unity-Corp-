@@ -73,7 +73,7 @@ export const PerformanceStats: React.FC<PerformanceStatsProps> = ({ userProfile 
           });
         }
       } catch (err) {
-        handleSupabaseError(err, OperationType.LIST, 'trades');
+        await handleSupabaseError(err, OperationType.LIST, 'trades');
       } finally {
         setLoading(false);
       }

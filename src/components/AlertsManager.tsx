@@ -37,7 +37,7 @@ export default function AlertsManager({ userProfile, addToast }: AlertsManagerPr
         .order('created_at', { ascending: false });
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'alerts');
+        await handleSupabaseError(error, OperationType.GET, 'alerts');
       } else {
         setAlerts(data as PriceAlert[]);
       }
@@ -92,7 +92,7 @@ export default function AlertsManager({ userProfile, addToast }: AlertsManagerPr
       setIsAdding(false);
       addToast('Celestial Alert set successfully.', 'success');
     } catch (err) {
-      handleSupabaseError(err, OperationType.CREATE, 'alerts');
+      await handleSupabaseError(err, OperationType.CREATE, 'alerts');
       addToast('Failed to set alert.', 'error');
     }
   };
@@ -106,7 +106,7 @@ export default function AlertsManager({ userProfile, addToast }: AlertsManagerPr
       
       if (error) throw error;
     } catch (err) {
-      handleSupabaseError(err, OperationType.UPDATE, 'alerts');
+      await handleSupabaseError(err, OperationType.UPDATE, 'alerts');
       addToast('Failed to update alert.', 'error');
     }
   };
@@ -121,7 +121,7 @@ export default function AlertsManager({ userProfile, addToast }: AlertsManagerPr
       if (error) throw error;
       addToast('Alert removed from the heavens.', 'info');
     } catch (err) {
-      handleSupabaseError(err, OperationType.DELETE, 'alerts');
+      await handleSupabaseError(err, OperationType.DELETE, 'alerts');
       addToast('Failed to delete alert.', 'error');
     }
   };

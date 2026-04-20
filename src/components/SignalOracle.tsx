@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Zap, Target, Activity, Shield, Sparkles, TrendingUp, TrendingDown, Clock, BarChart3, Eye, ChevronRight, AlertTriangle, CheckCircle2, History, PieChart as PieChartIcon, Share2, Globe } from 'lucide-react';
+import { dbService } from '../services/dbService';
+import { where } from 'firebase/firestore';
 import { UserProfile, Signal, TIER_LIMITS, Trade, Tier } from '../types';
 import LightweightChart from './LightweightChart';
-import { supabase } from '../supabase';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { generateTradingSignal, getMarketSentiment } from '../services/aiService';
 import { sendSignalToTelegram } from '../services/communicationService';
 import { useMarketContext } from '../MarketContext';
@@ -159,43 +161,38 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
         created_at: new Date().toISOString()
       };
       
-      const { data: docData, error: insertError } = await supabase
-        .from('signals')
-        .insert([{
+      const signalId = await dbService.create('signals', {
           ...signalData,
           created_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
-      
-      if (insertError) throw insertError;
+      });
       
       // Increment user's signal count
-      await supabase
-        .from('users')
-        .update({
-          signals_used_today: (userProfile.signals_used_today || 0) + 1
-        })
-        .eq('uid', userProfile.uid);
+      try {
+        await dbService.update('users', userProfile.uid, {
+            signals_used_today: (userProfile.signals_used_today || 0) + 1
+        });
+      } catch (err) {
+        console.error("Signal count update failed", err);
+      }
       
       // Broadcast to Telegram (The Chronicle)
       const telegramMessageId = await sendSignalToTelegram({
         ...signalData,
-        id: docData.id
+        id: signalId
       });
       
       if (telegramMessageId) {
-        await supabase
-          .from('signals')
-          .update({ telegram_message_id: telegramMessageId })
-          .eq('id', docData.id);
+        try {
+          await dbService.update('signals', signalId, { telegram_message_id: telegramMessageId });
+        } catch (err) {
+          console.error("Telegram ID update failed", err);
+        }
       }
       
-      setActiveSignal({ ...signalData, id: docData.id, telegram_message_id: telegramMessageId });
+      setActiveSignal({ ...signalData, id: signalId, telegram_message_id: telegramMessageId });
       setIsGenerating(false);
       addToast(`Oracle Prophecy generated for ${formatPairName(pair)}`, 'success');
     } catch (error: any) {
-      console.error("Error generating signal:", error);
       addToast(error.message || "The Oracle is currently silent. Please try again.", "error");
       setIsGenerating(false);
     }
@@ -205,9 +202,7 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
     if (!activeSignal) return;
     
     try {
-      await supabase
-        .from('posts')
-        .insert([{
+      await dbService.create('posts', {
           uid: userProfile.uid,
           username: userProfile.username || userProfile.email.split('@')[0],
           avatar_url: userProfile.avatar_url,
@@ -216,11 +211,10 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
           comments: [],
           created_at: new Date().toISOString(),
           signal_id: activeSignal.id
-        }]);
+      });
       
       addToast("Prophecy shared to the celestial feed.", "success");
     } catch (error) {
-      console.error("Error sharing prophecy:", error);
       addToast("Failed to share prophecy to the feed.", "error");
     }
   };
@@ -387,16 +381,14 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
                         if (!activeSignal.id) return;
                         try {
                           // Check max open positions
-                          const { count, error: countError } = await supabase
-                            .from('trades')
-                            .select('*', { count: 'exact', head: true })
-                            .eq('uid', userProfile.uid)
-                            .eq('status', 'open');
-                          
-                          if (countError) throw countError;
+                          const trades = await dbService.list('trades', [
+                              where('uid', '==', userProfile.uid),
+                              where('status', '==', 'open')
+                          ]);
+                          const count = trades.length;
                           
                           if (userProfile.risk_settings?.max_open_positions) {
-                            if ((count || 0) >= userProfile.risk_settings.max_open_positions) {
+                            if (count >= userProfile.risk_settings.max_open_positions) {
                               addToast(`Sentinel Limit: Max open positions (${userProfile.risk_settings.max_open_positions}) reached.`, 'error');
                               return;
                             }
@@ -421,13 +413,10 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
                             created_at: new Date().toISOString()
                           };
                           
-                          await supabase
-                            .from('trades')
-                            .insert([tradeData]);
+                          await dbService.create('trades', tradeData);
                           
                           addToast("Ritual executed. The trade is now live in your portfolio.", "success");
                         } catch (error) {
-                          console.error("Error executing ritual:", error);
                           addToast("Failed to execute ritual in the physical realm.", "error");
                         }
                       }}

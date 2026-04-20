@@ -39,7 +39,7 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
       const { data, error } = await query;
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'posts');
+        await handleSupabaseError(error, OperationType.GET, 'posts');
       } else {
         setPosts(data as SharedPost[]);
       }
@@ -79,7 +79,7 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
       if (error) throw error;
       setNewPostContent('');
     } catch (error) {
-      handleSupabaseError(error, OperationType.CREATE, 'posts');
+      await handleSupabaseError(error, OperationType.CREATE, 'posts');
     } finally {
       setIsSubmitting(false);
     }
@@ -101,7 +101,7 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
       
       if (error) throw error;
     } catch (error) {
-      handleSupabaseError(error, OperationType.UPDATE, 'posts');
+      await handleSupabaseError(error, OperationType.UPDATE, 'posts');
     }
   };
 
@@ -131,7 +131,7 @@ export default function Social({ userProfile, setTargetUserId, setActivePage }: 
       if (error) throw error;
       setCommentContent('');
     } catch (error) {
-      handleSupabaseError(error, OperationType.UPDATE, 'posts');
+      await handleSupabaseError(error, OperationType.UPDATE, 'posts');
     } finally {
       setIsCommenting(false);
     }

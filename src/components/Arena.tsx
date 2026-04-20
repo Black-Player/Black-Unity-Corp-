@@ -47,7 +47,7 @@ export default function Arena({ userProfile, addToast }: { userProfile: UserProf
         }));
         setEliteOracles(oracles);
       } catch (err) {
-        handleSupabaseError(err, OperationType.LIST, 'users');
+        await handleSupabaseError(err, OperationType.LIST, 'users');
       } finally {
         setLoading(false);
       }
@@ -63,7 +63,7 @@ export default function Arena({ userProfile, addToast }: { userProfile: UserProf
         if (error) throw error;
         setFollowingIds(new Set(data.map(d => d.oracle_id)));
       } catch (err) {
-        handleSupabaseError(err, OperationType.LIST, 'followers');
+        await handleSupabaseError(err, OperationType.LIST, 'followers');
       }
     };
 
@@ -149,7 +149,7 @@ export default function Arena({ userProfile, addToast }: { userProfile: UserProf
         addToast(`You are now following ${oracle.name}. Mirror protocol active.`, 'success');
       }
     } catch (err) {
-      handleSupabaseError(err, OperationType.WRITE, 'followers');
+      await handleSupabaseError(err, OperationType.WRITE, 'followers');
       addToast('The cosmic connection failed.', 'error');
     }
   };

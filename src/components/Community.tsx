@@ -32,7 +32,7 @@ export const Community: React.FC<CommunityProps> = ({ userProfile, compact = fal
         .limit(compact ? 5 : 20);
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'signals');
+        await handleSupabaseError(error, OperationType.GET, 'signals');
       } else {
         setGlobalSignals(data as Signal[]);
       }
@@ -68,7 +68,7 @@ export const Community: React.FC<CommunityProps> = ({ userProfile, compact = fal
         .limit(10);
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'users');
+        await handleSupabaseError(error, OperationType.GET, 'users');
       } else {
         setLeaderboard(data || []);
       }

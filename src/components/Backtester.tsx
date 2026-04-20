@@ -34,7 +34,7 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
         .order('created_at', { ascending: false });
       
       if (error) {
-        handleSupabaseError(error, OperationType.LIST, 'backtests');
+        await handleSupabaseError(error, OperationType.LIST, 'backtests');
       } else {
         setResults(data as BacktestResult[]);
       }
@@ -114,7 +114,7 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
         if (error) throw error;
         addToast('The Prophet has spoken. Backtest complete.', 'success');
       } catch (err) {
-        handleSupabaseError(err, OperationType.CREATE, 'backtests');
+        await handleSupabaseError(err, OperationType.CREATE, 'backtests');
         addToast('Failed to save backtest result.', 'error');
       }
       setIsRunning(false);

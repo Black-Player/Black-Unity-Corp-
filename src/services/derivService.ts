@@ -43,6 +43,7 @@ class DerivService {
     this.socket.onopen = () => {
       console.log('Connected to Deriv WebSocket');
       this.authorize();
+      this.subscribeData(); // Always subscribe to public data
       this.startPing();
     };
 
@@ -103,7 +104,7 @@ class DerivService {
   }
 
   private async waitForConnection(): Promise<void> {
-    if (this.socket?.readyState === WebSocket.OPEN && this.isAuthorized) {
+    if (this.socket?.readyState === WebSocket.OPEN) {
       return;
     }
 
@@ -117,7 +118,7 @@ class DerivService {
       }, 60000);
 
       const check = () => {
-        if (this.socket?.readyState === WebSocket.OPEN && this.isAuthorized) {
+        if (this.socket?.readyState === WebSocket.OPEN) {
           clearTimeout(timeout);
           resolve();
         } else if (this.socket?.readyState === WebSocket.CLOSED) {
@@ -161,13 +162,12 @@ class DerivService {
   private handleMessage(data: any) {
     if (data.msg_type === 'authorize') {
       if (data.error) {
-        console.error('Deriv Authorization Failed:', data.error.message);
+        console.warn('Deriv Authorization Optional: Limited feature set (public market data only active).', data.error.message);
         this.isAuthorized = false;
         return;
       }
       console.log('Deriv Authorized Successfully');
       this.isAuthorized = true;
-      this.subscribeData();
     }
 
     if (data.msg_type === 'tick' && data.tick) {

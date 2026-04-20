@@ -25,7 +25,7 @@ export const Tribes: React.FC<TribesProps> = ({ userProfile, addToast }) => {
         .select('*');
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'tribes');
+        await handleSupabaseError(error, OperationType.GET, 'tribes');
       } else {
         setTribes(data as Tribe[]);
       }
@@ -61,7 +61,7 @@ export const Tribes: React.FC<TribesProps> = ({ userProfile, addToast }) => {
       setNewTribe({ name: '', description: '' });
       addToast('Tribe formed! Lead your people to glory.', 'success');
     } catch (error) {
-      handleSupabaseError(error, OperationType.CREATE, 'tribes');
+      await handleSupabaseError(error, OperationType.CREATE, 'tribes');
       addToast('Failed to form tribe', 'error');
     }
   };
@@ -81,7 +81,7 @@ export const Tribes: React.FC<TribesProps> = ({ userProfile, addToast }) => {
       if (error) throw error;
       addToast('You have joined the tribe!', 'success');
     } catch (error) {
-      handleSupabaseError(error, OperationType.UPDATE, 'tribes');
+      await handleSupabaseError(error, OperationType.UPDATE, 'tribes');
       addToast('Failed to join tribe', 'error');
     }
   };
@@ -101,7 +101,7 @@ export const Tribes: React.FC<TribesProps> = ({ userProfile, addToast }) => {
       if (error) throw error;
       addToast('You have left the tribe.', 'info');
     } catch (error) {
-      handleSupabaseError(error, OperationType.UPDATE, 'tribes');
+      await handleSupabaseError(error, OperationType.UPDATE, 'tribes');
       addToast('Failed to leave tribe', 'error');
     }
   };

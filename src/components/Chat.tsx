@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import { dbService } from '../services/dbService';
+import { where, orderBy, limit } from 'firebase/firestore';
 import { BOTS, UserProfile, TIER_BOT_LIMITS } from '../types';
 import { chatWithBot } from '../services/aiService';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
@@ -28,76 +30,60 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let unsubscribe: () => void;
+
     if (chatMode === 'ai') {
       const fetchAiMessages = async () => {
-        const { data, error } = await supabase
-          .from('ai_messages')
-          .select('*')
-          .eq('uid', userProfile.uid)
-          .eq('bot_name', selectedBot.name)
-          .order('created_at', { ascending: true })
-          .limit(100);
-        
-        if (error) {
-          await handleSupabaseError(error, OperationType.LIST, `ai_messages`);
-        } else {
-          setMessages(data as Message[]);
+        try {
+          const data = await dbService.list('ai_messages', [
+            where('uid', '==', userProfile.uid),
+            where('bot_name', '==', selectedBot.name),
+            orderBy('created_at', 'asc'),
+            limit(100)
+          ]);
+          setMessages(data as unknown as Message[]);
+        } catch (error) {
+          console.error("Fetch AI messages failed", error);
         }
       };
 
       fetchAiMessages();
 
-      // Subscribe to changes
-      const channel = supabase
-        .channel(`public:ai_messages:uid=eq.${userProfile.uid}`)
-        .on('postgres_changes', { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'ai_messages', 
-          filter: `uid=eq.${userProfile.uid}` 
-        }, (payload) => {
-          if ((payload.new as any).bot_name === selectedBot.name) {
-            setMessages(prev => [...prev, payload.new as Message].slice(-100));
-          }
-        })
-        .subscribe();
+      unsubscribe = dbService.subscribeCollection('ai_messages', [
+        where('uid', '==', userProfile.uid),
+        where('bot_name', '==', selectedBot.name),
+        orderBy('created_at', 'asc'),
+        limit(100)
+      ], (data) => {
+        setMessages(data as unknown as Message[]);
+      });
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
     } else {
       const fetchCommunityMessages = async () => {
-        const { data, error } = await supabase
-          .from('community_chat')
-          .select('*')
-          .order('created_at', { ascending: true })
-          .limit(100);
-        
-        if (error) {
-          await handleSupabaseError(error, OperationType.LIST, 'community_chat');
-        } else {
-          setCommunityMessages(data as Message[]);
+        try {
+          const data = await dbService.list('community_chat', [
+            orderBy('created_at', 'asc'),
+            limit(100)
+          ]);
+          setCommunityMessages(data as unknown as Message[]);
+        } catch (error) {
+          console.error("Fetch community messages failed", error);
         }
       };
 
       fetchCommunityMessages();
 
-      // Subscribe to changes
-      const channel = supabase
-        .channel('public:community_chat')
-        .on('postgres_changes', { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'community_chat' 
-        }, (payload) => {
-          setCommunityMessages(prev => [...prev, payload.new as Message].slice(-100));
-        })
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
+      unsubscribe = dbService.subscribeCollection('community_chat', [
+        orderBy('created_at', 'asc'),
+        limit(100)
+      ], (data) => {
+        setCommunityMessages(data as unknown as Message[]);
+      });
     }
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [selectedBot, userProfile.uid, chatMode]);
 
   useEffect(() => {
@@ -115,18 +101,14 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
     
     if (chatMode === 'ai') {
       try {
-        const { error: userMsgError } = await supabase
-          .from('ai_messages')
-          .insert([{
+        await dbService.create('ai_messages', {
             uid: userProfile.uid,
             bot_name: selectedBot.name,
             role: 'user',
             text: userMessage,
             created_at: new Date().toISOString()
-          }]);
+        });
         
-        if (userMsgError) throw userMsgError;
-
         setLoading(true);
 
         const response = await chatWithBot(
@@ -136,39 +118,30 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
           messages.map(m => ({ role: m.role as any, parts: [{ text: m.text }] }))
         );
 
-        const { error: modelMsgError } = await supabase
-          .from('ai_messages')
-          .insert([{
+        await dbService.create('ai_messages', {
             uid: userProfile.uid,
             bot_name: selectedBot.name,
             role: 'model',
             text: response,
             created_at: new Date().toISOString()
-          }]);
-        
-        if (modelMsgError) throw modelMsgError;
+        });
 
       } catch (err) {
-        console.error(err);
         addToast("The cosmic connection was interrupted. Please try again.", "error");
       } finally {
         setLoading(false);
       }
     } else {
       try {
-        const { error } = await supabase
-          .from('community_chat')
-          .insert([{
+        await dbService.create('community_chat', {
             uid: userProfile.uid,
             username: userProfile.username || 'Anonymous Oracle',
             role: 'user',
             text: userMessage,
             created_at: new Date().toISOString()
-          }]);
-        
-        if (error) throw error;
+        });
       } catch (err) {
-        console.error(err);
+        console.error("Failed to send community message", err);
       }
     }
   };

@@ -25,7 +25,7 @@ export const Academy: React.FC<AcademyProps> = ({ userProfile, addToast, setActi
         .maybeSingle();
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, `academy_progress/${userProfile.uid}`);
+        await handleSupabaseError(error, OperationType.GET, `academy_progress/${userProfile.uid}`);
       } else if (data) {
         setProgress(data as UserProgress);
       } else {
@@ -72,7 +72,7 @@ export const Academy: React.FC<AcademyProps> = ({ userProfile, addToast, setActi
       if (error) throw error;
       addToast('Lesson completed! +100 XP earned.', 'success');
     } catch (error) {
-      handleSupabaseError(error, OperationType.UPDATE, `academy_progress/${userProfile.uid}`);
+      await handleSupabaseError(error, OperationType.UPDATE, `academy_progress/${userProfile.uid}`);
     }
   };
 

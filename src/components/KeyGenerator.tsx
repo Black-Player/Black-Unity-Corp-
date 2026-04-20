@@ -24,7 +24,7 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
         .order('created_at', { ascending: false });
       
       if (error) {
-        handleSupabaseError(error, OperationType.LIST, 'access_keys');
+        await handleSupabaseError(error, OperationType.LIST, 'access_keys');
       } else {
         setKeys(data as AccessKey[]);
       }
@@ -83,7 +83,7 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
       if (error) throw error;
       addToast(`Generated ${type} key: ${keyString}`, 'success');
     } catch (error) {
-      handleSupabaseError(error, OperationType.CREATE, 'access_keys');
+      await handleSupabaseError(error, OperationType.CREATE, 'access_keys');
     } finally {
       setGenerating(false);
     }
@@ -99,7 +99,7 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
       if (error) throw error;
       addToast('Access key revoked', 'info');
     } catch (error) {
-      handleSupabaseError(error, OperationType.DELETE, `access_keys/${id}`);
+      await handleSupabaseError(error, OperationType.DELETE, `access_keys/${id}`);
     }
   };
 

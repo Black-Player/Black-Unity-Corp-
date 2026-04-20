@@ -28,7 +28,7 @@ export const Challenges: React.FC<ChallengesProps> = ({ userProfile, addToast })
         .select('*');
       
       if (error) {
-        handleSupabaseError(error, OperationType.LIST, 'challenges');
+        await handleSupabaseError(error, OperationType.LIST, 'challenges');
       } else {
         setChallenges(data as Challenge[]);
       }
@@ -45,7 +45,7 @@ export const Challenges: React.FC<ChallengesProps> = ({ userProfile, addToast })
         .eq('uid', userProfile.uid);
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'user_challenges');
+        await handleSupabaseError(error, OperationType.GET, 'user_challenges');
       } else {
         const statuses: Record<string, UserChallengeStatus> = {};
         (data || []).forEach(item => {
@@ -102,7 +102,7 @@ export const Challenges: React.FC<ChallengesProps> = ({ userProfile, addToast })
 
       addToast(`Challenge "${challenge.title}" accepted. Good luck, Warrior.`, 'success');
     } catch (err) {
-      handleSupabaseError(err, OperationType.CREATE, 'user_challenges');
+      await handleSupabaseError(err, OperationType.CREATE, 'user_challenges');
       addToast('Failed to join challenge.', 'error');
     }
   };

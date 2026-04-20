@@ -106,7 +106,7 @@ export default function Vault({ userProfile, addToast }: { userProfile: UserProf
       if (error) throw error;
       addToast('Key removed from the Vault.', 'info');
     } catch (error) {
-      handleSupabaseError(error, OperationType.DELETE, `api_keys/${id}`);
+      await handleSupabaseError(error, OperationType.DELETE, `api_keys/${id}`);
     }
   };
 

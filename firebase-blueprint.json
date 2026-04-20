@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Core profile data for each trader in the Zion ecosystem.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "username": { "type": "string" },
+        "avatar_url": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "investor", "subscriber", "creator"] },
+        "tier": { "type": "string", "enum": ["free", "oracle", "zion", "mythic", "legendary", "creator"] },
+        "live_balance": { "type": "number" },
+        "demo_balance": { "type": "number" },
+        "total_profit": { "type": "number" },
+        "win_rate": { "type": "number" },
+        "trades_count": { "type": "number" },
+        "signals_used_today": { "type": "number" },
+        "last_reset_date": { "type": "string", "format": "date-time" },
+        "notification_count": { "type": "number" },
+        "ap": { "type": "number" },
+        "student_tier": { "type": "string" },
+        "student_rank": { "type": "string" },
+        "theme": { "type": "string" },
+        "risk_settings": { "type": "object" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Signal": {
+      "title": "Trading Signal",
+      "description": "AI-generated prophecies and signals.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "pair": { "type": "string" },
+        "timeframe": { "type": "string" },
+        "entry": { "type": "number" },
+        "stop_loss": { "type": "number" },
+        "tp1": { "type": "number" },
+        "tp2": { "type": "number" },
+        "tp3": { "type": "number" },
+        "tp4": { "type": "number" },
+        "risk_reward": { "type": "number" },
+        "strategy": { "type": "string" },
+        "ai_bot": { "type": "string" },
+        "confidence": { "type": "number" },
+        "market_structure": { "type": "string" },
+        "liquidity_presence": { "type": "boolean" },
+        "volatility_validation": { "type": "boolean" },
+        "analysis": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "closed", "expired"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Trade": {
+      "title": "User Trade",
+      "description": "Individual trades executed by users.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "signal_id": { "type": "string" },
+        "pair": { "type": "string" },
+        "type": { "type": "string", "enum": ["buy", "sell"] },
+        "entry_price": { "type": "number" },
+        "current_price": { "type": "number" },
+        "exit_price": { "type": "number" },
+        "stop_loss": { "type": "number" },
+        "tp1": { "type": "number" },
+        "tp2": { "type": "number" },
+        "tp3": { "type": "number" },
+        "pnl": { "type": "number" },
+        "pnl_percentage": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "account_type": { "type": "string", "enum": ["demo", "live"] },
+        "close_reason": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "closed_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Message": {
+      "title": "Chat Message",
+      "description": "Messages for AI and Community chat.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string" },
+        "role": { "type": "string" },
+        "text": { "type": "string" },
+        "bot_name": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile documents."
+    },
+    "/signals/{signalId}": {
+      "schema": "Signal",
+      "description": "Global trading signals."
+    },
+    "/trades/{tradeId}": {
+      "schema": "Trade",
+      "description": "User execution records."
+    },
+    "/ai_messages/{msgId}": {
+      "schema": "Message",
+      "description": "Private AI chat history."
+    },
+    "/community_chat/{msgId}": {
+      "schema": "Message",
+      "description": "Global community chat."
+    }
+  }
+}

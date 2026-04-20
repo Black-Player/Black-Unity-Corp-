@@ -30,7 +30,7 @@ export default function LiveTradingRoom({ userProfile }: { userProfile: UserProf
         if (error) throw error;
         setMessages((data as ChatMessage[]).reverse());
       } catch (err) {
-        handleSupabaseError(err, OperationType.LIST, 'live_chat');
+        await handleSupabaseError(err, OperationType.LIST, 'live_chat');
       }
     };
 
@@ -64,7 +64,7 @@ export default function LiveTradingRoom({ userProfile }: { userProfile: UserProf
         if (error) throw error;
         setActiveTrades(data as Trade[]);
       } catch (err) {
-        handleSupabaseError(err, OperationType.LIST, 'signals');
+        await handleSupabaseError(err, OperationType.LIST, 'signals');
       }
     };
 
@@ -109,7 +109,7 @@ export default function LiveTradingRoom({ userProfile }: { userProfile: UserProf
       if (error) throw error;
       setNewMessage('');
     } catch (err) {
-      handleSupabaseError(err, OperationType.WRITE, 'live_chat');
+      await handleSupabaseError(err, OperationType.WRITE, 'live_chat');
     }
   };
 

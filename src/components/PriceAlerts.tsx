@@ -28,7 +28,7 @@ export const PriceAlerts: React.FC<PriceAlertsProps> = ({ userProfile, addToast 
         .eq('uid', userProfile.uid);
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'alerts');
+        await handleSupabaseError(error, OperationType.GET, 'alerts');
       } else {
         setAlerts(data as PriceAlert[]);
       }
@@ -77,7 +77,7 @@ export const PriceAlerts: React.FC<PriceAlertsProps> = ({ userProfile, addToast 
       setShowAdd(false);
       addToast('Price alert set successfully', 'success');
     } catch (error) {
-      console.error(error);
+      await handleSupabaseError(error, OperationType.CREATE, 'alerts');
       addToast('Failed to set alert', 'error');
     }
   };
@@ -92,7 +92,7 @@ export const PriceAlerts: React.FC<PriceAlertsProps> = ({ userProfile, addToast 
       if (error) throw error;
       addToast('Alert removed', 'info');
     } catch (error) {
-      console.error(error);
+      await handleSupabaseError(error, OperationType.DELETE, 'alerts');
       addToast('Failed to remove alert', 'error');
     }
   };

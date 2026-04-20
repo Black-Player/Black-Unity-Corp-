@@ -37,7 +37,7 @@ export default function NotificationCenter({ userProfile }: NotificationCenterPr
         setNotifications(data as Notification[]);
         setUnreadCount(data?.filter(n => !n.read).length || 0);
       } catch (err) {
-        handleSupabaseError(err, OperationType.LIST, 'notifications');
+        await handleSupabaseError(err, OperationType.LIST, 'notifications');
       }
     };
 
@@ -68,7 +68,7 @@ export default function NotificationCenter({ userProfile }: NotificationCenterPr
         .eq('id', id);
       if (error) throw error;
     } catch (err) {
-      handleSupabaseError(err, OperationType.UPDATE, 'notifications');
+      await handleSupabaseError(err, OperationType.UPDATE, 'notifications');
     }
   };
 
@@ -80,7 +80,7 @@ export default function NotificationCenter({ userProfile }: NotificationCenterPr
         .eq('uid', userProfile.uid);
       if (error) throw error;
     } catch (err) {
-      handleSupabaseError(err, OperationType.DELETE, 'notifications');
+      await handleSupabaseError(err, OperationType.DELETE, 'notifications');
     }
   };
 

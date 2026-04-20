@@ -29,7 +29,7 @@ export default function PerformanceReports({ userProfile }: PerformanceReportsPr
         if (error) throw error;
         setTrades(data as Trade[]);
       } catch (err) {
-        handleSupabaseError(err, OperationType.LIST, 'trades');
+        await handleSupabaseError(err, OperationType.LIST, 'trades');
       } finally {
         setLoading(false);
       }

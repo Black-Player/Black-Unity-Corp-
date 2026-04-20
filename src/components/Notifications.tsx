@@ -42,7 +42,7 @@ export const Notifications: React.FC<NotificationsProps> = ({
         .limit(50);
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, `notifications`);
+        await handleSupabaseError(error, OperationType.GET, `notifications`);
       } else {
         setNotifications(data as Notification[]);
       }
@@ -78,7 +78,7 @@ export const Notifications: React.FC<NotificationsProps> = ({
       
       if (error) throw error;
     } catch (err) {
-      console.error(err);
+      await handleSupabaseError(err, OperationType.UPDATE, 'notifications');
     }
   };
 
@@ -92,7 +92,7 @@ export const Notifications: React.FC<NotificationsProps> = ({
       if (error) throw error;
       addToast('Notification removed', 'info');
     } catch (err) {
-      console.error(err);
+      await handleSupabaseError(err, OperationType.DELETE, 'notifications');
       addToast('Failed to remove notification', 'error');
     }
   };
@@ -108,7 +108,7 @@ export const Notifications: React.FC<NotificationsProps> = ({
       if (error) throw error;
       addToast('All notifications marked as read', 'success');
     } catch (err) {
-      console.error(err);
+      await handleSupabaseError(err, OperationType.UPDATE, 'notifications');
     }
   };
 

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, Bot, User, Sparkles, Loader2, Zap, Brain, Shield, Globe, TrendingUp, History, Info } from 'lucide-react';
+import { MessageSquare, Send, Bot, User, Sparkles, Loader2, Zap, Brain, Shield, Globe, TrendingUp, History, Info, FileText, Upload, CheckCircle2 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { SYSTEM_ROLE } from '../constants/systemRole';
 
@@ -11,14 +11,20 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  fileData?: {
+    name: string;
+    type: string;
+  };
 }
 
 export default function ZionAI({ userProfile, addToast }: { userProfile: UserProfile, addToast: any }) {
   const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'assistant', content: "Greetings, Oracle. I am Zion AI, your cosmic guide through the markets. How can I assist your prophecies today?", timestamp: new Date().toISOString() }
+    { id: '1', role: 'assistant', content: "Greetings, Oracle. I am Zion AI, your cosmic guide through the markets. I can now analyze your strategy PDFs, screenshots, and guides to evolve our collective intelligence. How can I assist your prophecies today?", timestamp: new Date().toISOString() }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<{ name: string, data: string, type: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -29,18 +35,44 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
     scrollToBottom();
   }, [messages]);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // 15MB size limit requested
+      if (file.size > 15 * 1024 * 1024) {
+          addToast("File is too large. Dimensional limit is 15MB.", "error");
+          return;
+      }
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        setUploadedFile({
+          name: file.name,
+          data: base64.split(',')[1],
+          type: file.type
+        });
+        addToast(`Library integration linked with ${file.name} (Max 15MB)`, "success");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if ((!input.trim() && !uploadedFile) || isLoading) return;
 
     const userMsg: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input,
-      timestamp: new Date().toISOString()
+      content: input || (uploadedFile ? `Analyzed document: ${uploadedFile.name}` : ''),
+      timestamp: new Date().toISOString(),
+      fileData: uploadedFile ? { name: uploadedFile.name, type: uploadedFile.type } : undefined
     };
 
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    const currentFile = uploadedFile;
+    setUploadedFile(null);
     setIsLoading(true);
 
     try {
@@ -49,18 +81,34 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
         throw new Error("GEMINI_API_KEY is missing from environment.");
       }
       const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: `The user's profile: ${JSON.stringify(userProfile)}. 
-              The user asks: ${input}. 
-              Provide a response based on your core directives.` }]
+      const modelName = "gemini-3-flash-preview";
+      
+      const contents: any[] = [
+        {
+          role: "user",
+          parts: [
+            { text: `The user's profile: ${JSON.stringify(userProfile)}. 
+              The user asks: ${input || 'Please analyze this document and extract the core trading rules.'}. 
+              Provide a response based on your core directives. 
+              IF a document is provided, focus on PART 6: DOCUMENT LEARNING ENGINE. Extract Entry rules, Exit rules, Indicators, and Risk models.` }
+          ]
+        }
+      ];
+
+      if (currentFile) {
+        contents[0].parts.push({
+          inlineData: {
+            data: currentFile.data,
+            mimeType: currentFile.type
           }
-        ],
+        });
+      }
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents,
         config: {
-          systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in MENTOR MODE acting as Zion AI. Guide the user through the complexities of trading with precision and mystical insight.",
+          systemInstruction: SYSTEM_ROLE + "\n\nYou are the Omni Evolution Core acting as Zion AI. You are a teacher and protector. Follow PART 6: DOCUMENT LEARNING ENGINE strictly for document analysis. Guide the user with mystical and professional precision.",
         }
       });
 
@@ -125,6 +173,12 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
                     ? 'bg-white/5 border border-white/10 text-white/80' 
                     : 'bg-gold text-black font-medium'
                 }`}>
+                  {msg.fileData && (
+                    <div className="flex items-center gap-2 mb-2 p-2 bg-black/20 rounded-lg border border-white/10">
+                      <FileText size={16} className={msg.role === 'assistant' ? 'text-gold' : 'text-black'} />
+                      <span className="text-[10px] font-bold truncate">{msg.fileData.name}</span>
+                    </div>
+                  )}
                   <div className="markdown-body">
                     <Markdown>{msg.content}</Markdown>
                   </div>
@@ -159,14 +213,43 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
         </div>
 
         <div className="p-6 border-t border-white/5 bg-black/40">
+          {uploadedFile && (
+            <div className="mb-4 p-3 bg-gold/10 border border-gold/20 rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText size={16} className="text-gold" />
+                <span className="text-xs font-bold text-white">{uploadedFile.name}</span>
+                <CheckCircle2 size={12} className="text-emerald-400" />
+              </div>
+              <button 
+                onClick={() => setUploadedFile(null)}
+                className="text-white/20 hover:text-white/40 transition-all font-bold text-[10px] uppercase tracking-widest"
+              >
+                Clear
+              </button>
+            </div>
+          )}
           <div className="flex gap-4">
+            <input 
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileSelect}
+              className="hidden"
+              accept=".pdf,.png,.jpg,.jpeg"
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="p-4 rounded-xl glass-card border-white/10 text-white/40 hover:text-gold transition-all"
+              title="Upload strategy document or screenshot"
+            >
+              <Upload size={20} />
+            </button>
             <div className="flex-1 relative">
               <input 
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                placeholder="Ask Zion AI about the markets..."
+                placeholder="Ask Zion AI or provide a strategy doc..."
                 className="w-full bg-white/5 border border-white/10 rounded-xl pl-4 pr-12 py-4 text-white focus:border-gold/50 transition-all outline-none"
               />
               <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 text-white/20">
@@ -175,7 +258,7 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
             </div>
             <button 
               onClick={handleSend}
-              disabled={!input.trim() || isLoading}
+              disabled={(!input.trim() && !uploadedFile) || isLoading}
               className="p-4 rounded-xl bg-gold text-black hover:shadow-lg hover:shadow-gold/20 transition-all disabled:opacity-50"
             >
               <Send size={20} />

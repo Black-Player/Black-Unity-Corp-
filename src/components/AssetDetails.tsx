@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../supabase';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { Signal, BOTS, UserProfile } from '../types';
 import { getBotCharacter } from '../lib/themeUtils';
 import { motion } from 'motion/react';
@@ -29,7 +29,7 @@ export default function AssetDetails({ pair, onBack, userProfile }: AssetDetails
         if (error) throw error;
         setSignals(data as Signal[]);
       } catch (err) {
-        console.error('Error fetching signals:', err);
+        await handleSupabaseError(err, OperationType.LIST, 'signals');
       } finally {
         setLoading(false);
       }

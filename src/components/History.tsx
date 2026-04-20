@@ -24,7 +24,7 @@ export default function History({ userProfile, addToast }: HistoryProps) {
         .limit(50);
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'signals');
+        await handleSupabaseError(error, OperationType.GET, 'signals');
       } else {
         setSignals(data as Signal[]);
       }

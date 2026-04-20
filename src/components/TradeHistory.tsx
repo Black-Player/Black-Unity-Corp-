@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { Trade } from '../types';
-import { Search, Filter, Download, ArrowUpRight, ArrowDownRight, Calendar, Clock, Target, Activity, ShieldAlert, ShieldCheck, BookOpen, Smile, Frown, Meh, Zap, AlertTriangle } from 'lucide-react';
+import { Search, Filter, Download, ArrowUpRight, ArrowDownRight, Calendar, Clock, Target, Activity, ShieldAlert, ShieldCheck, BookOpen, Smile, Frown, Meh, Zap, AlertTriangle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase } from '../supabase';
+import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 interface TradeHistoryProps {
   trades: Trade[];
@@ -53,7 +53,7 @@ export default function TradeHistory({ trades, userId }: TradeHistoryProps) {
       if (error) throw error;
       setEditingTrade(null);
     } catch (err) {
-      console.error("Error saving journal:", err);
+      await handleSupabaseError(err, OperationType.UPDATE, 'trades');
     }
   };
 
@@ -329,5 +329,3 @@ export default function TradeHistory({ trades, userId }: TradeHistoryProps) {
     </div>
   );
 }
-
-import { X } from 'lucide-react';

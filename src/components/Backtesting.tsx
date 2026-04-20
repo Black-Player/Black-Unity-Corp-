@@ -135,6 +135,21 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
 
   return (
     <div className="space-y-8">
+      <div className="glass-card p-8 border-purple-500/20 bg-purple-500/5 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+          <RotateCcw size={120} className="text-purple-400" />
+        </div>
+        
+        <div className="relative z-10">
+          <h2 className="text-2xl font-display font-bold text-purple-400 flex items-center gap-3">
+            <RotateCcw className="text-purple-400" /> Phase 23: Deep Machine Learning Engine
+          </h2>
+          <p className="text-white/40 mt-2 max-w-2xl">
+            Test strategies against historical data using Omni's logic matrix. Watch the AI execute abstract market playbooks over years in minutes to visualize edge predictability.
+          </p>
+        </div>
+      </div>
+
       <div className="glass-card p-8">
         <div className="flex flex-col md:flex-row gap-6 items-end">
           <div className="flex-1 space-y-2">

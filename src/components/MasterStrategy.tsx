@@ -26,7 +26,7 @@ export const MasterStrategy: React.FC<MasterStrategyProps> = ({ userProfile, add
         .eq('uid', userProfile.uid);
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'strategies');
+        await handleSupabaseError(error, OperationType.GET, 'strategies');
       } else {
         setStrategies(data as MasterStrategyType[]);
       }
@@ -71,7 +71,7 @@ export const MasterStrategy: React.FC<MasterStrategyProps> = ({ userProfile, add
       setNewStrategy({ name: '', bots: [], risk_weight: 1.0 });
       addToast('Master Strategy forged!', 'success');
     } catch (error) {
-      handleSupabaseError(error, OperationType.CREATE, 'strategies');
+      await handleSupabaseError(error, OperationType.CREATE, 'strategies');
       addToast('Failed to forge strategy', 'error');
     }
   };
@@ -95,7 +95,7 @@ export const MasterStrategy: React.FC<MasterStrategyProps> = ({ userProfile, add
       if (error) throw error;
       addToast('Strategy dissolved', 'info');
     } catch (error) {
-      handleSupabaseError(error, OperationType.DELETE, 'strategies');
+      await handleSupabaseError(error, OperationType.DELETE, 'strategies');
       addToast('Failed to dissolve strategy', 'error');
     }
   };

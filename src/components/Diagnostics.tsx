@@ -36,7 +36,7 @@ export default function Diagnostics({ userProfile, addToast }: DiagnosticsProps)
           .eq('status', 'pending');
         
         if (error) {
-          handleSupabaseError(error, OperationType.GET, 'advancement_requests');
+          await handleSupabaseError(error, OperationType.GET, 'advancement_requests');
         } else {
           setPendingRequests(data as AdvancementRequest[]);
         }
@@ -84,7 +84,7 @@ export default function Diagnostics({ userProfile, addToast }: DiagnosticsProps)
 
       addToast('Advancement approved!', 'success');
     } catch (err) {
-      handleSupabaseError(err, OperationType.UPDATE, 'users');
+      await handleSupabaseError(err, OperationType.UPDATE, 'users');
       addToast('Failed to approve advancement.', 'error');
     }
   };
@@ -99,7 +99,7 @@ export default function Diagnostics({ userProfile, addToast }: DiagnosticsProps)
       if (error) throw error;
       addToast('Advancement rejected.', 'info');
     } catch (err) {
-      handleSupabaseError(err, OperationType.UPDATE, 'advancement_requests');
+      await handleSupabaseError(err, OperationType.UPDATE, 'advancement_requests');
       addToast('Failed to reject advancement.', 'error');
     }
   };

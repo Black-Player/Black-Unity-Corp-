@@ -23,7 +23,7 @@ export default function Analytics({ userProfile, addToast }: { userProfile: User
         if (error) throw error;
         setTrades(data || []);
       } catch (err) {
-        handleSupabaseError(err, OperationType.LIST, 'trades');
+        await handleSupabaseError(err, OperationType.LIST, 'trades');
       } finally {
         setLoading(false);
       }

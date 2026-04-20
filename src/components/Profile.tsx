@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { User, Mail, Shield, Zap, TrendingUp, TrendingDown, Clock, Edit2, Save, X, Camera, Globe, Twitter, Github, Linkedin, GraduationCap, Trophy, AlertTriangle, Send, Key } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { dbService } from '../services/dbService';
 import { UserProfile, Tier, AdvancementRequest } from '../types';
-import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import KeyGenerator from './KeyGenerator';
 
 interface ProfileProps {
@@ -26,16 +26,13 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
     if (!isOwnProfile && targetUserId) {
       setLoading(true);
       const fetchProfile = async () => {
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('uid', targetUserId)
-          .single();
-        
-        if (error) {
-          handleSupabaseError(error, OperationType.GET, `users/${targetUserId}`);
-        } else {
-          setProfile(data as UserProfile);
+        try {
+          const profileData = await dbService.get('users', targetUserId);
+          if (profileData) {
+            setProfile(profileData as UserProfile);
+          }
+        } catch (error) {
+           console.error("Fetch profile failed", error);
         }
         setLoading(false);
       };
@@ -43,21 +40,11 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
       fetchProfile();
 
       // Subscribe to changes
-      const channel = supabase
-        .channel(`public:users:uid=eq.${targetUserId}`)
-        .on('postgres_changes', { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'users', 
-          filter: `uid=eq.${targetUserId}` 
-        }, (payload) => {
-          setProfile(payload.new as UserProfile);
-        })
-        .subscribe();
+      const unsubscribe = dbService.subscribe('users', targetUserId, (data) => {
+        if (data) setProfile(data as UserProfile);
+      });
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
+      return () => unsubscribe();
     }
   }, [targetUserId, isOwnProfile]);
 
@@ -65,20 +52,16 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
     if (!profile) return;
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({
+      await dbService.update('users', profile.uid, {
           username: editedUsername,
           bio: editedBio,
           avatar_url: editedAvatar
-        })
-        .eq('uid', profile.uid);
+      });
       
-      if (error) throw error;
       setIsEditing(false);
       addToast('Profile updated successfully', 'success');
     } catch (error) {
-      handleSupabaseError(error, OperationType.UPDATE, `users/${profile.uid}`);
+      console.error("Profile update failed", error);
     } finally {
       setSaving(false);
     }
@@ -96,14 +79,11 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
         ap_at_request: profile.ap,
         created_at: new Date().toISOString()
       };
-      const { error } = await supabase
-        .from('advancement_requests')
-        .insert([request]);
+      await dbService.create('advancement_requests', request);
       
-      if (error) throw error;
       addToast('Advancement request submitted to the Creator.', 'success');
     } catch (error) {
-      handleSupabaseError(error, OperationType.CREATE, 'advancement_requests');
+      console.error("Advancement request failed", error);
     } finally {
       setSubmittingRequest(false);
     }
@@ -116,43 +96,31 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
     try {
       if (isFollowing) {
         const newFollowed = (userProfile.followed_traders || []).filter(id => id !== profile.uid);
-        await supabase
-          .from('users')
-          .update({
+        await dbService.update('users', userProfile.uid, {
             followed_traders: newFollowed,
             following_count: (userProfile.following_count || 1) - 1
-          })
-          .eq('uid', userProfile.uid);
+        });
         
-        await supabase
-          .from('users')
-          .update({
+        await dbService.update('users', profile.uid, {
             followers_count: (profile.followers_count || 1) - 1
-          })
-          .eq('uid', profile.uid);
+        });
         
         addToast(`Unfollowed ${profile.username}`, 'info');
       } else {
         const newFollowed = [...(userProfile.followed_traders || []), profile.uid];
-        await supabase
-          .from('users')
-          .update({
+        await dbService.update('users', userProfile.uid, {
             followed_traders: newFollowed,
             following_count: (userProfile.following_count || 0) + 1
-          })
-          .eq('uid', userProfile.uid);
+        });
         
-        await supabase
-          .from('users')
-          .update({
+        await dbService.update('users', profile.uid, {
             followers_count: (profile.followers_count || 0) + 1
-          })
-          .eq('uid', profile.uid);
+        });
         
         addToast(`Following ${profile.username}`, 'success');
       }
     } catch (error) {
-      handleSupabaseError(error, OperationType.UPDATE, 'users');
+      console.error("Follow action failed", error);
     }
   };
 

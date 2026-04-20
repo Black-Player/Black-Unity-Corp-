@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Trophy, Medal, Crown, TrendingUp, User, Search, Filter, ArrowUpRight, ArrowDownRight, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { dbService } from '../services/dbService';
+import { orderBy, limit } from 'firebase/firestore';
 import { LeaderboardEntry, Tier } from '../types';
-import { supabase, handleSupabaseError, OperationType } from '../supabase';
 
 interface LeaderboardProps {
   setTargetUserId: (uid: string) => void;
@@ -20,18 +21,15 @@ export default function Leaderboard({ setTargetUserId, setActivePage }: Leaderbo
     const pnlField = timeframe === 'weekly' ? 'weekly_pnl' : timeframe === 'monthly' ? 'monthly_pnl' : 'total_pnl';
     
     const fetchLeaderboard = async () => {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order(pnlField, { ascending: false })
-        .limit(50);
-      
-      if (error) {
-        await handleSupabaseError(error, OperationType.GET, 'users');
-      } else {
-        const newEntries = (data || []).map(doc => ({
+      try {
+        const data = await dbService.list('users', [
+          orderBy(pnlField, 'desc'),
+          limit(50)
+        ]);
+        
+        const newEntries = (data || []).map((doc: any) => ({
           uid: doc.uid,
-          username: doc.username || doc.email?.split('@')[0] || 'Anonymous Trader',
+          username: doc.username || (doc.email as string)?.split('@')[0] || 'Anonymous Trader',
           avatar_url: doc.avatar_url,
           total_pnl: doc[pnlField] || 0,
           win_rate: doc.win_rate || 0,
@@ -41,6 +39,8 @@ export default function Leaderboard({ setTargetUserId, setActivePage }: Leaderbo
           best_asset: doc.best_asset || 'N/A'
         } as LeaderboardEntry));
         setEntries(newEntries);
+      } catch (error) {
+        console.error("Fetch leaderboard failed", error);
       }
       setLoading(false);
     };
@@ -48,20 +48,25 @@ export default function Leaderboard({ setTargetUserId, setActivePage }: Leaderbo
     fetchLeaderboard();
 
     // Subscribe to changes
-    const channel = supabase
-      .channel('public:users:leaderboard')
-      .on('postgres_changes', { 
-        event: 'UPDATE', 
-        schema: 'public', 
-        table: 'users' 
-      }, () => {
-        fetchLeaderboard();
-      })
-      .subscribe();
+    const unsubscribe = dbService.subscribeCollection('users', [
+      orderBy(pnlField, 'desc'),
+      limit(50)
+    ], (data) => {
+      const newEntries = (data || []).map((doc: any) => ({
+        uid: doc.uid,
+        username: doc.username || (doc.email as string)?.split('@')[0] || 'Anonymous Trader',
+        avatar_url: doc.avatar_url,
+        total_pnl: doc[pnlField] || 0,
+        win_rate: doc.win_rate || 0,
+        level: doc.level || 1,
+        tier: doc.tier || 'free',
+        win_streak: doc.win_streak || 0,
+        best_asset: doc.best_asset || 'N/A'
+      } as LeaderboardEntry));
+      setEntries(newEntries);
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [timeframe]);
 
   const filteredEntries = entries.filter(entry => 

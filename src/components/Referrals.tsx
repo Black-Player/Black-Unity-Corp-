@@ -21,7 +21,7 @@ export default function Referrals({ userProfile, addToast }: ReferralsProps) {
         .eq('referred_by', userProfile.referral_code || userProfile.uid);
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'users');
+        await handleSupabaseError(error, OperationType.GET, 'users');
       } else {
         setReferredUsers(data || []);
       }

@@ -3,6 +3,7 @@ import { Bot, Plus, Save, Trash2, Zap, Cpu, Eye, Activity, Shield, Layout, Info,
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile, Bot as BotType } from '../types';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { dbService } from '../services/dbService';
 import { THEMES } from '../constants/themes';
 import { getBotCharacter } from '../lib/themeUtils';
 
@@ -65,16 +66,20 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
       
       const newBots = [...(userProfile.custom_bots || []), newBotWithId];
       
-      const { error } = await supabase
+      // PHASE 14: THE ALCHEMIST GENESIS (Bot Ecosystem)
+      await dbService.update('users', userProfile.uid, {
+          custom_bots: newBots
+      });
+
+      // Mirror to Supabase
+      await supabase
         .from('users')
         .update({
           custom_bots: newBots
         })
         .eq('uid', userProfile.uid);
-      
-      if (error) throw error;
 
-      addToast(`${newBot.name} has been forged in the cosmos!`, 'success');
+      addToast(`Phase 14 Sync: ${newBot.name} has been forged in the cosmos!`, 'success');
       setShowCreate(false);
       setNewBot({
         name: '',
@@ -88,6 +93,7 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
         personality: 'analytical'
       });
     } catch (err: any) {
+      await handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
       addToast(err.message, 'error');
     } finally {
       setSaving(false);
@@ -131,17 +137,21 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
     try {
       const newBots = (userProfile.custom_bots || []).filter((b: any) => b.id !== bot.id);
       
-      const { error } = await supabase
+      // PHASE 14: THE ALCHEMIST GENESIS (Bot Ecosystem Cleanup)
+      await dbService.update('users', userProfile.uid, {
+          custom_bots: newBots
+      });
+
+      await supabase
         .from('users')
         .update({
           custom_bots: newBots
         })
         .eq('uid', userProfile.uid);
       
-      if (error) throw error;
       addToast('Bot dismantled and returned to the void.', 'info');
     } catch (err: any) {
-      handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
+      await handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
     }
   };
 
@@ -201,6 +211,17 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
                 <p className="text-xs text-white/60 leading-relaxed min-h-[3em]">
                   {bot.description}
                 </p>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="p-2 bg-white/5 rounded-lg">
+                    <p className="text-[8px] text-white/20 uppercase font-bold">Risk Profile</p>
+                    <p className="text-[10px] text-white font-medium capitalize">{bot.risk_profile || 'Balanced'}</p>
+                  </div>
+                  <div className="p-2 bg-white/5 rounded-lg">
+                    <p className="text-[8px] text-white/20 uppercase font-bold">Preferred Assets</p>
+                    <p className="text-[10px] text-white font-medium truncate">{(bot.preferred_pairs || []).join(', ') || 'Global'}</p>
+                  </div>
+                </div>
 
                 <div className="pt-4 border-t border-white/5 flex items-center justify-between">
                   <span className="text-[10px] text-white/40 uppercase tracking-widest">Status: Active</span>
@@ -316,6 +337,33 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
                 )}
               </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Preferred Timeframes</label>
+                    <input 
+                      type="text" 
+                      value={newBot.preferred_timeframes?.join(', ')}
+                      onChange={(e) => setNewBot({ ...newBot, preferred_timeframes: e.target.value.split(',').map(s => s.trim()) })}
+                      placeholder="M5, M15, H1..."
+                      className="w-full cosmic-input"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Bot Personality</label>
+                    <select 
+                      value={newBot.personality}
+                      onChange={(e) => setNewBot({ ...newBot, personality: e.target.value as any })}
+                      className="w-full cosmic-input"
+                    >
+                      <option value="analytical">Analytical (Precise)</option>
+                      <option value="aggressive">Aggressive (Bold)</option>
+                      <option value="mystical">Mystical (Prophetic)</option>
+                      <option value="stoic">Stoic (Calm)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Risk Profile</label>
@@ -331,43 +379,16 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
                   </select>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Preferred Pairs</label>
+                  <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Preferred Assets</label>
                   <input 
                     type="text" 
                     value={newBot.preferred_pairs?.join(', ')}
                     onChange={(e) => setNewBot({ ...newBot, preferred_pairs: e.target.value.split(',').map(s => s.trim()) })}
-                    placeholder="BTC/USD, ETH/USD..."
+                    placeholder="XAUUSD, BTCUSD, Crash 500..."
                     className="w-full cosmic-input"
                   />
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Preferred Timeframes</label>
-                  <input 
-                    type="text" 
-                    value={newBot.preferred_timeframes?.join(', ')}
-                    onChange={(e) => setNewBot({ ...newBot, preferred_timeframes: e.target.value.split(',').map(s => s.trim()) })}
-                    placeholder="M5, M15, H1..."
-                    className="w-full cosmic-input"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Bot Personality</label>
-                  <select 
-                    value={newBot.personality}
-                    onChange={(e) => setNewBot({ ...newBot, personality: e.target.value as any })}
-                    className="w-full cosmic-input"
-                  >
-                    <option value="analytical">Analytical (Precise)</option>
-                    <option value="aggressive">Aggressive (Bold)</option>
-                    <option value="mystical">Mystical (Prophetic)</option>
-                    <option value="stoic">Stoic (Calm)</option>
-                  </select>
-                </div>
-              </div>
-            </div>
 
             <div className="flex gap-4 pt-4">
               <button 

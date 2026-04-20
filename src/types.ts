@@ -44,6 +44,7 @@ export interface UserProfile {
     stop_loss_buffer: number;
     max_daily_trades?: number;
     max_drawdown_limit?: number;
+    prop_firm_mode?: boolean;
     trading_hours?: {
       start: string;
       end: string;
@@ -73,6 +74,7 @@ export interface UserProfile {
   daily_pnl: number;
   xp: number;
   level: number;
+  consecutive_losses: number;
   followed_traders?: string[];
   followers_count?: number;
   following_count?: number;
@@ -85,6 +87,9 @@ export interface UserProfile {
   weekly_pnl?: number;
   monthly_pnl?: number;
   notification_count?: number;
+  cooldown_active?: boolean;
+  cooldown_until?: string;
+  cooldown_reason?: string;
 }
 
 export interface AccessKey {
@@ -167,6 +172,7 @@ export interface Trade {
   min_pnl?: number;
   notes?: string;
   emotion?: 'neutral' | 'confident' | 'anxious' | 'greedy' | 'fearful';
+  is_ghost?: boolean;
 }
 
 export interface Bot {
@@ -238,6 +244,7 @@ export const BOTS: Bot[] = [
   { name: 'Zion', strategy: 'Chart Patterns', tier_requirement: 'zion', description: 'Master of geometry and psychological levels.', icon: 'Grid' },
   { name: 'Sentinel', strategy: 'ICT/SMC Hybrid', tier_requirement: 'zion', description: 'Advanced hybrid bot for high-precision entries.', icon: 'Shield' },
   { name: 'Architect', strategy: 'All Strategies', tier_requirement: 'zion', description: 'The ultimate bot. Combines all strategies for maximum confidence.', icon: 'Layout' },
+  { name: 'Hyperion', strategy: 'Institutional Order Flow', tier_requirement: 'legendary', description: 'Titan of the markets. Analyzes depth of book and massive institutional moves.', icon: 'Zap' },
 ];
 
 export const TIER_ORDER: Tier[] = ['free', 'oracle', 'zion', 'legendary', 'mythic', 'creator'];

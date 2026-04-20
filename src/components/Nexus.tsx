@@ -31,7 +31,7 @@ export default function Nexus({ userProfile, addToast }: { userProfile: UserProf
         .limit(100);
       
       if (error) {
-        handleSupabaseError(error, OperationType.LIST, 'chat_messages');
+        await handleSupabaseError(error, OperationType.LIST, 'chat_messages');
       } else {
         setMessages(data as NexusMessage[]);
       }
@@ -85,7 +85,7 @@ export default function Nexus({ userProfile, addToast }: { userProfile: UserProf
       if (error) throw error;
       setInput('');
     } catch (error) {
-      console.error(error);
+      await handleSupabaseError(error, OperationType.CREATE, 'chat_messages');
     }
   };
 
@@ -158,6 +158,11 @@ export default function Nexus({ userProfile, addToast }: { userProfile: UserProf
             </div>
           </div>
           <div className="flex items-center gap-4">
+            {/* PHASE 18: LIVE ROOM SENTIMENT (Nexus Integration) */}
+            <div className="hidden sm:flex items-center gap-2 bg-black/40 px-3 py-1.5 rounded-full border border-white/5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-[10px] font-bold text-emerald-400">Bullish Bias (Live)</span>
+            </div>
             <button className="text-white/40 hover:text-gold transition-all"><Share2 size={18} /></button>
             <button className="text-white/40 hover:text-gold transition-all"><ExternalLink size={18} /></button>
           </div>

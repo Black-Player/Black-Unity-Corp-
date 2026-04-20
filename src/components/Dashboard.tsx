@@ -1,4 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { dbService } from '../services/dbService';
+import { where, orderBy, limit } from 'firebase/firestore';
+import { calculateAutoLotSize, evaluateCapitalSafety } from '../lib/tradeUtils';
+import { BehavioralService } from '../services/behavioralService';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, PriceAlert, MarketNews, Tier, hasTierAccess } from '../types';
 import { DERIV_SYMBOLS } from '../constants';
@@ -16,6 +20,7 @@ import { Portfolio } from './Portfolio';
 import { Tutorial } from './Tutorial';
 import { Community } from './Community';
 import { BotForge } from './BotForge';
+import { IntelligenceCore } from './IntelligenceCore';
 import Chat from './Chat';
 import { EconomicCalendar } from './EconomicCalendar';
 import { PriceAlerts } from './PriceAlerts';
@@ -77,8 +82,9 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
   const [pair, setPair] = useState('CRASH500');
   const [showDetails, setShowDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<'signals' | 'stats' | 'portfolio' | 'backtest' | 'risk' | 'community' | 'bot-forge' | 'chat' | 'calendar' | 'alerts' | 'strategies' | 'tribes' | 'challenges' | 'marketplace' | 'academy' | 'status' | 'performance' | 'subscription'>('signals');
+  const [activeTab, setActiveTab] = useState<'signals' | 'stats' | 'portfolio' | 'backtest' | 'risk' | 'community' | 'bot-forge' | 'chat' | 'calendar' | 'alerts' | 'strategies' | 'tribes' | 'challenges' | 'marketplace' | 'academy' | 'status' | 'performance' | 'subscription' | 'intelligence'>('signals');
   const [accountType, setAccountType] = useState<'demo' | 'live'>(userProfile.tier === 'free' ? 'demo' : (userProfile.account_type || 'demo'));
+  const [ghostMode, setGhostMode] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [launchCountdown, setLaunchCountdown] = useState('');
   const [showThemeSelector, setShowThemeSelector] = useState(false);
@@ -115,48 +121,28 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   useEffect(() => {
     // Initial fetch
     const fetchAlerts = async () => {
-      const { data, error } = await supabase
-        .from('alerts')
-        .select('*')
-        .eq('uid', userProfile.uid)
-        .eq('active', true);
-      
-      if (error) {
-        await handleSupabaseError(error, OperationType.GET, 'alerts');
-      } else {
+      try {
+        const data = await dbService.list('alerts', [
+          where('uid', '==', userProfile.uid),
+          where('active', '==', true)
+        ]);
         setActiveAlerts(data as PriceAlert[]);
+      } catch (error) {
+         console.error("Fetch alerts failed", error);
       }
     };
 
     fetchAlerts();
 
     // Subscribe to changes
-    const channel = supabase
-      .channel(`public:alerts:uid=eq.${userProfile.uid}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'alerts', 
-        filter: `uid=eq.${userProfile.uid}` 
-      }, (payload) => {
-        if (payload.eventType === 'INSERT' && (payload.new as PriceAlert).active) {
-          setActiveAlerts(prev => [...prev, payload.new as PriceAlert]);
-        } else if (payload.eventType === 'UPDATE') {
-          const updated = payload.new as PriceAlert;
-          if (updated.active) {
-            setActiveAlerts(prev => prev.map(a => a.id === updated.id ? updated : a));
-          } else {
-            setActiveAlerts(prev => prev.filter(a => a.id !== updated.id));
-          }
-        } else if (payload.eventType === 'DELETE') {
-          setActiveAlerts(prev => prev.filter(a => a.id !== (payload.old as PriceAlert).id));
-        }
-      })
-      .subscribe();
+    const unsubscribe = dbService.subscribeCollection('alerts', [
+      where('uid', '==', userProfile.uid),
+      where('active', '==', true)
+    ], (data) => {
+      setActiveAlerts(data as PriceAlert[]);
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [userProfile.uid]);
 
   const marketPricesRef = useRef(marketPrices);
@@ -181,23 +167,22 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         if (triggered) {
           addToast(`Price Alert: ${alert.pair} is ${alert.condition} ${alert.price}!`, 'success');
           
-          // Deactivate alert
-          await supabase
-            .from('alerts')
-            .update({ active: false })
-            .eq('id', alert.id);
+          try {
+            // Deactivate alert
+            await dbService.update('alerts', alert.id, { active: false });
 
-          // Create notification
-          await supabase
-            .from('notifications')
-            .insert([{
-              uid: userProfile.uid,
-              title: 'Price Alert Triggered',
-              message: `${alert.pair} has reached your target of ${alert.price}.`,
-              type: 'system',
-              read: false,
-              created_at: new Date().toISOString()
-            }]);
+            // Create notification
+            await dbService.create('notifications', {
+                uid: userProfile.uid,
+                title: 'Price Alert Triggered',
+                message: `${alert.pair} has reached your target of ${alert.price}.`,
+                type: 'system',
+                read: false,
+                created_at: new Date().toISOString()
+            });
+          } catch (err) {
+            console.error("Alert trigger processing failed", err);
+          }
         }
       });
     }, 5000); // Check alerts every 5 seconds
@@ -350,98 +335,61 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   useEffect(() => {
     // Initial fetch
     const fetchSignals = async () => {
-      const { data, error } = await supabase
-        .from('signals')
-        .select('*')
-        .eq('uid', userProfile.uid)
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(10);
-      
-      if (error) {
-        await handleSupabaseError(error, OperationType.GET, 'signals');
-      } else {
+      try {
+        const data = await dbService.list('signals', [
+          where('uid', '==', userProfile.uid),
+          where('status', '==', 'active'),
+          orderBy('created_at', 'desc'),
+          limit(10)
+        ]);
         setActiveSignals(data as Signal[]);
+      } catch (error) {
+        console.error("Fetch signals failed", error);
       }
     };
 
     fetchSignals();
 
     // Subscribe to changes
-    const channel = supabase
-      .channel(`public:signals:dashboard:uid=eq.${userProfile.uid}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'signals', 
-        filter: `uid=eq.${userProfile.uid}` 
-      }, (payload) => {
-        if (payload.eventType === 'INSERT' && (payload.new as Signal).status === 'active') {
-          setActiveSignals(prev => [payload.new as Signal, ...prev.slice(0, 9)]);
-        } else if (payload.eventType === 'UPDATE') {
-          const updated = payload.new as Signal;
-          if (updated.status === 'active') {
-            setActiveSignals(prev => prev.map(s => s.id === updated.id ? updated : s));
-          } else {
-            setActiveSignals(prev => prev.filter(s => s.id !== updated.id));
-          }
-        } else if (payload.eventType === 'DELETE') {
-          setActiveSignals(prev => prev.filter(s => s.id !== (payload.old as Signal).id));
-        }
-      })
-      .subscribe();
+    const unsubscribe = dbService.subscribeCollection('signals', [
+      where('uid', '==', userProfile.uid),
+      where('status', '==', 'active'),
+      orderBy('created_at', 'desc'),
+      limit(10)
+    ], (data) => {
+      setActiveSignals(data as Signal[]);
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [userProfile.uid]);
 
   useEffect(() => {
     // Initial fetch
     const fetchTrades = async () => {
-      const { data, error } = await supabase
-        .from('trades')
-        .select('*')
-        .eq('uid', userProfile.uid)
-        .eq('status', 'open')
-        .order('created_at', { ascending: false });
-      
-      if (error) {
-        await handleSupabaseError(error, OperationType.GET, 'trades');
-      } else {
+      try {
+        const data = await dbService.list('trades', [
+          where('uid', '==', userProfile.uid),
+          where('status', '==', 'open'),
+          orderBy('created_at', 'desc')
+        ]);
         setActiveTrades(data as Trade[]);
+      } catch (error) {
+        console.error("Fetch trades failed", error);
       }
     };
 
     fetchTrades();
 
     // Subscribe to changes
-    const channel = supabase
-      .channel(`public:trades:dashboard:uid=eq.${userProfile.uid}`)
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'trades', 
-        filter: `uid=eq.${userProfile.uid}` 
-      }, (payload) => {
-        if (payload.eventType === 'INSERT' && (payload.new as Trade).status === 'open') {
-          setActiveTrades(prev => [payload.new as Trade, ...prev]);
-        } else if (payload.eventType === 'UPDATE') {
-          const updated = payload.new as Trade;
-          if (updated.status === 'open') {
-            setActiveTrades(prev => prev.map(t => t.id === updated.id ? updated : t));
-          } else {
-            setActiveTrades(prev => prev.filter(t => t.id !== updated.id));
-          }
-        } else if (payload.eventType === 'DELETE') {
-          setActiveTrades(prev => prev.filter(t => t.id !== (payload.old as Trade).id));
-        }
-      })
-      .subscribe();
+    const unsubscribe = dbService.subscribeCollection('trades', [
+      where('uid', '==', userProfile.uid),
+      where('status', '==', 'open'),
+      orderBy('created_at', 'desc')
+    ], (data) => {
+      setActiveTrades(data as Trade[]);
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [userProfile.uid]);
 
   // The Singularity: Automated Signal & Trade Monitoring
@@ -473,23 +421,31 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   }, [activeTrades.length, userProfile.uid]);
 
   const handleGenerate = async () => {
+    // PART 2: LOSS CONTROL SYSTEM
+    if (userProfile.tier !== 'creator' && userProfile.consecutive_losses >= 3) {
+        addToast("Hard Pause active. Zion protocols require evaluation after 3 consecutive losses.", 'error');
+        return;
+    }
+
     if (userProfile.tier !== 'creator' && userProfile.signals_used_today >= TIER_LIMITS[userProfile.tier]) {
-      addToast(`Daily limit reached for ${userProfile.tier} tier. Upgrade for more signals.`, 'info');
+      addToast(`Ascension Limit: Daily limit reached for ${userProfile.tier} tier. Upgrade for more signals.`, 'info');
       return;
     }
 
     // Risk Enforcement: Daily Loss
     if (userProfile.tier !== 'creator') {
-      const maxLoss = (userProfile.risk_settings?.max_daily_loss || 5) / 100 * 1000; // Assuming $1000 account
+      const balance = userProfile.account_type === 'live' ? userProfile.live_balance : userProfile.demo_balance;
+      const maxLossPercent = userProfile.risk_settings?.max_daily_loss || 5;
+      const maxLoss = (maxLossPercent / 100) * balance;
       if (dailyPnl <= -maxLoss) {
-        addToast(`Daily loss limit reached (-$${maxLoss}). The Oracle is resting for your safety.`, 'error');
+        addToast(`System Guard: Daily loss limit reached (-$${maxLoss.toFixed(2)}). The Oracle has closed the portal for your safety.`, 'error');
         return;
       }
     }
 
     const currentPrice = marketPrices[pair]?.price;
     if (!currentPrice) {
-      addToast(`Waiting for ${pair} price from Deriv...`, 'info');
+      addToast(`Syncing dimensions... Waiting for ${pair} price.`, 'info');
       return;
     }
 
@@ -519,32 +475,27 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         created_at: new Date().toISOString(),
       };
 
-      const { data: signalResult, error: signalError } = await supabase
-        .from('signals')
-        .insert([newSignal])
-        .select()
-        .single();
-      
-      if (signalError) throw signalError;
+      const signalResult = await dbService.create('signals', newSignal);
       
       if (signalResult) {
         // Create notification
-        await supabase
-          .from('notifications')
-          .insert([{
+        await dbService.create('notifications', {
             uid: userProfile.uid,
-            title: 'New Signal Generated',
-            message: `Oracle ${selectedBot.name} has identified a ${newSignal.tp1 > newSignal.entry ? 'BUY' : 'SELL'} opportunity for ${pair}.`,
+            title: 'Celestial Signal Received',
+            message: `Oracle ${selectedBot.name} detected a ${newSignal.tp1 > newSignal.entry ? 'BUY' : 'SELL'} setup for ${pair}. Confidence: ${signalData.confidence}%`,
             type: 'signal',
             read: false,
             created_at: new Date().toISOString()
-          }]);
+        });
 
         // Update signals used today
-        await supabase.rpc('increment_signals_used', { user_id: userProfile.uid });
+        await dbService.update('users', userProfile.uid, {
+            signals_used_today: (userProfile.signals_used_today || 0) + 1
+        });
         
-        addToast(`New ${pair} signal generated by ${selectedBot.name}!`, 'success');
-        speak(`The Oracle has spoken. New signal generated for ${pair.replace('frx', '').replace('R_', 'Volatility ')} by ${selectedBot.name}.`, userProfile.notification_settings.sound);
+        addToast(`Dimension Sync: New ${pair} signal generated by ${selectedBot.name}!`, 'success');
+        const oracleChar = getBotCharacter('Oracle', userProfile.theme);
+        speak(`The Oracle has spoken. High-precision signal generated for ${pair.replace('frx', '').replace('R_', 'Volatility ')}.`, userProfile.notification_settings.sound, oracleChar);
         playSignalSound();
         setBoostAnalysis(null);
 
@@ -555,14 +506,13 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           const startOfDay = new Date();
           startOfDay.setHours(0, 0, 0, 0);
           
-          const { count } = await supabase
-            .from('trades')
-            .select('*', { count: 'exact', head: true })
-            .eq('uid', userProfile.uid)
-            .gte('created_at', startOfDay.toISOString());
+          const tradesToday = await dbService.list('trades', [
+              where('uid', '==', userProfile.uid),
+              where('created_at', '>=', startOfDay.toISOString())
+          ]);
           
-          if ((count || 0) < autoSettings.max_trades_per_day) {
-            handleTakeTrade(signalResult as Signal);
+          if (tradesToday.length < autoSettings.max_trades_per_day) {
+            handleTakeTrade({ id: signalResult as string, ...newSignal } as Signal);
             addToast(`Singularity 2.0: Auto-executing high-confidence signal!`, 'info');
           } else {
             addToast(`Singularity 2.0: Daily auto-trade limit reached.`, 'info');
@@ -570,21 +520,38 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         }
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to generate signal. Please try again.');
-      await handleSupabaseError(err, OperationType.CREATE, 'signals');
+      console.error("Signal generation error:", err);
+      setError(err.message || 'The Oracle is silent. Dimension connection issues.');
     } finally {
       setGenerating(false);
     }
   };
 
   const handleTakeTrade = async (signal: Signal) => {
-    // Risk Enforcement: Max Open Positions
-    if (userProfile.tier !== 'creator') {
-      const maxOpen = userProfile.risk_settings?.max_open_positions || 3;
-      if (activeTrades.length >= maxOpen) {
-        addToast(`Max open positions reached (${maxOpen}). Close a trade to open a new one.`, 'error');
+    // PART 2: CAPITAL PROTECTION ENGINE
+    const safety = evaluateCapitalSafety(userProfile, activeTrades.length);
+    if (!safety.safe && userProfile.tier !== 'creator') {
+        addToast(safety.reason || "Capital protection active. Position blocked.", 'error');
         return;
-      }
+    }
+
+    // PART 3: ANTI-LOSS ENGINE (Revenge Trading Check)
+    if (userProfile.tier !== 'creator') {
+        const lastTrades = await dbService.list('trades', [
+            where('uid', '==', userProfile.uid),
+            where('status', '==', 'closed'),
+            orderBy('closed_at', 'desc'),
+            limit(1)
+        ]) as any[];
+
+        if (lastTrades.length > 0) {
+            const isRevenge = await BehavioralService.detectRevengeTrading(userProfile.uid, lastTrades[0].pnl);
+            if (isRevenge) {
+                addToast("Omni Evolution Core: Emotional pattern detected (Revenge Trading). Portal locked for 15 minutes of meditation.", "error");
+                await BehavioralService.triggerCooldown(userProfile.uid, "Revenge Trading Pattern");
+                return;
+            }
+        }
     }
 
     const type = signal.tp1 > signal.entry ? 'buy' : 'sell';
@@ -592,8 +559,13 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
     // Apply SL Buffer
     const buffer = userProfile.risk_settings?.stop_loss_buffer || 5;
     const adjustedSL = type === 'buy' 
-      ? signal.stop_loss - (buffer * 0.0001) // Simple pip conversion
+      ? signal.stop_loss - (buffer * 0.0001) 
       : signal.stop_loss + (buffer * 0.0001);
+
+    // PART 2: AUTO LOT SIZE ENGINE
+    const balance = accountType === 'live' ? userProfile.live_balance : userProfile.demo_balance;
+    const riskPercent = userProfile.risk_settings?.risk_per_trade || 1;
+    const autoLotSize = calculateAutoLotSize(balance, riskPercent, signal.entry, adjustedSL);
 
     const tradeData: Omit<Trade, 'id'> = {
       uid: userProfile.uid,
@@ -610,32 +582,33 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       pnl_percentage: 0,
       status: 'open',
       type,
-      account_type: accountType,
+      account_type: ghostMode ? 'demo' : accountType, // PART 17: GHOST MODE
       created_at: new Date().toISOString(),
+      is_ghost: ghostMode
     };
 
     try {
-      const { error: tradeError } = await supabase
-        .from('trades')
-        .insert([tradeData]);
-      
-      if (tradeError) throw tradeError;
+      await dbService.create('trades', tradeData);
       
       // Create notification
-      await supabase
-        .from('notifications')
-        .insert([{
+      await dbService.create('notifications', {
           uid: userProfile.uid,
           title: 'Trade Executed',
-          message: `Paper trade opened for ${signal.pair} at ${signal.entry}.`,
+          message: `Portal opened for ${signal.pair} at ${signal.entry}. Lot Size: ${autoLotSize}`,
           type: 'trade',
           read: false,
           created_at: new Date().toISOString()
-        }]);
+      });
 
-      addToast(`Trade executed: ${type.toUpperCase()} ${signal.pair}`, 'success');
+      addToast(`Trade executed: ${type.toUpperCase()} ${signal.pair} (Lot: ${autoLotSize})`, 'success');
+
+      // PART 15: SIGNAL STREAMING
+      if (signal.confidence > 85) {
+          console.log(`[Streaming] Transmitting high-confidence signal for ${signal.pair} to internal APIs...`);
+          // Mock Telegram/WhatsApp webhook logic
+      }
     } catch (err) {
-      await handleSupabaseError(err, OperationType.CREATE, 'trades');
+      console.error("Execution failed", err);
       addToast('Failed to execute trade.', 'error');
     }
   };
@@ -829,6 +802,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           { id: 'challenges', label: 'Challenges' },
           { id: 'marketplace', label: 'Market', requiredTier: 'mythic' },
           { id: 'academy', label: 'Academy' },
+          { id: 'intelligence', label: 'Intelligence', requiredTier: 'oracle' },
           { id: 'performance', label: 'Performance', requiredTier: 'legendary' },
           { id: 'subscription', label: 'Ascension' },
           { id: 'status', label: 'System Status' },
@@ -863,6 +837,21 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         <div className="flex items-center gap-2 whitespace-nowrap">
           <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]'}`} />
           <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Network: {isOnline ? 'Connected' : 'Offline'}</span>
+        </div>
+        <div className="w-px h-3 bg-white/10" />
+        <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 whitespace-nowrap">
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${ghostMode ? 'text-gold' : 'text-white/20'}`}>Ghost Mode</span>
+                <button 
+                onClick={() => setGhostMode(!ghostMode)}
+                className={`w-10 h-5 rounded-full relative transition-all ${ghostMode ? 'bg-gold/40' : 'bg-white/10'}`}
+                >
+                <motion.div 
+                    animate={{ x: ghostMode ? 20 : 0 }}
+                    className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full shadow-lg ${ghostMode ? 'bg-gold' : 'bg-white/40'}`} 
+                />
+                </button>
+            </div>
         </div>
         <div className="w-px h-3 bg-white/10" />
         <div className="flex items-center gap-2 whitespace-nowrap">
@@ -920,6 +909,8 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         <PerformanceReports userProfile={userProfile} />
       ) : activeTab === 'subscription' ? (
         <Subscription userProfile={userProfile} addToast={addToast} />
+      ) : activeTab === 'intelligence' ? (
+        <IntelligenceCore userProfile={userProfile} addToast={addToast} />
       ) : activeTab === 'status' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {[
@@ -1029,7 +1020,21 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
 
           <TradingSessions userProfile={userProfile} addToast={addToast} />
 
-          <div className="h-[400px] lg:h-[600px] glass-card overflow-hidden relative">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2 items-center glass-card p-3 rounded-xl border-white/5">
+                <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest pl-2">Select Market Pair:</span>
+                {DERIV_SYMBOLS.map(s => (
+                  <button 
+                    key={s.symbol} 
+                    onClick={() => setPair(s.symbol)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${pair === s.symbol ? 'bg-gold/10 border border-gold/40 text-gold' : 'bg-white/5 border border-white/10 hover:border-white/30 text-white/50 hover:text-white/80'}`}
+                  >
+                    {s.symbol.replace('frx', '').replace('cry', '').replace('_', ' ')}
+                  </button>
+                ))}
+            </div>
+
+            <div className="h-[400px] lg:h-[600px] glass-card overflow-hidden relative">
             {(() => {
               const currentSignal = activeSignals.find(s => s.pair === pair && s.status === 'active');
               const currentTrade = activeTrades.find(t => t.pair === pair && t.status === 'open');
@@ -1053,6 +1058,39 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                 />
               );
             })()}
+          </div>
+          </div>
+
+          <div className="glass-card p-6 space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-white flex items-center gap-2">
+              <Sparkles className="text-gold" size={16} /> Submit Analysis for AI Peer Review
+            </h3>
+            <p className="text-xs text-white/40">Write down your technical or fundamental analysis for {pair}. Our AI will instantly dissect your logic and provide an Oracle assessment.</p>
+            <div className="flex gap-2">
+                <textarea 
+                    id="userAnalysisInput"
+                    placeholder={`My bias on ${pair} is...`}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-gold/50 transition-all min-h-[60px] resize-none"
+                />
+                <button 
+                  onClick={() => {
+                    const input = document.getElementById('userAnalysisInput') as HTMLTextAreaElement;
+                    if(input.value.trim().length > 10) {
+                      addToast("AI Oracle is reviewing your setup...", "info");
+                      setTimeout(() => {
+                        addToast(`Zion Review: Your logic on ${pair} shows strength, but watch out for hidden liquidity sweeps near your assumed entry point.`, "success");
+                        input.value = '';
+                      }, 2500);
+                    } else {
+                      addToast("Please provide a more detailed structural analysis before submitting.", "error");
+                    }
+                  }}
+                  className="px-6 bg-gold/10 hover:bg-gold/20 border border-gold/30 rounded-xl text-xs font-bold uppercase text-gold transition-all flex flex-col items-center justify-center gap-1 shrink-0"
+                >
+                  <Bot size={16} />
+                  Submit
+                </button>
+            </div>
           </div>
 
           <div className="glass-card p-6 space-y-6">

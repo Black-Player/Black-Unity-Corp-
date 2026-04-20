@@ -26,6 +26,7 @@ export const RiskManagement: React.FC<RiskManagementProps> = ({ userProfile, add
     stop_loss_buffer: 5,
     max_daily_trades: 10,
     max_drawdown_limit: 15,
+    prop_firm_mode: false,
     trading_hours: {
       start: '08:00',
       end: '20:00',
@@ -48,7 +49,7 @@ export const RiskManagement: React.FC<RiskManagementProps> = ({ userProfile, add
       
       addToast('Risk Management Settings Updated!', 'success');
     } catch (err: any) {
-      handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
+      await handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
       addToast(err.message, 'error');
     } finally {
       setSaving(false);
@@ -57,6 +58,44 @@ export const RiskManagement: React.FC<RiskManagementProps> = ({ userProfile, add
 
   return (
     <div className="space-y-8">
+      {/* PHASE 21: PROP FIRM MODE */}
+      <div className={`glass-card p-8 border-2 transition-all relative overflow-hidden ${settings.prop_firm_mode ? 'border-purple-500/50 bg-purple-500/10' : 'border-white/10 bg-white/5'}`}>
+         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+            <Target size={120} className={settings.prop_firm_mode ? 'text-purple-400' : 'text-white/40'} />
+         </div>
+         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <h2 className={`text-2xl font-display font-bold flex items-center gap-3 ${settings.prop_firm_mode ? 'text-purple-400 drop-shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'text-white/60'}`}>
+                {settings.prop_firm_mode ? 'Phase 21: Prop Firm Mode Active' : 'Phase 21: Prop Firm Mode'}
+              </h2>
+              <p className="text-white/40 mt-2 max-w-2xl text-sm leading-relaxed">
+                Aggressively tightens all risk parameters to comply with standard Prop Firm challenge rules. Limits daily loss to 4.5% and max drawdown to 9.5%. Disables weekend and high-impact news trading entirely.
+              </p>
+            </div>
+            <button 
+              onClick={() => {
+                if (!settings.prop_firm_mode) {
+                  setSettings({
+                    ...settings,
+                    prop_firm_mode: true,
+                    max_daily_loss: 4.5,
+                    max_drawdown_limit: 9.5,
+                    risk_per_trade: 0.5,
+                    max_daily_trades: 5
+                  });
+                  addToast('Prop Firm Protocol Engaged. Risk tightened severely.', 'info');
+                } else {
+                  setSettings({ ...settings, prop_firm_mode: false });
+                  addToast('Prop Firm Protocol Disabled.', 'info');
+                }
+              }}
+              className={`px-8 py-4 rounded-xl font-bold tracking-widest uppercase transition-all whitespace-nowrap ${settings.prop_firm_mode ? 'bg-red-500/20 text-red-400 border border-red-500/50 hover:bg-red-500/40' : 'bg-purple-500/20 text-purple-400 border border-purple-500/50 hover:bg-purple-500/40'}`}
+            >
+              {settings.prop_firm_mode ? 'Disable Protocol' : 'Engage Protocol'}
+            </button>
+         </div>
+      </div>
+
       <div className="glass-card p-8 border-gold/20 bg-gold/5 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
           <Shield size={120} className="text-gold" />

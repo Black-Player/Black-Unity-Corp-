@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { dbService } from '../services/dbService';
+import { where } from 'firebase/firestore';
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Book, Plus, Trash2, TrendingUp, TrendingDown, Clock, Tag, MessageSquare, Brain, Sparkles, Filter, Save } from 'lucide-react';
+import { Book, Plus, Trash2, TrendingUp, TrendingDown, Clock, Tag, MessageSquare, Brain, Sparkles, Filter, Save, Download } from 'lucide-react';
 
 interface JournalEntry {
   id: string;
@@ -43,7 +45,7 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
         .order('created_at', { ascending: false });
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'journal');
+        await handleSupabaseError(error, OperationType.GET, 'journal');
       } else {
         setEntries(data as JournalEntry[]);
       }
@@ -65,6 +67,51 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
       supabase.removeChannel(channel);
     };
   }, [userProfile.uid]);
+
+  const handleExportRecord = async () => {
+      try {
+          addToast("Retrieving Immortal Trade Record...", "info");
+          const trades = await dbService.list('trades', [
+              where('uid', '==', userProfile.uid),
+              where('status', '==', 'closed')
+          ]);
+          
+          if (!trades || trades.length === 0) {
+              addToast("No closed trades found in the archives.", "info");
+              return;
+          }
+
+          let csvContent = "data:text/csv;charset=utf-8,";
+          csvContent += "ID,Pair,Type,Entry Price,Closing Price,P/L,Close Reason,Closed At\n";
+
+          trades.forEach((trade: any) => {
+              const row = [
+                  trade.id,
+                  trade.pair,
+                  trade.type,
+                  trade.entry_price,
+                  trade.exit_price ||trade.current_price, // fallback
+                  trade.pnl,
+                  trade.close_reason || 'Unknown',
+                  trade.closed_at || ''
+              ].join(",");
+              csvContent += row + "\r\n";
+          });
+
+          const encodedUri = encodeURI(csvContent);
+          const link = document.createElement("a");
+          link.setAttribute("href", encodedUri);
+          link.setAttribute("download", `immortal_trade_record_${new Date().toISOString().split('T')[0]}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          addToast("Immortal Trade Record Downloaded.", "success");
+      } catch (err) {
+          addToast("Failed to retrieve Immortal Record.", "error");
+          console.error(err);
+      }
+  };
 
   const handleAddEntry = async () => {
     if (!newEntry.pair || !newEntry.notes) return;
@@ -94,7 +141,7 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
       });
       addToast('Journal entry etched in the cosmic archive.', 'success');
     } catch (err) {
-      handleSupabaseError(err, OperationType.CREATE, 'journal');
+      await handleSupabaseError(err, OperationType.CREATE, 'journal');
       addToast('Failed to save entry.', 'error');
     }
   };
@@ -109,7 +156,7 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
       if (error) throw error;
       addToast('Entry removed from the archive.', 'info');
     } catch (err) {
-      handleSupabaseError(err, OperationType.DELETE, 'journal');
+      await handleSupabaseError(err, OperationType.DELETE, 'journal');
       addToast('Failed to delete entry.', 'error');
     }
   };
@@ -129,12 +176,20 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
           <h1 className="text-3xl font-display font-bold gold-gradient">The Archive</h1>
           <p className="text-white/40">Reflect on your prophecies, analyze your emotions, and master the self.</p>
         </div>
-        <button 
-          onClick={() => setIsAdding(true)}
-          className="gold-button px-6 py-2 flex items-center gap-2"
-        >
-          <Plus size={18} /> New Entry
-        </button>
+        <div className="flex gap-4">
+            <button 
+                onClick={handleExportRecord}
+                className="px-6 py-2 border border-gold/40 text-gold hover:bg-gold hover:text-black rounded-lg font-bold transition-all flex items-center gap-2"
+            >
+                <Download size={18} /> Immortal Record
+            </button>
+            <button 
+              onClick={() => setIsAdding(true)}
+              className="gold-button px-6 py-2 flex items-center gap-2"
+            >
+              <Plus size={18} /> New Entry
+            </button>
+        </div>
       </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

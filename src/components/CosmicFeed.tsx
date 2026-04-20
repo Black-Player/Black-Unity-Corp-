@@ -33,7 +33,7 @@ export default function CosmicFeed({ userProfile, addToast }: { userProfile: Use
         .limit(20);
       
       if (error) {
-        handleSupabaseError(error, OperationType.GET, 'posts');
+        await handleSupabaseError(error, OperationType.GET, 'posts');
       } else {
         setPosts(data as Post[]);
       }
@@ -86,7 +86,7 @@ export default function CosmicFeed({ userProfile, addToast }: { userProfile: Use
       setNewPost('');
       addToast('Prophecy shared with the tribe.', 'success');
     } catch (error) {
-      console.error(error);
+      await handleSupabaseError(error, OperationType.CREATE, 'posts');
       addToast('Failed to share ritual', 'error');
     }
   };
@@ -107,7 +107,7 @@ export default function CosmicFeed({ userProfile, addToast }: { userProfile: Use
       
       if (error) throw error;
     } catch (error) {
-      console.error(error);
+      await handleSupabaseError(error, OperationType.UPDATE, 'posts');
     }
   };
 

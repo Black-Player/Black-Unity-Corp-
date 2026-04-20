@@ -96,7 +96,7 @@ export default function TradingSessions({ userProfile, addToast }: TradingSessio
         addToast(`Subscribed to ${sessionName} session rituals. Oracle will monitor closely.`, 'success');
       }
     } catch (err) {
-      handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
+      await handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
       addToast('Failed to update cosmic subscription.', 'error');
     }
   };

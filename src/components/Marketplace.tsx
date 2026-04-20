@@ -33,7 +33,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ userProfile, addToast 
         if (error) throw error;
         setItems(data as MarketplaceItem[]);
       } catch (err) {
-        handleSupabaseError(err, OperationType.GET, 'marketplace');
+        await handleSupabaseError(err, OperationType.GET, 'marketplace');
       }
     };
 
@@ -77,7 +77,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ userProfile, addToast 
       setShowListModal(false);
       setNewItem({ name: '', description: '', price: 0, type: 'strategy' });
     } catch (err: any) {
-      handleSupabaseError(err, OperationType.WRITE, 'marketplace');
+      await handleSupabaseError(err, OperationType.WRITE, 'marketplace');
       addToast(err.message, 'error');
     } finally {
       setListing(false);
@@ -111,7 +111,7 @@ export const Marketplace: React.FC<MarketplaceProps> = ({ userProfile, addToast 
 
       addToast(`Successfully acquired ${item.name}!`, 'success');
     } catch (err: any) {
-      handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
+      await handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
       addToast(err.message, 'error');
     }
   };

@@ -58,46 +58,33 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       - Personality: ${bot.personality || 'analytical'}
       ${chartAnalysis ? `- Oracle Eye Visionary Analysis: ${JSON.stringify(chartAnalysis)}` : ''}
       
-      Task: Generate a high-probability "NOW" trading signal with extreme precision.
+      Task: Generate a high-probability "NOW" trading signal as the Omni Evolution Core.
       The "entry" MUST be the current price: ${currentPrice}.
       
-      PERSONALITY GUIDELINES:
-      - If personality is "mystical": Use prophetic and cosmic language in the analysis.
-      - If personality is "analytical": Be extremely data-driven and precise.
-      - If personality is "aggressive": Look for bold entries with higher RR.
-      - If personality is "stoic": Be calm, conservative, and focus on high-probability setups.
+      OMNI EVOLUTION CORE DIRECTIVES:
+      1. STRUCTURE VALIDATION (Part 1):
+         - BOS (Break of Structure) or CHOCH (Change of Character) is MANDATORY.
+         - If no clear structure exists, return a signal with confidence < 20 and explicitly state "NO STRUCTURE DETECTED".
+      2. LIQUIDITY VALIDATION (Part 1):
+         - Identify liquidity pools.
+         - Confirm a sweep or inducement. No liquidity focus? Confidence < 20.
+      3. MULTI-TIMEFRAME ALIGNMENT (Part 1):
+         - H4 / H1 defines the BIAS.
+         - M15 / M5 provides the ENTRY.
+         - If alignment is missing, return confidence < 20.
+      4. MARKET PERSONALITY (Part 16):
+         - Detect if market is Trending, Ranging, or Volatile.
+         - Adapt the strategy accordingly.
+      5. BEHAVIORAL INTEL (Part 5):
+         - Identify the "Retail Trap" and position our trade with the Smart Money.
+      6. ORACLE EYE VALIDATION (Phase 8):
+         - If market volatility is high but structure is hidden, you may return confidence < 30 and specifically request an "Oracle Eye Boost" in the analysis to confirm visual structure.
       
-      RISK PROFILE GUIDELINES:
-      - If risk profile is "conservative": Tighten SL, aim for TP1/TP2.
-      - If risk profile is "aggressive" or "cosmic": Allow wider SL for bigger moves, aim for TP3/TP4.
-      
-      PRE-ANALYSIS FILTERS (Extreme Strictness - NO EXCEPTIONS):
-      1. **Market Structure Alignment (HTF Dominance)**: The signal MUST align with the Higher Time Frame (H4/D1) bias. If HTF is bearish, only SELL signals are valid unless a clear Change of Character (CHoCH) AND a confirmed Break of Structure (BOS) have occurred on the LTF (M15/M5). No "counter-trend" trades allowed unless at a major HTF reversal zone.
-      2. **Liquidity Sweep & Institutional Inducement**: A signal is ONLY valid if a recent liquidity sweep (Buy-side or Sell-side) or "Inducement" has occurred. We do not enter "fair value" markets; we enter where retail traders are being stopped out. Identify the "Stop Run" before the move.
-      3. **Volume & Volatility (Institutional Footprint)**: Confirm that the current volume and volatility (ATR/Bollinger) support a directional move. Avoid "choppy" or "sideways" markets. Look for "displacement" (aggressive, large-bodied candles) as a sign of institutional participation.
-      4. **Session Timing (Killzones)**: Signals generated during London (07:00-10:00 UTC) or New York (12:00-15:00 UTC) Killzones have 2x weight. Asian session signals must have extreme confluence (e.g., clear range expansion or specific synthetic index volatility).
-      5. **Risk/Reward Ratio**: If the projected RR to TP1 is less than 1:2, the signal is INVALID. We only take high-asymmetry setups.
-      
-      Technical Analysis Requirements (Advanced Logic):
-      1. **Smart Money Concepts (SMC) & ICT**: 
-         - Identify the "Premium vs Discount" zones using Fibonacci (0.5 level). Only buy in discount, only sell in premium.
-         - Locate the "Point of Interest" (POI): Order Block (OB), Breaker Block, or Mitigation Block.
-         - Identify "Fair Value Gaps" (FVG) and "Liquidity Voids". Look for "Balanced Price Action" vs "Imbalance".
-         - Confirm the "Entry Model": Look for a LTF CHoCH after hitting a HTF POI. Use the "Silver Bullet" or "Unicorn" models if applicable.
-      2. **Market Maker Model (MMM)**: 
-         - Analyze the "Power of 3" (Accumulation, Manipulation, Distribution). Identify the "Judas Swing" (the fake move before the real move).
-         - Determine if the market is in a "Market Maker Buy Model" (MMBM) or "Market Maker Sell Model" (MMSM) based on the curve.
-      3. **Supply & Demand (S&D)**: Identify "Fresh" zones. A zone that has been tested multiple times is WEAK. Look for "Rally-Base-Rally" or "Drop-Base-Drop" for continuation.
-      4. **Confluence Indicators**: 
-         - RSI: Look for "Hidden Divergence" for trend continuation or "Regular Divergence" for reversals.
-         - MACD: Look for "Zero-Line Rejection" or "Momentum Crosses".
-         - Bollinger Bands: Look for "Squeezes" followed by "Expansion".
-      5. **Fibonacci OTE**: Use 62%, 70.5%, and 79% levels for precise entry.
-      6. Provide 4 **expansive and ambitious** Take Profit levels (tp1, tp2, tp3, tp4). TP1 is a "Liquidity Target" (recent high/low), TP4 is a "Structural Target" (HTF POI). **ENSURE HIGH ASYMMETRY (e.g., 1:3 to 1:10+ RR).**
-      7. Provide a **tight and precise** Stop Loss (stop_loss). Place it behind the "Manipulation High/Low" or the "Order Block" that caused the displacement. **PRIORITIZE A SMALL STOP LOSS TO MAXIMIZE RISK/REWARD.**
-      8. Calculate a recommended lot size based on a standard $1000 account with 1% risk.
-      9. **Psychology**: Explain the "Retail Trap" - why are retail traders likely buying/selling here, and how are we trading against them?
-      ${chartAnalysis ? '10. Incorporate the visual evidence from the Oracle Eye analysis into your final confluence.' : ''}
+      Technical Requirements:
+      - SMC/ICT focused (OB, FVG, POIs).
+      - Risk/Reward: Target minimum 1:2 RR for TP2.
+      - Stop Loss: Structure-based and volatility-aware.
+      - Multi-TP System: TP1 (Secure Profit), TP2 (Main), TP3 (Extended), TP4 (Moon/HTF).
       
       Return the signal in JSON format with the following fields:
       - entry: number
@@ -108,19 +95,23 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       - tp4: number
       - risk_reward: number
       - confidence: number (0-100)
-      - market_structure: string (e.g., "Bullish BOS", "Bearish CHoCH", "Ranging")
-      - liquidity_presence: boolean (true if liquidity sweep/pool identified)
-      - volatility_validation: boolean (true if volatility is sufficient)
-      - session_timing: string (e.g., "London Open", "NY Killzone", "Asian Range")
-      - confirmations_count: number (total number of confluence factors)
-      - analysis: string (detailed explanation including indicator confluence)
-      - recommended_lot_size: number (suggested lot size for a $1000 account with 1% risk)`;
+      - market_structure: string
+      - bos_detected: boolean
+      - choch_detected: boolean
+      - liquidity_swept: boolean
+      - primary_poi: string
+      - session_timing: string
+      - analysis: string (detailed confluence explanation)
+      - psychological_trap: string (explaining the retail trap)
+      - strategy_type: string
+      - market_personality: "trending" | "ranging" | "volatile"
+      - recommended_lot_size: number`;
 
     const response = await ai.models.generateContent({
       model,
       contents: prompt,
       config: {
-        systemInstruction: SYSTEM_ROLE + "\n\nYou are currently in SIGNAL MODE. Provide precise, data-backed trade setups with strict pre-analysis filters.",
+        systemInstruction: SYSTEM_ROLE + "\n\nYou are the Omni Evolution Core. You are not a signal tool; you are a strategist, protector, and teacher. Protect capital first. Improve accuracy through SMC/ICT confluence. Evolve continuously.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -133,15 +124,24 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
             tp4: { type: Type.NUMBER },
             risk_reward: { type: Type.NUMBER },
             confidence: { type: Type.INTEGER },
+            bos_detected: { type: Type.BOOLEAN },
+            choch_detected: { type: Type.BOOLEAN },
+            liquidity_swept: { type: Type.BOOLEAN },
+            primary_poi: { type: Type.STRING },
             market_structure: { type: Type.STRING },
-            liquidity_presence: { type: Type.BOOLEAN },
-            volatility_validation: { type: Type.BOOLEAN },
+            market_personality: { type: Type.STRING, enum: ["trending", "ranging", "volatile"] },
             session_timing: { type: Type.STRING },
-            confirmations_count: { type: Type.INTEGER },
             analysis: { type: Type.STRING },
+            psychological_trap: { type: Type.STRING },
+            strategy_type: { type: Type.STRING },
             recommended_lot_size: { type: Type.NUMBER },
           },
-          required: ["entry", "stop_loss", "tp1", "tp2", "tp3", "tp4", "risk_reward", "confidence", "market_structure", "liquidity_presence", "volatility_validation", "session_timing", "confirmations_count", "analysis", "recommended_lot_size"],
+          required: [
+            "entry", "stop_loss", "tp1", "tp2", "tp3", "tp4", 
+            "risk_reward", "confidence", "bos_detected", "choch_detected", 
+            "liquidity_swept", "primary_poi", "market_structure", "market_personality",
+            "session_timing", "analysis", "psychological_trap", "strategy_type", "recommended_lot_size"
+          ],
         },
       },
     });

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase, handleSupabaseError, OperationType, isSupabaseConfigured } from './supabase';
-import { User } from '@supabase/supabase-js';
+import { supabase, handleSupabaseError, OperationType, isSupabaseConfigured, supabaseConfigStatus, pingSupabase } from './supabase';
+import { auth as firebaseAuth } from './firebase';
+import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { dbService } from './services/dbService';
+import { BehavioralService } from './services/behavioralService';
 import { Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, EconomicEvent, PriceAlert, MasterStrategy, Tribe, Challenge, MarketplaceItem, MarketNews, UserProgress, UserProfile } from './types';
 import Auth from './components/Auth';
 import Sidebar from './components/Sidebar';
@@ -77,7 +80,7 @@ export default function App() {
     };
     if (isSupabaseConfigured) testConnection();
   }, []);
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +89,8 @@ export default function App() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
+  const [pingStatus, setPingStatus] = useState<{ success: boolean; message: string } | null>(null);
+  
   useEffect(() => {
     (window as any).openSearch = () => setIsSearchOpen(true);
   }, []);
@@ -102,23 +106,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (!session?.user) {
+    if (isSupabaseConfigured) {
+      pingSupabase().then(setPingStatus);
+    }
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (firebaseUser) => {
+      setUser(firebaseUser);
+      if (!firebaseUser) {
         setUserProfile(null);
         setLoading(false);
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (!session?.user) {
-        setUserProfile(null);
-        setLoading(false);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -128,25 +130,16 @@ export default function App() {
       // Initial fetch
       const fetchProfile = async () => {
         try {
-          const { data, error } = await supabase
-            .from('users')
-            .select('*')
-            .eq('uid', user.id)
-            .single();
+          const profile = await dbService.get('users', user.uid);
           
-          if (error) {
-            if (error.code === 'PGRST116') {
-              console.warn('User profile not found in Supabase');
+          if (!profile) {
+              console.warn('User profile not found in database');
               setError('User profile not found. Please ensure you are registered correctly.');
-            } else {
-              await handleSupabaseError(error, OperationType.GET, 'users');
-            }
           } else {
-            setUserProfile(data as UserProfile);
+            setUserProfile(profile as UserProfile);
           }
           setLoading(false);
         } catch (err) {
-          console.error('Supabase fetch error:', err);
           setError('Could not reach the database. Please check your connection or configuration.');
           setLoading(false);
         }
@@ -155,21 +148,11 @@ export default function App() {
       fetchProfile();
 
       // Subscribe to changes
-      const channel = supabase
-        .channel(`public:users:uid=eq.${user.id}`)
-        .on('postgres_changes', { 
-          event: '*', 
-          schema: 'public', 
-          table: 'users', 
-          filter: `uid=eq.${user.id}` 
-        }, (payload) => {
-          setUserProfile(payload.new as UserProfile);
-        })
-        .subscribe();
+      const unsubscribe = dbService.subscribe('users', user.uid, (data) => {
+        if (data) setUserProfile(data as UserProfile);
+      });
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
+      return () => unsubscribe();
     }
   }, [user]);
 
@@ -184,20 +167,14 @@ export default function App() {
         if (today !== lastReset && lastResetRef.current !== today) {
           lastResetRef.current = today;
           
-          supabase
-            .from('users')
-            .update({
+          dbService.update('users', user.uid, {
               signals_used_today: 0,
               last_reset_date: new Date().toISOString()
-            })
-            .eq('uid', user.id)
-            .then(({ error }) => {
-              if (error) await handleSupabaseError(error, OperationType.UPDATE, 'users');
-            });
+          });
         }
       }
     }
-  }, [user?.id, userProfile?.last_reset_date]);
+  }, [user?.uid, userProfile?.last_reset_date]);
 
   useEffect(() => {
     if (userProfile?.theme) {
@@ -214,43 +191,68 @@ export default function App() {
       const finalPnlPercentage = trade.pnl_percentage || 0;
       const exitPrice = trade.exit_price || trade.entry_price;
 
-      const { error: tradeError } = await supabase
-        .from('trades')
-        .update({
-          status: 'closed',
-          closed_at: new Date().toISOString(),
-          pnl: finalPnl,
-          pnl_percentage: finalPnlPercentage,
-          exit_price: exitPrice,
-          close_reason: reason
-        })
-        .eq('id', trade.id);
+      await dbService.update('trades', trade.id, {
+        status: 'closed',
+        closed_at: new Date().toISOString(),
+        pnl: finalPnl,
+        pnl_percentage: finalPnlPercentage,
+        exit_price: exitPrice,
+        close_reason: reason
+      });
+
+      // Omni Evolution: Auto Journaling Activity
+      await BehavioralService.journalActivity(userProfile.uid, 'TRADE_CLOSED', {
+        tradeId: trade.id,
+        pnl: finalPnl,
+        pair: trade.pair,
+        reason
+      });
       
-      if (tradeError) throw tradeError;
-      
-      // Update User Stats
+      // Update User Stats & Loss Control System
       const isWin = finalPnl > 0;
       const balanceField = trade.account_type === 'live' ? 'live_balance' : 'demo_balance';
       
-      const { error: userError } = await supabase.rpc('increment_user_stats', {
-        user_id: userProfile.uid,
-        pnl_change: finalPnl,
-        is_win: isWin,
-        balance_field: balanceField
+      const newConsecutiveLosses = isWin ? 0 : (userProfile.consecutive_losses || 0) + 1;
+      
+      await dbService.update('users', userProfile.uid, {
+        [balanceField]: (userProfile as any)[balanceField] + finalPnl,
+        total_pnl: userProfile.total_pnl + finalPnl,
+        consecutive_losses: newConsecutiveLosses,
+        'stats.total_trades': (userProfile.stats?.total_trades || 0) + 1,
+        'stats.wins': (userProfile.stats?.wins || 0) + (isWin ? 1 : 0),
+        'stats.losses': (userProfile.stats?.losses || 0) + (isWin ? 0 : 1)
       });
 
-      if (userError) {
-        // Fallback if RPC doesn't exist yet
-        await supabase
-          .from('users')
-          .update({
-            [balanceField]: (userProfile as any)[balanceField] + finalPnl,
-            total_pnl: userProfile.total_pnl + finalPnl,
-            'stats.total_trades': (userProfile.stats?.total_trades || 0) + 1,
-            'stats.wins': (userProfile.stats?.wins || 0) + (isWin ? 1 : 0),
-            'stats.losses': (userProfile.stats?.losses || 0) + (isWin ? 0 : 1)
-          })
-          .eq('uid', userProfile.uid);
+      // PHASE 7: OMNI-TIER ASCENSION SYSTEM
+      const ascendedProfile = await BehavioralService.evaluateAscension(userProfile);
+      if (ascendedProfile) {
+          addToast(`Omni Evolution Core: You have Ascended to rank ${ascendedProfile.student_rank} in tier ${ascendedProfile.student_tier}. Expand your vision.`, 'success');
+      }
+
+      // PHASE 11: COSMIC FEED AUTONOMOUS BROADCAST
+      if (finalPnlPercentage >= 15 && trade.account_type === 'live') {
+          try {
+              await dbService.create('social_posts', {
+                  uid: userProfile.uid,
+                  username: userProfile.username || 'Anonymous Sentinel',
+                  avatar_url: userProfile.avatar_url || '',
+                  content: `Just closed a massive trade on ${trade.pair} with +${finalPnlPercentage.toFixed(2)}% ROI natively orchestrated by the Omni Core.`,
+                  type: 'trade_win',
+                  likes: 0,
+                  comments: 0,
+                  created_at: new Date().toISOString()
+              });
+              addToast("Cosmic Sync: Massive win broadcasted to the Social Feed.", "info");
+          } catch(e) {
+              console.error("Cosmic Feed Sync Failed:", e);
+          }
+      }
+
+      // PART 2: LOSS CONTROL SYSTEM
+      if (newConsecutiveLosses === 2) {
+        addToast("Shield Notification: Risk reduced due to performance. Stay disciplined.", 'info');
+      } else if (newConsecutiveLosses >= 3) {
+        addToast("Hard Pause: Trading portals locked for evaluation. Three consecutive losses detected.", 'error');
       }
 
       // Heavenly Order Motivation
@@ -260,20 +262,18 @@ export default function App() {
       }
 
       // Create notification
-      await supabase
-        .from('notifications')
-        .insert([{
-          uid: userProfile.uid,
-          title: `Trade Closed: ${reason}`,
-          message: `${(trade.account_type || 'demo').toUpperCase()} trade for ${trade.pair} closed with ${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)} P/L. Reason: ${reason}`,
-          type: 'trade',
-          read: false,
-          created_at: new Date().toISOString()
-        }]);
+      await dbService.create('notifications', {
+        uid: userProfile.uid,
+        title: `Trade Closed: ${reason}`,
+        message: `${(trade.account_type || 'demo').toUpperCase()} trade for ${trade.pair} closed with ${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)} P/L. Reason: ${reason}.`,
+        type: 'trade',
+        read: false,
+        created_at: new Date().toISOString()
+      });
 
       addToast(`Trade closed: ${trade.pair} (${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)}) - ${reason}`, trade.pnl >= 0 ? 'success' : 'error');
     } catch (err) {
-      console.error(err);
+      console.error("Failed to close trade", err);
       addToast('Failed to close trade.', 'error');
     }
   }, [userProfile, addToast]);
@@ -292,7 +292,53 @@ export default function App() {
             To activate the Zion Trading System, you must connect your Supabase instance.
           </p>
           <div className="bg-black/40 rounded-xl p-4 text-left space-y-4 border border-white/5">
-            <p className="text-xs font-bold uppercase tracking-widest text-white/40">Instructions:</p>
+            <p className="text-xs font-bold uppercase tracking-widest text-white/40">Diagnostic Status:</p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-white/60">VITE_SUPABASE_URL</span>
+                {supabaseConfigStatus.url ? (
+                  <span className="flex items-center gap-1 text-green-400">
+                    <CheckCircle2 size={12} /> Detected
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-red-400">
+                    <XCircle size={12} /> Missing
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-white/60">VITE_SUPABASE_ANON_KEY</span>
+                {supabaseConfigStatus.key ? (
+                  <span className="flex items-center gap-1 text-green-400">
+                    <CheckCircle2 size={12} /> Detected
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-red-400">
+                    <XCircle size={12} /> Missing
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-white/60">NETWORK PING</span>
+                {pingStatus ? (
+                  <span className={`flex items-center gap-1 ${pingStatus.success ? 'text-green-400' : 'text-orange-400'}`}>
+                    {pingStatus.success ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                    {pingStatus.message}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-white/20">
+                    <Loader2 size={12} className="animate-spin" /> testing...
+                  </span>
+                )}
+              </div>
+              {supabaseConfigStatus.url && !supabaseConfigStatus.urlValid && (
+                <div className="mt-2 p-2 bg-red-500/10 border border-red-500/20 rounded text-[10px] text-red-400">
+                  <p>Invalid URL format. Ensure it starts with https://</p>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs font-bold uppercase tracking-widest text-white/40 pt-2 border-t border-white/5">Instructions:</p>
             <ol className="text-sm space-y-3 text-white/80 list-decimal list-inside">
               <li>Open the <span className="text-gold">Settings</span> menu (bottom left).</li>
               <li>Go to the <span className="text-gold">Secrets</span> tab.</li>
@@ -312,23 +358,45 @@ export default function App() {
     return (
       <div className="min-h-screen bg-cosmic-black flex flex-col items-center justify-center space-y-6 p-8">
         <motion.div 
-          animate={{ rotate: 360 }}
+          animate={error ? {} : { rotate: 360 }}
           transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="text-gold"
+          className={error ? "text-red-500" : "text-gold"}
         >
-          <Loader2 size={48} />
+          {error ? <XCircle size={48} /> : <Loader2 size={48} />}
         </motion.div>
-        <div className="text-center space-y-4">
-          <h2 className="text-2xl font-display font-bold gold-gradient animate-pulse">Synchronizing Zion Network</h2>
-          <p className="text-white/40 text-xs uppercase tracking-[0.3em] font-bold">Connecting to the Oracle Feed...</p>
+        <div className="text-center space-y-4 max-w-md">
+          <h2 className={`text-2xl font-display font-bold ${error ? 'text-red-500' : 'gold-gradient animate-pulse'}`}>
+            {error ? 'Connection Failed' : 'Synchronizing Zion Network'}
+          </h2>
+          <p className="text-white/40 text-xs uppercase tracking-[0.3em] font-bold">
+            {error ? 'The interface to the database is broken.' : 'Connecting to the Oracle Feed...'}
+          </p>
           
-          <div className="pt-8">
+          {error && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-left">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-red-400 mb-1">Error Report:</p>
+              <p className="text-sm text-white/80 leading-relaxed font-mono break-words">{error}</p>
+            </div>
+          )}
+
+          <div className="pt-8 flex flex-col gap-3">
             <button 
               onClick={() => window.location.reload()}
-              className="px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] text-white/40 font-bold uppercase tracking-widest transition-all"
+              className="px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] text-white/60 font-bold uppercase tracking-widest transition-all"
             >
               Force Reconnect
             </button>
+            {error && (
+               <button 
+               onClick={() => {
+                 localStorage.clear();
+                 window.location.reload();
+               }}
+               className="text-[10px] text-white/20 hover:text-white/40 font-bold uppercase tracking-widest transition-all underline underline-offset-4"
+             >
+               Clear Local Workspace
+             </button>
+            )}
           </div>
         </div>
       </div>
@@ -607,12 +675,20 @@ export default function App() {
                     <XCircle className="text-red-400 mx-auto" size={48} />
                     <h3 className="text-xl font-bold text-white">Initialization Error</h3>
                     <p className="text-white/60">{error}</p>
-                    <button 
-                      onClick={() => window.location.reload()}
-                      className="px-6 py-2 bg-gold text-black font-bold rounded-xl hover:bg-gold/80 transition-all"
-                    >
-                      Retry Connection
-                    </button>
+                    <div className="flex flex-col gap-3 pt-4">
+                      <button 
+                        onClick={() => window.location.reload()}
+                        className="px-6 py-3 bg-gold text-black font-bold rounded-xl hover:bg-gold/80 transition-all w-full"
+                      >
+                        Retry Connection
+                      </button>
+                      <button 
+                        onClick={() => firebaseAuth.signOut()}
+                        className="px-6 py-3 bg-white/5 border border-white/10 text-white/60 font-bold rounded-xl hover:bg-white/10 transition-all w-full uppercase tracking-widest text-[10px]"
+                      >
+                        Disconnect & Sign Out
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <>

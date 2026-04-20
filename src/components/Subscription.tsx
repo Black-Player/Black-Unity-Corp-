@@ -73,7 +73,7 @@ export default function Subscription({ userProfile, addToast }: SubscriptionProp
 
       addToast(`Ascension complete! You are now a ${tiers.find(t => t.id === tierId)?.name}.`, "success");
     } catch (err) {
-      handleSupabaseError(err, OperationType.UPDATE, 'users');
+      await handleSupabaseError(err, OperationType.UPDATE, 'users');
       addToast("The cosmic upgrade failed. Please try again.", "error");
     } finally {
       setLoading(null);

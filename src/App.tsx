@@ -169,6 +169,7 @@ export default function App() {
           
           dbService.update('users', user.uid, {
               signals_used_today: 0,
+              backtests_used_today: 0,
               last_reset_date: new Date().toISOString()
           });
         }
@@ -594,7 +595,14 @@ export default function App() {
                 </div>
                 <div className="p-6 border-t border-white/10">
                   <button 
-                    onClick={() => supabase.auth.signOut()}
+                    onClick={async () => {
+                      try {
+                        await firebaseAuth.signOut();
+                        window.location.reload();
+                      } catch (err) {
+                        console.error(err);
+                      }
+                    }}
                     className="w-full py-3 bg-red-500/10 text-red-400 font-bold rounded-xl border border-red-500/20"
                   >
                     Logout

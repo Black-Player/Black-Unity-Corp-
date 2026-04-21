@@ -1,5 +1,6 @@
 import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock, User, Ghost } from 'lucide-react';
 import { supabase } from '../supabase';
+import { auth as firebaseAuth } from '../firebase';
 import { UserProfile, Tier, hasTierAccess } from '../types';
 import { motion } from 'motion/react';
 
@@ -175,7 +176,14 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
         )}
 
         <button 
-          onClick={() => supabase.auth.signOut()}
+          onClick={async () => {
+            try {
+              await firebaseAuth.signOut();
+              window.location.reload();
+            } catch (err) {
+              console.error(err);
+            }
+          }}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-400 hover:bg-red-400/10 transition-all"
         >
           <LogOut size={20} />

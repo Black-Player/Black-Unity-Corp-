@@ -4,7 +4,7 @@ import { where, orderBy, limit } from 'firebase/firestore';
 import { BOTS, UserProfile, TIER_BOT_LIMITS } from '../types';
 import { chatWithBot } from '../services/aiService';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
-import { Bot, Send, User, Sparkles, MessageSquare, Zap, Globe, Users } from 'lucide-react';
+import { Bot, Send, User, Sparkles, MessageSquare, Zap, Globe, Users, Copy, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
 
@@ -14,6 +14,7 @@ interface ChatProps {
 }
 
 interface Message {
+  id?: string;
   role: 'user' | 'model' | 'system';
   text: string;
   username?: string;
@@ -28,6 +29,13 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   useEffect(() => {
     let unsubscribe: () => void;
@@ -271,7 +279,7 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
                 }`}>
                   {msg.role === 'user' ? <User size={18} /> : <Bot size={18} />}
                 </div>
-                <div className={`max-w-[95%] lg:max-w-[85%] p-4 lg:p-6 rounded-2xl ${
+                <div className={`max-w-[95%] lg:max-w-[85%] p-4 lg:p-6 rounded-2xl relative group ${
                   msg.role === 'user' 
                     ? 'bg-gold/10 border border-gold/20 text-white' 
                     : 'bg-white/5 border border-white/10 text-white/90'
@@ -281,6 +289,20 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
                   )}
                   <div className="prose prose-invert prose-sm lg:prose-base max-w-none leading-relaxed">
                     <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  </div>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-current/10">
+                    <p className={`text-[8px] uppercase tracking-widest font-bold ${msg.role !== 'user' ? 'text-white/20' : 'text-gold/40'}`}>
+                      {new Date(msg.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                    <button 
+                      onClick={() => handleCopy(msg.text, msg.id || i.toString())}
+                      className={`opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest
+                        ${msg.role !== 'user' ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-gold/60 hover:text-gold hover:bg-gold/10'}`}
+                      title="Copy message for educational purposes"
+                    >
+                      {copiedId === (msg.id || i.toString()) ? <CheckCircle2 size={12} className={msg.role !== 'user' ? 'text-emerald-400' : 'text-emerald-500'} /> : <Copy size={12} />}
+                      {copiedId === (msg.id || i.toString()) ? 'Copied' : 'Copy'}
+                    </button>
                   </div>
                 </div>
               </motion.div>

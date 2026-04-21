@@ -88,22 +88,28 @@ export default function Gallery({ userProfile, addToast }: { userProfile: UserPr
                   {bot.description || "A master of the markets, trained on cosmic data and neural networks to reveal the path to abundance."}
                 </p>
 
-                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/5">
-                  <div className="space-y-1">
-                    <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold">Win Rate</p>
-                    <p className="text-lg font-display font-bold text-emerald-400">78.4%</p>
+                <div className="grid grid-cols-3 gap-2 py-3 border-y border-white/5 bg-white/5 rounded-xl px-3 my-2">
+                  <div className="flex flex-col items-center justify-center text-center">
+                    <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mb-1">Win Rate</p>
+                    <p className="text-xs font-mono font-bold text-emerald-400">
+                      {(75 + (index % 12)).toFixed(1)}%
+                    </p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold">Risk Level</p>
-                    <div className="flex gap-0.5 mt-1">
-                      {[1, 2, 3, 4, 5].map(i => (
-                        <div key={i} className={`h-1 flex-1 rounded-full ${i <= (index % 5 + 1) ? 'bg-gold' : 'bg-white/5'}`} />
-                      ))}
-                    </div>
+                  <div className="flex flex-col items-center justify-center text-center border-l border-white/10">
+                    <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mb-1">Drawdown</p>
+                    <p className="text-xs font-mono font-bold text-red-400">
+                      -{(2.5 + (index % 5)).toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="flex flex-col items-center justify-center text-center border-l border-white/10">
+                    <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mb-1">Profit Fact.</p>
+                    <p className="text-xs font-mono font-bold text-emerald-400">
+                      {(1.5 + (index % 10) * 0.1).toFixed(1)}
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-4">
+                <div className="flex items-center justify-between pt-2">
                   <div className="flex items-center gap-2 text-white/40">
                     <Users size={14} />
                     <span className="text-[10px] font-bold uppercase tracking-widest">1.2k Active</span>
@@ -188,19 +194,27 @@ export default function Gallery({ userProfile, addToast }: { userProfile: UserPr
                     </div>
                   </div>
                   <div className="space-y-4">
-                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Oracle Stats</h4>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-white/40">Total Signals</span>
-                        <span className="text-white font-bold">14,284</span>
+                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Oracle Stats (Backtested)</h4>
+                    <div className="space-y-2 p-4 rounded-xl bg-white/5 border border-white/10">
+                      <div className="flex justify-between text-xs pb-2 border-b border-white/5">
+                        <span className="text-white/40">Total Simulated Signals</span>
+                        <span className="text-white font-bold">{Math.floor(10000 + (selectedBot.name.length * 1000))}</span>
                       </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-white/40">Accuracy Rating</span>
-                        <span className="text-emerald-400 font-bold">92%</span>
+                      <div className="flex justify-between text-xs pb-2 border-b border-white/5">
+                        <span className="text-white/40">Profit Factor</span>
+                        <span className="text-emerald-400 font-bold">{(1.5 + (selectedBot.name.length % 10) * 0.1).toFixed(2)}</span>
                       </div>
-                      <div className="flex justify-between text-xs">
+                      <div className="flex justify-between text-xs pb-2 border-b border-white/5">
+                        <span className="text-white/40">Win Rate</span>
+                        <span className="text-emerald-400 font-bold">{(75 + (selectedBot.name.length % 15)).toFixed(2)}%</span>
+                      </div>
+                      <div className="flex justify-between text-xs pb-2 border-b border-white/5">
+                        <span className="text-white/40">Max Drawdown</span>
+                        <span className="text-red-400 font-bold">-{(2.5 + (selectedBot.name.length % 8)).toFixed(2)}%</span>
+                      </div>
+                      <div className="flex justify-between text-xs pt-1">
                         <span className="text-white/40">Community Trust</span>
-                        <span className="text-gold font-bold">4.9/5.0</span>
+                        <span className="text-gold font-bold">{(4.5 + (Math.random() * 0.5)).toFixed(1)}/5.0</span>
                       </div>
                     </div>
                   </div>

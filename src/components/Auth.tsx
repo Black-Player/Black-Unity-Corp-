@@ -75,7 +75,7 @@ export default function Auth() {
           email_digest: false,
         },
         account_type: 'demo',
-        demo_balance: 10000,
+        demo_balance: 10,
         live_balance: 0,
         daily_pnl: 0,
         custom_bots: [],

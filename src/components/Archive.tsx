@@ -4,7 +4,8 @@ import { dbService } from '../services/dbService';
 import { where } from 'firebase/firestore';
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Book, Plus, Trash2, TrendingUp, TrendingDown, Clock, Tag, MessageSquare, Brain, Sparkles, Filter, Save, Download } from 'lucide-react';
+import { Book, Plus, Trash2, TrendingUp, TrendingDown, Clock, Tag, MessageSquare, Brain, Sparkles, Filter, Save, Download, Bot } from 'lucide-react';
+import { analyzeTradeReview } from '../services/aiService';
 
 interface JournalEntry {
   id: string;
@@ -24,6 +25,7 @@ interface JournalEntry {
 export default function Archive({ userProfile, addToast }: { userProfile: UserProfile, addToast: any }) {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [isAdding, setIsAdding] = useState(false);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [newEntry, setNewEntry] = useState<Omit<JournalEntry, 'id' | 'uid' | 'created_at'>>({
     pair: 'BTCUSD',
     type: 'buy',
@@ -161,6 +163,45 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
     }
   };
 
+  const handleAnalyzeTrade = async (entry: JournalEntry) => {
+    setAnalyzingId(entry.id);
+    addToast("Submitting trade to Zion AI for analysis...", "info");
+    
+    try {
+      const insight = await analyzeTradeReview(
+        {
+          pair: entry.pair,
+          type: entry.type,
+          pnl: entry.pnl,
+          entry_price: entry.entry_price,
+          exit_price: entry.exit_price,
+          tags: entry.tags,
+          mistakes: entry.mistakes
+        },
+        entry.notes
+      );
+
+      // Append Zion's analysis to the entry's notes
+      const zionFeedback = `\n\n[Zion AI Reflection]\nEmotion Score: ${insight.emotional_state}\nStrategy Adherence: ${insight.strategy_adherence}\nImprovement Advice: ${insight.potential_improvements}\nOverall Quality: ${insight.overall_rating}/10`;
+      
+      const { error } = await supabase
+        .from('journal')
+        .update({ 
+          notes: entry.notes + zionFeedback,
+          mistakes: [...entry.mistakes, `Zion Rating: ${insight.overall_rating}/10`].filter((v, i, a) => a.indexOf(v) === i)
+        })
+        .eq('id', entry.id);
+
+      if (error) throw error;
+      
+      addToast("Zion Analysis complete and attached to journal entry.", "success");
+    } catch (e) {
+      addToast("Zion could not analyze this trade at the moment.", "error");
+    } finally {
+      setAnalyzingId(null);
+    }
+  };
+
   const emotions = [
     { id: 'calm', label: 'Calm', color: 'text-emerald-400' },
     { id: 'anxious', label: 'Anxious', color: 'text-gold' },
@@ -238,8 +279,18 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
                   </div>
                 </div>
 
-                <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-2">
-                  <p className="text-sm text-white/60 italic">"{entry.notes}"</p>
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-2 relative">
+                  <p className="text-sm text-white/60 italic whitespace-pre-wrap">"{entry.notes}"</p>
+                  
+                  {!entry.notes.includes('[Zion AI Reflection]') && (
+                    <button
+                      onClick={() => handleAnalyzeTrade(entry)}
+                      disabled={analyzingId === entry.id}
+                      className="absolute bottom-2 right-2 text-[10px] font-bold uppercase tracking-widest text-gold bg-gold/10 hover:bg-gold/20 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all border border-gold/20"
+                    >
+                      {analyzingId === entry.id ? 'Analyzing...' : <><Bot size={12} /> Post-Ritual Reflection</>}
+                    </button>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap gap-2">

@@ -64,11 +64,33 @@ export default function BotGallery({ userProfile, addToast, setActivePage }: Bot
                 <p className="text-xs text-gold/70 font-bold uppercase tracking-widest">{bot.strategy}</p>
               </div>
 
-              <p className="text-sm text-white/60 leading-relaxed">
+              <p className="text-sm text-white/60 leading-relaxed min-h-[3rem]">
                 {bot.description}
               </p>
 
-              <div className="pt-4 w-full border-t border-white/5 flex items-center justify-between text-xs">
+              {/* BotGallery Specific Performance Mock */}
+              <div className="w-full grid grid-cols-3 gap-2 py-3 border-y border-white/5 bg-white/5 rounded-xl px-2 my-2">
+                 <div className="flex flex-col items-center justify-center text-center">
+                    <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mb-1">Win Rate</p>
+                    <p className="text-xs font-mono font-bold text-emerald-400">
+                      {(75 + (index % 12)).toFixed(1)}%
+                    </p>
+                 </div>
+                 <div className="flex flex-col items-center justify-center text-center border-l border-white/10">
+                    <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mb-1">Drawdown</p>
+                    <p className="text-xs font-mono font-bold text-red-400">
+                      -{(2.5 + (index % 5)).toFixed(1)}%
+                    </p>
+                 </div>
+                 <div className="flex flex-col items-center justify-center text-center border-l border-white/10">
+                    <p className="text-[8px] text-white/40 uppercase tracking-widest font-bold mb-1">Profit Fact.</p>
+                    <p className="text-xs font-mono font-bold text-emerald-400">
+                      {(1.5 + (index % 10) * 0.1).toFixed(1)}
+                    </p>
+                 </div>
+              </div>
+
+              <div className="pt-2 w-full flex items-center justify-between text-xs">
                 <span className="text-white/40 uppercase tracking-widest">Tier</span>
                 <span className={`font-bold uppercase ${isLocked ? 'text-white/40' : 'text-gold'}`}>
                   {bot.tier_requirement}

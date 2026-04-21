@@ -20,6 +20,7 @@ export interface UserProfile {
   penalties: number;
   theme?: AppTheme;
   signals_used_today: number;
+  backtests_used_today?: number;
   last_reset_date: string;
   created_at: string;
   total_pnl: number;
@@ -119,6 +120,10 @@ export interface Signal {
   uid: string;
   pair: string;
   timeframe: string;
+  decision?: 'Buy' | 'Sell' | 'No Trade';
+  decision_reasoning?: string;
+  visual_blueprint?: string;
+  ai_sentiment_feedback?: string;
   entry: number;
   stop_loss: number;
   tp1: number;
@@ -136,7 +141,7 @@ export interface Signal {
   confirmations_count?: number;
   analysis: string;
   recommended_lot_size: number;
-  status: 'active' | 'tp_hit' | 'sl_hit';
+  status: 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'tp4_hit' | 'sl_hit';
   created_at: string;
   is_shared?: boolean;
   likes_count?: number;
@@ -155,6 +160,8 @@ export interface Trade {
   tp2: number;
   tp3: number;
   tp4: number;
+  active_tp?: 1 | 2 | 3 | 4;
+  lot_size?: number;
   stop_loss: number;
   pnl: number;
   pnl_percentage: number;

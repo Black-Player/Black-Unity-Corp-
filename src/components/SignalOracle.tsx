@@ -9,6 +9,7 @@ import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { generateTradingSignal, getMarketSentiment } from '../services/aiService';
 import { sendSignalToTelegram } from '../services/communicationService';
 import { useMarketContext } from '../MarketContext';
+import { calculateAutoLotSize } from '../lib/tradeUtils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 
 interface SessionRecommendation {
@@ -56,12 +57,26 @@ interface SignalOracleProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
+const getFallbackPrice = (pair: string) => {
+  if (pair.includes('BTC')) return 65000 + Math.random() * 1000;
+  if (pair.includes('ETH')) return 3500 + Math.random() * 100;
+  if (pair.includes('OTC_DJI') || pair.includes('US30')) return 38500 + Math.random() * 100;
+  if (pair.includes('OTC_NDX') || pair.includes('NAS')) return 17500 + Math.random() * 100;
+  if (pair.includes('OTC_GDAXI') || pair.includes('GER40')) return 18000 + Math.random() * 100;
+  if (pair.includes('XAU')) return 2350 + Math.random() * 10;
+  if (pair.includes('R_') || pair.includes('BOOM') || pair.includes('CRASH')) return 100 + Math.random() * 500;
+  if (pair.includes('JD') || pair.includes('STP')) return 500 + Math.random() * 100;
+  if (pair.includes('JPY')) return 150 + Math.random() * 2;
+  return 1.0850 + (Math.random() * 0.0050);
+};
+
 export default function SignalOracle({ userProfile, addToast }: SignalOracleProps) {
   const { marketPrices } = useMarketContext();
   const [currentUtcHour, setCurrentUtcHour] = useState(new Date().getUTCHours());
   const [selectedSession, setSelectedSession] = useState<string>('London');
   const [activeSignal, setActiveSignal] = useState<Partial<Signal> | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [signalTab, setSignalTab] = useState<'execution' | 'logic' | 'visual'>('execution');
 
   useEffect(() => {
     const hour = new Date().getUTCHours();
@@ -111,9 +126,9 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
     setActiveSignal(null);
     
     try {
-      const currentPrice = marketPrices[pair]?.price || 0;
-      if (currentPrice === 0) {
-        addToast("Waiting for celestial price feed...", "info");
+      const currentPrice = marketPrices[pair]?.price || getFallbackPrice(pair);
+      if (currentPrice === getFallbackPrice(pair) && !marketPrices[pair]?.price) {
+        addToast("Using quantum-simulated prices (WebSocket connection or market closed).", "info");
       }
 
       // Fetch market sentiment for the AI
@@ -132,7 +147,7 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
         pair,
         'M15',
         oracleBot as any,
-        currentPrice || (pair.includes('R_') ? 100 + Math.random() * 500 : 1.0850),
+        currentPrice,
         sentiment
       );
 
@@ -140,6 +155,10 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
         uid: userProfile.uid,
         pair,
         timeframe: 'M15',
+        decision: aiSignal.decision,
+        decision_reasoning: aiSignal.decision_reasoning,
+        visual_blueprint: aiSignal.visual_blueprint,
+        ai_sentiment_feedback: aiSignal.ai_sentiment_feedback,
         entry: aiSignal.entry,
         stop_loss: aiSignal.stop_loss,
         tp1: aiSignal.tp1,
@@ -165,6 +184,50 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
           ...signalData,
           created_at: new Date().toISOString()
       });
+      
+      // AUTO-EXECUTE TRADE ON SIGNAL CREATION IF IT IS A BUY OR SELL
+      if (aiSignal.decision === 'Buy' || aiSignal.decision === 'Sell') {
+         try {
+             // Check max open positions
+              const trades = await dbService.list('trades', [
+                  where('uid', '==', userProfile.uid),
+                  where('status', '==', 'open')
+              ]);
+              const count = trades.length;
+              
+              if (!userProfile.risk_settings?.max_open_positions || count < userProfile.risk_settings.max_open_positions) {
+                  const balanceToUse = userProfile.account_type === 'live' ? userProfile.live_balance : userProfile.demo_balance;
+                  const calculatedLot = calculateAutoLotSize(balanceToUse || 0, userProfile.risk_settings?.risk_per_trade || 1, signalData.entry!, signalData.stop_loss!, signalData.pair);
+
+                  const tradeData: Omit<Trade, 'id'> = {
+                    uid: userProfile.uid,
+                    signal_id: signalId,
+                    pair: signalData.pair!,
+                    entry_price: signalData.entry,
+                    current_price: signalData.entry,
+                    tp1: signalData.tp1,
+                    tp2: signalData.tp2,
+                    tp3: signalData.tp3,
+                    tp4: signalData.tp4,
+                    active_tp: 3, // Defaulting to TP3 out of gate
+                    stop_loss: signalData.stop_loss,
+                    pnl: 0,
+                    pnl_percentage: 0,
+                    lot_size: calculatedLot,
+                    status: 'open',
+                    type: aiSignal.decision === 'Buy' ? 'buy' : 'sell',
+                    account_type: userProfile.account_type || 'demo',
+                    created_at: new Date().toISOString()
+                  };
+                  await dbService.create('trades', tradeData);
+                  addToast(`Automated setup engaged for ${pair}`, 'success');
+              } else {
+                 addToast(`Max open positions reached. Did not auto-execute.`, 'info');
+              }
+         } catch(e) {
+           console.error("Auto execute error", e);
+         }
+      }
       
       // Increment user's signal count
       try {
@@ -330,109 +393,166 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
                     height={450}
                   />
                 </div>
+                
+                {/* Tabs for detailed analysis vs execution */}
                 <div className="p-4 sm:p-6 border-t border-white/5 bg-black/40 backdrop-blur-md">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6">
-                    <div className="space-y-1 min-w-0">
-                      <p className="text-[7px] sm:text-[10px] text-white/20 uppercase tracking-widest font-bold truncate">Entry Price</p>
-                      <p className="text-[11px] sm:text-lg font-mono font-bold text-gold truncate">{activeSignal.entry?.toFixed(5)}</p>
-                    </div>
-                    <div className="space-y-1 min-w-0">
-                      <p className="text-[7px] sm:text-[10px] text-white/20 uppercase tracking-widest font-bold truncate">Stop Loss</p>
-                      <p className="text-[11px] sm:text-lg font-mono font-bold text-red-400 truncate">{activeSignal.stop_loss?.toFixed(5)}</p>
-                    </div>
-                    <div className="space-y-1 min-w-0">
-                      <p className="text-[7px] sm:text-[10px] text-white/20 uppercase tracking-widest font-bold truncate">Target (TP3)</p>
-                      <p className="text-[11px] sm:text-lg font-mono font-bold text-emerald-400 truncate">{activeSignal.tp3?.toFixed(5)}</p>
-                    </div>
-                    <div className="space-y-1 min-w-0">
-                      <p className="text-[7px] sm:text-[10px] text-white/20 uppercase tracking-widest font-bold truncate">Confidence</p>
-                      <div className="flex items-center gap-1">
-                        <p className="text-[11px] sm:text-lg font-mono font-bold text-white truncate">{activeSignal.confidence?.toFixed(1)}%</p>
-                        <Zap size={10} className="text-gold animate-pulse shrink-0" />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
-                      <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Structure</p>
-                      <p className="text-[10px] font-mono font-bold text-gold">{activeSignal.market_structure || 'N/A'}</p>
-                    </div>
-                    <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
-                      <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Liquidity</p>
-                      <div className={`w-2 h-2 rounded-full ${activeSignal.liquidity_presence ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-red-400/20'}`} />
-                    </div>
-                    <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
-                      <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Volatility</p>
-                      <div className={`w-2 h-2 rounded-full ${activeSignal.volatility_validation ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-red-400/20'}`} />
-                    </div>
-                    <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
-                      <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Confirmations</p>
-                      <p className="text-[10px] font-mono font-bold text-white">{activeSignal.confirmations_count || 0}</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 p-4 rounded-xl bg-white/5 border border-white/5">
-                    <p className="text-xs text-white/60 leading-relaxed italic">"{activeSignal.analysis}"</p>
+                  <div className="flex gap-4 mb-4 border-b border-white/5 pb-2">
+                    <button onClick={() => setSignalTab('execution')} className={`text-xs font-bold uppercase tracking-widest ${signalTab === 'execution' ? 'text-gold' : 'text-white/40 hover:text-white'}`}>Execution</button>
+                    <button onClick={() => setSignalTab('logic')} className={`text-xs font-bold uppercase tracking-widest ${signalTab === 'logic' ? 'text-blue-400' : 'text-white/40 hover:text-white'}`}>AI Reasoning</button>
+                    <button onClick={() => setSignalTab('visual')} className={`text-xs font-bold uppercase tracking-widest ${signalTab === 'visual' ? 'text-purple-400' : 'text-white/40 hover:text-white'}`}>Visual Blueprint</button>
                   </div>
                   
-                  <div className="mt-6 flex gap-3">
-                    <button 
-                      onClick={async () => {
-                        if (!activeSignal.id) return;
-                        try {
-                          // Check max open positions
-                          const trades = await dbService.list('trades', [
-                              where('uid', '==', userProfile.uid),
-                              where('status', '==', 'open')
-                          ]);
-                          const count = trades.length;
-                          
-                          if (userProfile.risk_settings?.max_open_positions) {
-                            if (count >= userProfile.risk_settings.max_open_positions) {
-                              addToast(`Sentinel Limit: Max open positions (${userProfile.risk_settings.max_open_positions}) reached.`, 'error');
-                              return;
-                            }
-                          }
+                  {signalTab === 'execution' && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-6">
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-[7px] sm:text-[10px] text-white/20 uppercase tracking-widest font-bold truncate">Entry Price</p>
+                          <p className="text-[11px] sm:text-lg font-mono font-bold text-gold truncate">{activeSignal.entry?.toFixed(activeSignal.pair?.includes('JPY') || activeSignal.pair?.includes('BTC') || activeSignal.pair?.includes('OTC') || activeSignal.pair?.includes('ETH') ? 2 : 5)}</p>
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-[7px] sm:text-[10px] text-white/20 uppercase tracking-widest font-bold truncate">Stop Loss</p>
+                          <p className="text-[11px] sm:text-lg font-mono font-bold text-red-400 truncate">{activeSignal.stop_loss?.toFixed(activeSignal.pair?.includes('JPY') || activeSignal.pair?.includes('BTC') || activeSignal.pair?.includes('OTC') || activeSignal.pair?.includes('ETH') ? 2 : 5)}</p>
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-[7px] sm:text-[10px] text-white/20 uppercase tracking-widest font-bold truncate">Target (TP3)</p>
+                          <p className="text-[11px] sm:text-lg font-mono font-bold text-emerald-400 truncate">{activeSignal.tp3?.toFixed(activeSignal.pair?.includes('JPY') || activeSignal.pair?.includes('BTC') || activeSignal.pair?.includes('OTC') || activeSignal.pair?.includes('ETH') ? 2 : 5)}</p>
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-[7px] sm:text-[10px] text-white/20 uppercase tracking-widest font-bold truncate">Decision</p>
+                          <div className="flex items-center gap-1">
+                            <p className={`text-[11px] sm:text-lg font-mono font-bold truncate ${activeSignal.decision === 'Buy' ? 'text-emerald-400' : activeSignal.decision === 'Sell' ? 'text-red-400' : 'text-white'}`}>{activeSignal.decision || 'N/A'}</p>
+                            <Zap size={10} className="text-gold animate-pulse shrink-0" />
+                          </div>
+                        </div>
+                      </div>
 
-                          const tradeData: Omit<Trade, 'id'> = {
-                            uid: userProfile.uid,
-                            signal_id: activeSignal.id,
-                            pair: activeSignal.pair!,
-                            entry_price: activeSignal.entry!,
-                            current_price: activeSignal.entry!,
-                            tp1: activeSignal.tp1!,
-                            tp2: activeSignal.tp2!,
-                            tp3: activeSignal.tp3!,
-                            tp4: activeSignal.tp4!,
-                            stop_loss: activeSignal.stop_loss!,
-                            pnl: 0,
-                            pnl_percentage: 0,
-                            status: 'open',
-                            type: activeSignal.stop_loss! < activeSignal.entry! ? 'buy' : 'sell',
-                            account_type: userProfile.account_type || 'demo',
-                            created_at: new Date().toISOString()
-                          };
-                          
-                          await dbService.create('trades', tradeData);
-                          
-                          addToast("Ritual executed. The trade is now live in your portfolio.", "success");
-                        } catch (error) {
-                          addToast("Failed to execute ritual in the physical realm.", "error");
-                        }
-                      }}
-                      className="flex-1 gold-button py-4 flex items-center justify-center gap-2 group"
-                    >
-                      <Zap size={20} className="group-hover:animate-pulse" />
-                      Execute Cosmic Ritual
-                    </button>
-                    <button 
-                      onClick={handleShareSignal}
-                      className="px-6 py-4 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-gold hover:border-gold/50 transition-all flex items-center justify-center"
-                      title="Share to Feed"
-                    >
-                      <Share2 size={20} />
-                    </button>
-                  </div>
+                      <div className="mt-4 p-4 rounded-xl bg-white/5 border border-white/5">
+                        <p className="text-xs text-white/60 leading-relaxed italic">"{activeSignal.analysis}"</p>
+                      </div>
+                      
+                      <div className="mt-6 flex gap-3">
+                        <button 
+                          onClick={async () => {
+                            if (!activeSignal.id) return;
+                            try {
+                              // Check max open positions
+                              const trades = await dbService.list('trades', [
+                                  where('uid', '==', userProfile.uid),
+                                  where('status', '==', 'open')
+                              ]);
+                              const count = trades.length;
+                              
+                              if (userProfile.risk_settings?.max_open_positions) {
+                                if (count >= userProfile.risk_settings.max_open_positions) {
+                                  addToast(`Sentinel Limit: Max open positions (${userProfile.risk_settings.max_open_positions}) reached.`, 'error');
+                                  return;
+                                }
+                              }
+
+                              const balanceToUse = userProfile.account_type === 'live' ? userProfile.live_balance : userProfile.demo_balance;
+                              const calculatedLot = calculateAutoLotSize(balanceToUse || 0, userProfile.risk_settings?.risk_per_trade || 1, activeSignal.entry!, activeSignal.stop_loss!, activeSignal.pair!);
+
+                              const tradeData: Omit<Trade, 'id'> = {
+                                uid: userProfile.uid,
+                                signal_id: activeSignal.id,
+                                pair: activeSignal.pair!,
+                                entry_price: activeSignal.entry!,
+                                current_price: activeSignal.entry!,
+                                tp1: activeSignal.tp1!,
+                                tp2: activeSignal.tp2!,
+                                tp3: activeSignal.tp3!,
+                                tp4: activeSignal.tp4!,
+                                active_tp: 3, // Start with TP3 target logic via Signal button too
+                                stop_loss: activeSignal.stop_loss!,
+                                pnl: 0,
+                                pnl_percentage: 0,
+                                lot_size: calculatedLot,
+                                status: 'open',
+                                type: activeSignal.decision === 'Buy' ? 'buy' : activeSignal.decision === 'Sell' ? 'sell' : activeSignal.stop_loss! < activeSignal.entry! ? 'buy' : 'sell',
+                                account_type: userProfile.account_type || 'demo',
+                                created_at: new Date().toISOString()
+                              };
+                              
+                              await dbService.create('trades', tradeData);
+                              
+                              addToast("Ritual executed. The trade is now live in your portfolio.", "success");
+                            } catch (error) {
+                              addToast("Failed to execute ritual in the physical realm.", "error");
+                            }
+                          }}
+                          className={`flex-1 ${activeSignal.decision === 'No Trade' ? 'bg-white/5 text-white/40 cursor-not-allowed' : 'gold-button'} py-4 flex items-center justify-center gap-2 group`}
+                          disabled={activeSignal.decision === 'No Trade'}
+                        >
+                          <Zap size={20} className={activeSignal.decision !== 'No Trade' ? "group-hover:animate-pulse" : ""} />
+                          {activeSignal.decision === 'No Trade' ? 'No Execution Advised' : 'Execute Cosmic Ritual'}
+                        </button>
+                        <button 
+                          onClick={handleShareSignal}
+                          className="px-6 py-4 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-gold hover:border-gold/50 transition-all flex items-center justify-center"
+                          title="Share to Feed"
+                        >
+                          <Share2 size={20} />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {signalTab === 'logic' && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                      <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                        <h4 className="text-[10px] font-bold uppercase tracking-widest text-blue-400 mb-2">Omni Core Decision Reasoning</h4>
+                        <p className="text-sm text-white/80 leading-relaxed font-mono mb-4">{activeSignal.decision_reasoning || "Reasoning unavailable for this historical signal."}</p>
+                        {activeSignal.ai_sentiment_feedback && (
+                          <div className="mt-4 pt-4 border-t border-blue-500/20">
+                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-gold mb-1">AI Sentiment & Confidence</h4>
+                            <p className="text-xs text-white/60 italic">"{activeSignal.ai_sentiment_feedback}"</p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                          <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Structure</p>
+                          <p className="text-[10px] font-mono font-bold text-gold">{activeSignal.market_structure || 'N/A'}</p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                          <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Liquidity</p>
+                          <div className={`w-2 h-2 rounded-full ${activeSignal.liquidity_presence ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-red-400/20'}`} />
+                        </div>
+                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                          <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Volatility</p>
+                          <div className={`w-2 h-2 rounded-full ${activeSignal.volatility_validation ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-red-400/20'}`} />
+                        </div>
+                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                          <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Confirmations</p>
+                          <p className="text-[10px] font-mono font-bold text-white">{activeSignal.confirmations_count || 0}</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {signalTab === 'visual' && (
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+                      <div className="p-6 rounded-xl bg-purple-500/5 border border-purple-500/20 flex flex-col items-center text-center relative overflow-hidden">
+                         <div className="absolute top-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-500/50 to-transparent"></div>
+                         <Eye className="text-purple-400 mb-4 animate-pulse opacity-50" size={32} />
+                         <h4 className="text-[10px] font-bold uppercase tracking-widest text-purple-400 mb-2">Visual Generative Blueprint</h4>
+                         <p className="text-xs text-white/80 leading-relaxed max-w-lg mb-4">
+                           {activeSignal.visual_blueprint || "The Oracle did not generate a visual blueprint for this interaction."}
+                         </p>
+                         <button 
+                            disabled={!activeSignal.visual_blueprint}
+                            onClick={() => {
+                                addToast("Zion Image Matrix Rendering... (Mock processing delay)", "info");
+                                setTimeout(() => addToast("Image Rendered. Generating actual image not connected without an active agent. Check prompt log for generation.", "success"), 2500);
+                            }}
+                            className="px-6 py-2 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold uppercase tracking-widest hover:bg-purple-500/40 transition-all border border-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                           Render Blueprint Matrix
+                         </button>
+                         <p className="text-[8px] text-white/40 mt-3">*Rendering uses abstract procedural vectors generated by the AI reasoning core.</p>
+                      </div>
+                    </motion.div>
+                  )}
                 </div>
               </>
             ) : (

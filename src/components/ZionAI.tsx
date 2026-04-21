@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, Bot, User, Sparkles, Loader2, Zap, Brain, Shield, Globe, TrendingUp, History, Info, FileText, Upload, CheckCircle2 } from 'lucide-react';
+import { MessageSquare, Send, Bot, User, Sparkles, Loader2, Zap, Brain, Shield, Globe, TrendingUp, History, Info, FileText, Upload, CheckCircle2, Copy } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { SYSTEM_ROLE } from '../constants/systemRole';
 
@@ -24,11 +24,18 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<{ name: string, data: string, type: string } | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const handleCopy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   useEffect(() => {
@@ -168,7 +175,7 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
                     <Bot size={16} />
                   </div>
                 )}
-                <div className={`max-w-[80%] p-4 rounded-2xl text-sm leading-relaxed ${
+                <div className={`max-w-[80%] p-4 rounded-2xl text-sm leading-relaxed relative group ${
                   msg.role === 'assistant' 
                     ? 'bg-white/5 border border-white/10 text-white/80' 
                     : 'bg-gold text-black font-medium'
@@ -182,9 +189,20 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
                   <div className="markdown-body">
                     <Markdown>{msg.content}</Markdown>
                   </div>
-                  <p className={`text-[8px] mt-2 uppercase tracking-widest font-bold ${msg.role === 'assistant' ? 'text-white/20' : 'text-black/40'}`}>
-                    {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </p>
+                  <div className="flex items-center justify-between mt-2 pt-2 border-t border-current/10">
+                    <p className={`text-[8px] uppercase tracking-widest font-bold ${msg.role === 'assistant' ? 'text-white/20' : 'text-black/40'}`}>
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                    <button 
+                      onClick={() => handleCopy(msg.content, msg.id)}
+                      className={`opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest
+                        ${msg.role === 'assistant' ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-black/40 hover:text-black hover:bg-black/10'}`}
+                      title="Copy message for educational purposes"
+                    >
+                      {copiedId === msg.id ? <CheckCircle2 size={12} className={msg.role === 'assistant' ? 'text-emerald-400' : 'text-emerald-700'} /> : <Copy size={12} />}
+                      {copiedId === msg.id ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
                 </div>
                 {msg.role === 'user' && (
                   <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white/60 shrink-0 border border-white/10">

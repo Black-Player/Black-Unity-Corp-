@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { auth as firebaseAuth } from '../firebase';
 import { UserProfile, AppTheme } from '../types';
 import { Settings as SettingsIcon, Bell, Volume2, Mail, Shield, CreditCard, User, Zap, LogOut, Trash2, Palette, Moon, Sun, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -66,8 +67,9 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
 
   const handleSignOut = async () => {
     try {
-      await supabase.auth.signOut();
+      await firebaseAuth.signOut();
       addToast('Safely disconnected from the Oracle.', 'success');
+      window.location.reload();
     } catch (err) {
       console.error(err);
       addToast('Failed to disconnect.', 'error');
@@ -168,6 +170,65 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
                   <p className="text-xs text-white/40">View and manage your active sessions.</p>
                 </div>
                 <button className="text-gold text-sm font-bold hover:underline">View</button>
+              </div>
+            </div>
+          </section>
+
+          <section className="glass-card p-8 space-y-6">
+            <h2 className="text-xl font-display font-bold flex items-center gap-2">
+              <Zap className="text-gold" size={20} /> Experimental Lab & Capital
+            </h2>
+            <div className="space-y-4">
+              <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-3">
+                <p className="font-bold">Demo Capital Management</p>
+                <p className="text-xs text-white/40 leading-relaxed mb-4">Set your starting demo balance or process a simulated withdrawal. Default is $10 to test your psychological resilience in growing a small account.</p>
+                <div className="flex gap-4">
+                  <div className="flex-1 space-y-1">
+                    <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold">New Demo Balance ($)</label>
+                    <input type="number" id="demoBalanceInput" defaultValue={userProfile.demo_balance} className="w-full cosmic-input bg-black/40" />
+                  </div>
+                  <button 
+                    onClick={async () => {
+                      const val = parseFloat((document.getElementById('demoBalanceInput') as HTMLInputElement).value);
+                      if (val > 0) {
+                        try {
+                          await dbService.update('users', userProfile.uid, { demo_balance: val });
+                          addToast(`Demo balance updated to $${val}`, 'success');
+                        } catch (e) {
+                          addToast('Failed to update balance', 'error');
+                        }
+                      }
+                    }}
+                    className="mt-5 px-6 gold-button flex items-center justify-center shrink-0"
+                  >
+                    Set Balance
+                  </button>
+                </div>
+              </div>
+              <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-3">
+                <p className="font-bold">Simulated Withdrawal</p>
+                <p className="text-[10px] text-white/40 uppercase tracking-widest">Withdraw profits from your demo account to test your mental strategy.</p>
+                <div className="flex gap-4">
+                  <input type="number" id="demoWithdrawInput" placeholder="Amount to withdraw" className="flex-1 cosmic-input bg-black/40" />
+                  <button 
+                    onClick={async () => {
+                      const val = parseFloat((document.getElementById('demoWithdrawInput') as HTMLInputElement).value);
+                      if (val > 0 && val <= (userProfile.demo_balance || 0)) {
+                        try {
+                          await dbService.update('users', userProfile.uid, { demo_balance: (userProfile.demo_balance || 0) - val });
+                          addToast(`Successfully withdrew $${val} from Demo Account.`, 'success');
+                        } catch (e) {
+                          addToast('Failed to withdraw.', 'error');
+                        }
+                      } else {
+                        addToast('Invalid amount or insufficient demo funds.', 'error');
+                      }
+                    }}
+                    className="px-6 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 border border-red-500/30 font-bold rounded-lg transition-all"
+                  >
+                    Withdraw
+                  </button>
+                </div>
               </div>
             </div>
           </section>

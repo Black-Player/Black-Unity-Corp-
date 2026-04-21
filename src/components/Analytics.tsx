@@ -5,10 +5,14 @@ import { UserProfile } from '../types';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart as ReLineChart, Line, AreaChart, Area, PieChart as RePieChart, Pie, Cell } from 'recharts';
 
+import { BehavioralService } from '../services/behavioralService';
+
 export default function Analytics({ userProfile, addToast }: { userProfile: UserProfile, addToast: any }) {
   const [trades, setTrades] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [timeframe, setTimeframe] = useState('7D');
+  const [insights, setInsights] = useState<string[]>([]);
+  const [loadingInsights, setLoadingInsights] = useState(false);
 
   useEffect(() => {
     const fetchTrades = async () => {
@@ -30,6 +34,20 @@ export default function Analytics({ userProfile, addToast }: { userProfile: User
     };
 
     fetchTrades();
+    
+    const fetchInsights = async () => {
+         setLoadingInsights(true);
+         try {
+            const growthRecs = await BehavioralService.getGrowthRecommendations(userProfile.uid);
+            setInsights(growthRecs);
+         } catch(e) {
+            console.error("Failed to fetch behavioral insights", e);
+         } finally {
+            setLoadingInsights(false);
+         }
+    };
+    
+    fetchInsights();
 
     const channel = supabase
       .channel('trades-analytics')
@@ -242,6 +260,35 @@ export default function Analytics({ userProfile, addToast }: { userProfile: User
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+        <div className="lg:col-span-2 glass-card p-8 border-gold/10 space-y-6">
+          <div className="flex items-center justify-between">
+             <h3 className="text-xl font-display font-bold flex items-center gap-2">
+               <Shield className="text-gold" size={20} /> AI Behavioral Insights
+             </h3>
+             <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Auto-Logged by Zion</span>
+          </div>
+          <div className="space-y-4">
+             {loadingInsights ? (
+                 <p className="text-xs text-white/40 italic">Zion is analyzing your trading patterns...</p>
+             ) : insights.length > 0 ? (
+                 insights.map((insight, idx) => (
+                     <div key={idx} className="p-4 rounded-xl bg-white/5 border border-white/5">
+                        <p className="text-xs font-bold text-white mb-2 flex items-center gap-2">
+                            <Sparkles size={14} className={idx % 2 === 0 ? "text-emerald-400" : "text-gold"} /> 
+                            {idx === 0 ? "Account Scalability" : "Discipline & Psychology"}
+                        </p>
+                        <p className="text-xs text-white/60 leading-relaxed italic">"{insight}"</p>
+                     </div>
+                 ))
+             ) : (
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+                    <p className="text-xs text-white/60 leading-relaxed italic">Not enough closed trades to form a solid behavioral construct. The Oracle requires more data.</p>
+                </div>
+             )}
           </div>
         </div>
       </div>

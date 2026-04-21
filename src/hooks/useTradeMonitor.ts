@@ -74,14 +74,16 @@ export function useTradeMonitor(
           reason = 'Stop Loss hit';
         }
 
-        // Check TP4 (Final TP)
+        // Check Active TP or TP4
         if (!shouldClose) {
-          if (trade.type === 'buy' && currentPrice >= trade.tp4) {
+          // If active_tp is set, exit entirely when that specific TP is hit.
+          const activeLevelPrice = trade[`tp${trade.active_tp || 4}` as keyof Trade] as number;
+          if (trade.type === 'buy' && currentPrice >= activeLevelPrice) {
             shouldClose = true;
-            reason = 'Take Profit 4 hit';
-          } else if (trade.type === 'sell' && currentPrice <= trade.tp4) {
+            reason = `Take Profit ${trade.active_tp || 4} hit`;
+          } else if (trade.type === 'sell' && currentPrice <= activeLevelPrice) {
             shouldClose = true;
-            reason = 'Take Profit 4 hit';
+            reason = `Take Profit ${trade.active_tp || 4} hit`;
           }
         }
 
@@ -163,6 +165,20 @@ export function useTradeMonitor(
 
           if (onCloseTrade) {
             await onCloseTrade(updatedTrade, reason);
+
+            // Fetch the signal and mark its status as LOST or WON
+            try {
+              if (trade.signal_id) {
+                const signalResultStatus = finalPnl > 0 ? 'Won' : 'Lost';
+                await dbService.update('signals', trade.signal_id, {
+                  status: 'closed',
+                  result: signalResultStatus
+                });
+              }
+            } catch (e) {
+              console.error("Failed to update signal status", e);
+            }
+
             speak(`Ritual complete. ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} closed due to ${reason}.`, userProfile.notification_settings.sound, oracleChar);
           }
         } else {

@@ -2,22 +2,32 @@ import { UserProfile } from "../types";
 
 /**
  * Calculates the lot size based on balance, risk percentage, and SL distance.
- * Equation: Lot Size = (Balance × Risk %) ÷ SL Distance
+ * Includes precise tracking for Deriv multipliers vs Forex.
  */
-export function calculateAutoLotSize(balance: number, riskPercentage: number, entry: number, stopLoss: number): number {
+export function calculateAutoLotSize(balance: number, riskPercentage: number, entry: number, stopLoss: number, pair: string = 'CRASH500'): number {
     const slDistance = Math.abs(entry - stopLoss);
-    if (slDistance === 0) return 0.01; 
+    if (slDistance === 0) return 0.20; 
     
+    // Default Deriv Lot sizing behavior
+    let minLot = 0.20; // Default for Crash/Boom 500/1000
+    if (pair.includes('R_10') || pair.includes('R_25') || pair.includes('R_50') || pair.includes('R_75') || pair.includes('R_100')) {
+        minLot = 0.50;
+    } else if (pair.includes('frx') || pair.includes('OTC_')) {
+        minLot = 0.01;
+    }
+
     // PART 2: Safe exposure for small accounts
     let adjustedRisk = riskPercentage;
-    if (balance < 500) {
-        adjustedRisk = Math.min(riskPercentage, 1); // Max 1% for < $500
+    if (balance <= 20) {
+        adjustedRisk = Math.min(riskPercentage, 5); // Allow slightly higher risk to grow micro accounts
+    } else if (balance < 500) {
+        adjustedRisk = Math.min(riskPercentage, 2); 
     }
 
     const riskAmount = balance * (adjustedRisk / 100);
     const rawLotSize = riskAmount / slDistance;
     
-    return Number(Math.max(0.01, rawLotSize).toFixed(2));
+    return Number(Math.max(minLot, rawLotSize).toFixed(2));
 }
 
 /**

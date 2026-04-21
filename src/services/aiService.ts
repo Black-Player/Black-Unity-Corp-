@@ -58,7 +58,7 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       - Personality: ${bot.personality || 'analytical'}
       ${chartAnalysis ? `- Oracle Eye Visionary Analysis: ${JSON.stringify(chartAnalysis)}` : ''}
       
-      Task: Generate a high-probability "NOW" trading signal as the Omni Evolution Core.
+      Task: Generate a high-probability "NOW" trading signal as the Omni Evolution Core for ${pair}.
       The "entry" MUST be the current price: ${currentPrice}.
       
       OMNI EVOLUTION CORE DIRECTIVES:
@@ -68,10 +68,10 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       2. LIQUIDITY VALIDATION (Part 1):
          - Identify liquidity pools.
          - Confirm a sweep or inducement. No liquidity focus? Confidence < 20.
-      3. MULTI-TIMEFRAME ALIGNMENT (Part 1):
-         - H4 / H1 defines the BIAS.
-         - M15 / M5 provides the ENTRY.
-         - If alignment is missing, return confidence < 20.
+      3. MULTI-TIMEFRAME ALIGNMENT (Part 1) [STRICT RULE]:
+         - You MUST check D1 (Daily), H4 (4-Hour) and H1 (1-Hour) alignments.
+         - Do not generate Buy/Sell if D1, H4, and H1 are severely conflicting. Outline the alignment in analysis.
+         - If alignment is missing, return decision "No Trade" and confidence < 20.
       4. MARKET PERSONALITY (Part 16):
          - Detect if market is Trending, Ranging, or Volatile.
          - Adapt the strategy accordingly.
@@ -80,13 +80,19 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       6. ORACLE EYE VALIDATION (Phase 8):
          - If market volatility is high but structure is hidden, you may return confidence < 30 and specifically request an "Oracle Eye Boost" in the analysis to confirm visual structure.
       
-      Technical Requirements:
+      Technical Requirements (CRITICAL PIP/POINT RULES):
       - SMC/ICT focused (OB, FVG, POIs).
-      - Risk/Reward: Target minimum 1:2 RR for TP2.
-      - Stop Loss: Structure-based and volatility-aware.
-      - Multi-TP System: TP1 (Secure Profit), TP2 (Main), TP3 (Extended), TP4 (Moon/HTF).
+      - Stop Loss MUST be exactly 15-20 pips/points away from Entry.
+      - TP1 MUST be 35-45 pips/points away from Entry.
+      - TP2 MUST be 55-60 pips/points away from Entry.
+      - TP3 MUST be 85-100 pips/points away from Entry.
+      - TP4 is your Moon/HTF target.
+      (Note: For JPY pairs, 1 pip = 0.01. For standard Forex, 1 pip = 0.0001. For Indices like US30/NAS100/Crash/Boom, 1 pip = 1 full point).
       
       Return the signal in JSON format with the following fields:
+      - decision: "Buy", "Sell", or "No Trade"
+      - decision_reasoning: Detailed reasoning on WHY this decision was made.
+      - ai_sentiment_feedback: A brief note on how you (the AI) "felt" making this signal (e.g., "Felt highly confident aligning with the H4 trend" or "Hesitant due to choppy M15 structure").
       - entry: number
       - stop_loss: number
       - tp1: number
@@ -101,21 +107,25 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       - liquidity_swept: boolean
       - primary_poi: string
       - session_timing: string
-      - analysis: string (detailed confluence explanation)
+      - analysis: string (detailed confluence explanation including MTF alignment)
       - psychological_trap: string (explaining the retail trap)
       - strategy_type: string
       - market_personality: "trending" | "ranging" | "volatile"
+      - visual_blueprint: string (Describe exactly how the chart looks for visual generative rendering, including structures, zones, and candles)
       - recommended_lot_size: number`;
 
     const response = await ai.models.generateContent({
       model,
       contents: prompt,
       config: {
-        systemInstruction: SYSTEM_ROLE + "\n\nYou are the Omni Evolution Core. You are not a signal tool; you are a strategist, protector, and teacher. Protect capital first. Improve accuracy through SMC/ICT confluence. Evolve continuously.",
+        systemInstruction: SYSTEM_ROLE + "\n\nYou are the Omni Evolution Core. You are not a signal tool; you are a strategist, protector, and teacher. Protect capital first. Improve accuracy through SMC/ICT confluence. Check H1, H4, D1 alignment. Enforce strict Pip rules. Evolve continuously.",
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            decision: { type: Type.STRING, enum: ["Buy", "Sell", "No Trade"] },
+            decision_reasoning: { type: Type.STRING },
+            ai_sentiment_feedback: { type: Type.STRING },
             entry: { type: Type.NUMBER },
             stop_loss: { type: Type.NUMBER },
             tp1: { type: Type.NUMBER },
@@ -134,13 +144,15 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
             analysis: { type: Type.STRING },
             psychological_trap: { type: Type.STRING },
             strategy_type: { type: Type.STRING },
+            visual_blueprint: { type: Type.STRING },
             recommended_lot_size: { type: Type.NUMBER },
           },
           required: [
+            "decision", "decision_reasoning", "ai_sentiment_feedback",
             "entry", "stop_loss", "tp1", "tp2", "tp3", "tp4", 
             "risk_reward", "confidence", "bos_detected", "choch_detected", 
             "liquidity_swept", "primary_poi", "market_structure", "market_personality",
-            "session_timing", "analysis", "psychological_trap", "strategy_type", "recommended_lot_size"
+            "session_timing", "analysis", "psychological_trap", "strategy_type", "visual_blueprint", "recommended_lot_size"
           ],
         },
       },
@@ -152,6 +164,71 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
 
     const cleanJson = response.text.replace(/```json\n?|\n?```/g, '').trim();
     return JSON.parse(cleanJson);
+  });
+}
+
+export async function analyzeTradeReview(tradeDetails: any, journalNotes: string): Promise<{
+  emotional_state: string;
+  strategy_adherence: string;
+  potential_improvements: string;
+  overall_rating: number;
+}> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn("GEMINI_API_KEY missing, using mock trade analysis.");
+    return {
+      emotional_state: "Calm and calculated",
+      strategy_adherence: "Followed the rules closely",
+      potential_improvements: "Hold winners longer",
+      overall_rating: 8
+    };
+  }
+
+  return withRetry(async () => {
+    const ai = new GoogleGenAI({ apiKey });
+    const model = "gemini-3-flash-preview";
+    
+    const prompt = `Perform a Post-Ritual Reflection on the following closed trade.
+    
+    Trade Details:
+    ${JSON.stringify(tradeDetails, null, 2)}
+    
+    User Journal Notes:
+    "${journalNotes}"
+    
+    Analyze the trade based on the provided data and the user's notes.
+    Provide insights into:
+    1. Emotion: Rate their emotional discipline.
+    2. Strategy: Did they adhere to institutional SMC/ICT methods based on their entry/exit?
+    3. Improvements: Give direct, constructive advice to improve this exact scenario.
+    4. Rating: 1-10 on execution quality.
+    
+    Return ONLY JSON.`;
+
+    const response = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        systemInstruction: SYSTEM_ROLE + "\n\nYou are Zion AI, the Grand Oracle. You are strict, analytical, and honest. You mentor humans to transcend retail trading traps.",
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            emotional_state: { type: Type.STRING },
+            strategy_adherence: { type: Type.STRING },
+            potential_improvements: { type: Type.STRING },
+            overall_rating: { type: Type.INTEGER },
+          },
+          required: ["emotional_state", "strategy_adherence", "potential_improvements", "overall_rating"],
+        },
+      },
+    });
+
+    if (!response.text) {
+      throw new Error("Failed to generate trade analysis.");
+    }
+    
+    return JSON.parse(response.text.replace(/```json\n?|\n?```/g, '').trim());
   });
 }
 

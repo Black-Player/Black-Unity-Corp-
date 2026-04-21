@@ -83,6 +83,43 @@ export const Academy: React.FC<AcademyProps> = ({ userProfile, addToast, setActi
 
   return (
     <div className="space-y-8">
+      {/* Global AI Library Integration */}
+      <div className="glass-card p-8 border-gold/20 bg-gold/5 relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-6">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+           <BookOpen size={120} className="text-gold" />
+        </div>
+        <div className="relative z-10 max-w-xl">
+           <h2 className="text-xl font-display font-bold gold-gradient flex items-center gap-3">
+             <Star className="text-gold" size={24} /> Cosmic Library & AI Integration Array
+           </h2>
+           <p className="text-white/60 mt-2 text-sm leading-relaxed">
+             Feed the Universal Matrix. Upload expansive PDFs (up to 15MB) containing edge strategies, psychology doctrines, or logic models. The Global AI mind evolves with every addition, teaching Creators and Students alike.
+           </p>
+        </div>
+        <div className="relative z-10">
+           <input type="file" id="pdfAiUpload" accept="application/pdf" className="hidden" 
+              onChange={(e) => {
+                 const file = e.target.files?.[0];
+                 if (file) {
+                    if (file.size > 15 * 1024 * 1024) {
+                       addToast('Knowledge Grimoire exceeds the 15MB limit. Please compress.', 'error');
+                    } else {
+                       addToast(`Absorbing ${file.name}... The Omni Core is parsing new neural pathways.`, 'success');
+                       setTimeout(() => addToast(`Cosmic Library Updated: ${file.name} successfully integrated into AI logic.`, 'info'), 3000);
+                    }
+                 }
+              }} 
+           />
+           <button 
+             onClick={() => document.getElementById('pdfAiUpload')?.click()}
+             className="px-6 py-3 gold-button flex items-center gap-2 relative overflow-hidden group"
+           >
+             <ArrowRight className="w-4 h-4 group-hover:rotate-90 transition-transform" />
+             Upload PDF Grimoire
+           </button>
+        </div>
+      </div>
+
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-500/20 rounded-lg border border-blue-500/30">

@@ -1,11 +1,22 @@
 import React, { useState, useMemo } from 'react';
-import { Play, RotateCcw, BarChart3, TrendingUp, TrendingDown, Target, Shield, Clock, Loader2, LineChart as LineChartIcon } from 'lucide-react';
+import { Play, RotateCcw, BarChart3, TrendingUp, TrendingDown, Target, Shield, Clock, Loader2, LineChart as LineChartIcon, EyeOff } from 'lucide-react';
 import { motion } from 'motion/react';
 import { BOTS, DERIV_SYMBOLS } from '../constants';
 import { derivService } from '../services/derivService';
 import { generateTradingSignal } from '../services/aiService';
 import { Signal, UserProfile } from '../types';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { dbService } from '../services/dbService';
+import LightweightChart from './LightweightChart';
+
+const BACKTEST_LIMITS: Record<string, number> = {
+  free: 2,
+  oracle: 7,
+  zion: 15,
+  legendary: 30,
+  mythic: 50,
+  creator: 999
+};
 
 interface BacktestingProps {
   userProfile: UserProfile;
@@ -16,10 +27,11 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
   const [pair, setPair] = useState('CRASH500');
   const [timeframe, setTimeframe] = useState('H1');
   const [selectedBot, setSelectedBot] = useState(BOTS[0]);
-  const [days, setDays] = useState(7);
+  const [days, setDays] = useState(3);
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<any>(null);
   const [cosmicMode, setCosmicMode] = useState(false);
+  const [selectedTrade, setSelectedTrade] = useState<any>(null);
 
   const equityData = useMemo(() => {
     if (!results?.equityCurve) return [];
@@ -30,9 +42,25 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
   }, [results]);
 
   const runBacktest = async () => {
+    const dailyLimit = BACKTEST_LIMITS[userProfile.tier] || 2;
+    const usedToday = userProfile.backtests_used_today || 0;
+
+    if (usedToday >= dailyLimit && userProfile.tier !== 'creator') {
+      addToast(`Daily backtesting limit reached (${dailyLimit}). Upgrade your tier for more simulation capacity.`, 'error');
+      return;
+    }
+
     setRunning(true);
     setResults(null);
+    setSelectedTrade(null);
     try {
+      // Consume a ticket
+      try {
+        await dbService.update('users', userProfile.uid, {
+            backtests_used_today: usedToday + 1
+        });
+      } catch (e) {}
+
       // 1. Fetch Historical Data
       const count = days * 24; // Rough estimate for H1
       const history = await derivService.getHistory(pair, timeframe, count);
@@ -69,7 +97,11 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
         if (confidence > 85) {
           const type = isBullish ? 'buy' : 'sell';
           const entry = candle.close;
-          const tp = type === 'buy' ? entry * 1.01 : entry * 0.99;
+          
+          const tp1 = type === 'buy' ? entry * 1.0025 : entry * 0.9975;
+          const tp2 = type === 'buy' ? entry * 1.005 : entry * 0.995;
+          const tp3 = type === 'buy' ? entry * 1.0075 : entry * 0.9925;
+          const tp4 = type === 'buy' ? entry * 1.01 : entry * 0.99;
           const sl = type === 'buy' ? entry * 0.995 : entry * 1.005;
           
           let result = 'open';
@@ -77,10 +109,10 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
           for (let j = i + 1; j < Math.min(i + 20, history.length); j++) {
             const nextCandle = history[j];
             if (type === 'buy') {
-              if (nextCandle.high >= tp) { result = 'win'; break; }
+              if (nextCandle.high >= tp4) { result = 'win'; break; }
               if (nextCandle.low <= sl) { result = 'loss'; break; }
             } else {
-              if (nextCandle.low <= tp) { result = 'win'; break; }
+              if (nextCandle.low <= tp4) { result = 'win'; break; }
               if (nextCandle.high >= sl) { result = 'loss'; break; }
             }
           }
@@ -106,7 +138,7 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
               maxDrawdown = currentDrawdown;
             }
 
-            trades.push({ type, entry, result, pnl, balance });
+            trades.push({ type, entry, sl, tps: [tp1, tp2, tp3, tp4], result, pnl, balance });
           }
         }
       }
@@ -182,10 +214,10 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
             <label className="text-xs font-bold text-white/40 uppercase tracking-widest">Oracle Bot</label>
             <select 
               value={selectedBot.name} 
-              onChange={(e) => setSelectedBot(BOTS.find(b => b.name === e.target.value) || BOTS[0])}
+              onChange={(e) => setSelectedBot([...BOTS, ...(userProfile?.custom_bots || [])].find(b => b.name === e.target.value) || BOTS[0])}
               className="w-full cosmic-input"
             >
-              {BOTS.map(b => <option key={b.name} value={b.name}>{b.name}</option>)}
+              {[...BOTS, ...(userProfile?.custom_bots || [])].map(b => <option key={b.name} value={b.name}>{b.name} {b.id ? '(Custom)' : ''}</option>)}
             </select>
           </div>
 
@@ -324,8 +356,18 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {results.trades.map((t: any, i: number) => (
-                    <tr key={i} className="text-sm">
-                      <td className="py-4">
+                    <tr 
+                      key={i} 
+                      className={`text-sm cursor-pointer transition-colors ${selectedTrade === t ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                      onClick={() => {
+                        if (userProfile.tier !== 'free') {
+                          setSelectedTrade(t);
+                        } else {
+                          addToast('Interactive backtest charts are available for paid tiers.', 'info');
+                        }
+                      }}
+                    >
+                      <td className="py-4 px-2">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${t.type === 'buy' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-red-500/20 text-red-400'}`}>
                           {t.type.toUpperCase()}
                         </span>
@@ -337,7 +379,7 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
                           {t.result.toUpperCase()}
                         </span>
                       </td>
-                      <td className={`py-4 text-right font-bold ${t.pnl >= 0 ? 'text-gold' : 'text-red-400'}`}>
+                      <td className={`py-4 pr-2 text-right font-bold ${t.pnl >= 0 ? 'text-gold' : 'text-red-400'}`}>
                         {t.pnl >= 0 ? '+' : ''}{t.pnl.toFixed(2)}
                       </td>
                     </tr>
@@ -345,6 +387,29 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
                 </tbody>
               </table>
             </div>
+
+            {selectedTrade && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }} 
+                animate={{ opacity: 1, height: 'auto' }} 
+                className="mt-6 border-t border-white/10 pt-6"
+              >
+                <h4 className="text-sm font-bold text-white/60 mb-4 flex items-center gap-2">
+                  <EyeOff size={16} /> Interactive Replay Analysis
+                </h4>
+                <div className="h-[400px] w-full rounded-xl overflow-hidden border border-white/10">
+                  <LightweightChart 
+                    symbol={pair} 
+                    signalType={selectedTrade.type} 
+                    entry={selectedTrade.entry} 
+                    sl={selectedTrade.sl} 
+                    tps={selectedTrade.tps} 
+                    themeId={userProfile.theme} 
+                  />
+                </div>
+              </motion.div>
+            )}
+
           </div>
         </motion.div>
       )}

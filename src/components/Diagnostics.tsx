@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { UserProfile, AccessKey, AdvancementRequest, Tier } from '../types';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { auth as firebaseAuth } from '../firebase';
 import { generateTradingSignal } from '../services/aiService';
 import KeyGenerator from './KeyGenerator';
 import { motion, AnimatePresence } from 'motion/react';
@@ -298,7 +299,7 @@ export default function Diagnostics({ userProfile, addToast }: DiagnosticsProps)
                 Re-Sync Firestore
               </button>
               <button 
-                onClick={() => supabase.auth.signOut()}
+                onClick={() => firebaseAuth.signOut()}
                 className="w-full py-2 rounded-lg bg-rose-500/10 border border-rose-500/20 text-[10px] font-bold uppercase tracking-widest text-rose-400 hover:bg-rose-500/20 transition-all"
               >
                 Emergency Shutdown

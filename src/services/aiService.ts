@@ -26,6 +26,9 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
       return await fn();
     } catch (error: any) {
       lastError = error;
+      if (error.message?.includes("API key not valid") || error.status === "INVALID_ARGUMENT") {
+          throw new Error("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.");
+      }
       if (error.message?.includes("429") || error.status === "RESOURCE_EXHAUSTED") {
         const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
         console.warn(`Rate limited. Retrying in ${Math.round(delay)}ms... (Attempt ${i + 1}/${maxRetries})`);
@@ -141,6 +144,10 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
             market_structure: { type: Type.STRING },
             market_personality: { type: Type.STRING, enum: ["trending", "ranging", "volatile"] },
             session_timing: { type: Type.STRING },
+            timeframe_alignment: { type: Type.STRING },
+            order_type: { type: Type.STRING, enum: ["Market", "Stop", "Stop Limit"] },
+            execution: { type: Type.STRING, enum: ["Scalp", "Intraday", "Swing"] },
+            risk_percent: { type: Type.NUMBER },
             analysis: { type: Type.STRING },
             psychological_trap: { type: Type.STRING },
             strategy_type: { type: Type.STRING },
@@ -152,7 +159,8 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
             "entry", "stop_loss", "tp1", "tp2", "tp3", "tp4", 
             "risk_reward", "confidence", "bos_detected", "choch_detected", 
             "liquidity_swept", "primary_poi", "market_structure", "market_personality",
-            "session_timing", "analysis", "psychological_trap", "strategy_type", "visual_blueprint", "recommended_lot_size"
+            "session_timing", "timeframe_alignment", "order_type", "execution", "risk_percent",
+            "analysis", "psychological_trap", "strategy_type", "visual_blueprint", "recommended_lot_size"
           ],
         },
       },

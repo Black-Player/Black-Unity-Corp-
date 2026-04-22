@@ -136,7 +136,7 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
   };
 
   return (
-    <div className="h-[calc(100vh-12rem)] flex flex-col gap-6">
+    <div className="h-[calc(100vh-140px)] lg:h-[calc(100vh-110px)] flex flex-col gap-4 lg:gap-6">
       <header className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-full bg-gold/10 flex items-center justify-center text-gold border border-gold/20 relative">

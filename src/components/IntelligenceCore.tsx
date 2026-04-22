@@ -198,6 +198,45 @@ if (shortCondition)
                         </div>
                     </div>
 
+                    {/* PHASE 9 & 10: ADVANCED + ELITE LAYERS */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="glass-card p-6 border border-emerald-500/20 relative overflow-hidden bg-emerald-500/5">
+                            <div className="absolute top-0 right-0 p-4 opacity-10">
+                                <Database size={60} className="text-emerald-400" />
+                            </div>
+                            <div className="relative z-10 space-y-3">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Sparkles size={16} className="text-emerald-400" /> Advanced Intelligence
+                                </h3>
+                                <ul className="text-xs text-white/60 space-y-2">
+                                    <li className="flex items-center gap-2"><CheckCircle2 size={12} className="text-emerald-400" /> Decision Replay Engine</li>
+                                    <li className="flex items-center gap-2"><CheckCircle2 size={12} className="text-emerald-400" /> Confidence Decomposition</li>
+                                    <li className="flex items-center gap-2"><CheckCircle2 size={12} className="text-emerald-400" /> Strategy DNA Profiling</li>
+                                    <li className="flex items-center gap-2"><CheckCircle2 size={12} className="text-emerald-400" /> Liquidity Radar</li>
+                                </ul>
+                                <span className="inline-block mt-2 px-2 py-1 align-middle rounded bg-emerald-500/20 text-emerald-400 text-[8px] font-bold uppercase tracking-wider">Phase 9 Active</span>
+                            </div>
+                        </div>
+
+                        <div className="glass-card p-6 border border-purple-500/20 relative overflow-hidden bg-purple-500/5">
+                            <div className="absolute top-0 right-0 p-4 opacity-10">
+                                <Shield size={60} className="text-purple-400" />
+                            </div>
+                            <div className="relative z-10 space-y-3">
+                                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                    <Target size={16} className="text-purple-400" /> Elite Final Layers
+                                </h3>
+                                <ul className="text-xs text-white/60 space-y-2">
+                                    <li className="flex items-center gap-2"><CheckCircle2 size={12} className="text-purple-400" /> Execution Consistency Engine</li>
+                                    <li className="flex items-center gap-2"><CheckCircle2 size={12} className="text-purple-400" /> Pre-Trade Patience Lock</li>
+                                    <li className="flex items-center gap-2"><CheckCircle2 size={12} className="text-purple-400" /> Market Intent Engine</li>
+                                    <li className="flex items-center gap-2"><CheckCircle2 size={12} className="text-purple-400" /> Hard Loss Limit System</li>
+                                </ul>
+                                <span className="inline-block mt-2 px-2 py-1 align-middle rounded bg-purple-500/20 text-purple-400 text-[8px] font-bold uppercase tracking-wider">Phase 10 Active</span>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* PART 12: AI vs AI ENGINE */}
                     <div className="glass-card p-6 border border-gold/20 relative overflow-hidden">
                          <div className="absolute top-0 right-0 p-4 opacity-10">

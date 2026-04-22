@@ -138,6 +138,10 @@ export interface Signal {
   liquidity_presence?: boolean;
   volatility_validation?: boolean;
   session_timing?: string;
+  timeframe_alignment?: string;
+  order_type?: 'Market' | 'Stop' | 'Stop Limit';
+  execution?: 'Scalp' | 'Intraday' | 'Swing';
+  risk_percent?: number;
   confirmations_count?: number;
   analysis: string;
   recommended_lot_size: number;

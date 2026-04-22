@@ -100,6 +100,43 @@ export const PerformanceStats: React.FC<PerformanceStatsProps> = ({ userProfile 
 
   return (
     <div className="space-y-8">
+      {/* PART 1: USER DNA ENGINE */}
+      <div className="glass-card p-6 border-blue-500/20 bg-blue-500/5 hover:border-blue-500/40 transition-all flex flex-col md:flex-row items-center justify-between gap-6">
+         <div className="flex items-center gap-4">
+             <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
+                 <Shield className="text-blue-400" size={24} />
+             </div>
+             <div>
+                 <h2 className="text-xl font-display font-bold gold-gradient">User DNA Engine</h2>
+                 <p className="text-[10px] text-white/40 uppercase tracking-widest mt-1">Behavioral & Tactical Assessment</p>
+             </div>
+         </div>
+         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 w-full md:w-auto">
+             <div className="bg-cosmic-black/50 border border-white/5 p-3 rounded-lg text-center">
+                 <p className="text-[10px] text-white/40 uppercase mb-1">Risk Profile</p>
+                 <p className="text-sm font-bold text-white tracking-widest uppercase">{stats.losses > 3 && stats.winRate < 40 ? 'High Risk' : (stats.winRate > 60 ? 'Disciplined' : 'Developing')}</p>
+             </div>
+             <div className="bg-cosmic-black/50 border border-white/5 p-3 rounded-lg text-center">
+                 <p className="text-[10px] text-white/40 uppercase mb-1">Emotional State</p>
+                 <p className={`text-sm font-bold tracking-widest uppercase ${stats.losses > 3 ? 'text-red-400' : 'text-emerald-400'}`}>
+                     {stats.losses > 3 ? 'Stress / FOMO' : 'Stable'}
+                 </p>
+             </div>
+             <div className="bg-cosmic-black/50 border border-white/5 p-3 rounded-lg text-center">
+                 <p className="text-[10px] text-white/40 uppercase mb-1">Recommendation</p>
+                 <p className="text-xs font-bold text-gold tracking-widest max-w-[120px] truncate">
+                     {stats.losses > 3 ? 'Halt Trading. Meditate.' : 'Maintain Strategy.'}
+                 </p>
+             </div>
+             <div className="bg-cosmic-black/50 border border-white/5 p-3 rounded-lg text-center">
+                 <p className="text-[10px] text-white/40 uppercase mb-1">Lot Sizing</p>
+                 <p className={`text-sm font-bold tracking-widest uppercase ${stats.losses > 3 ? 'text-red-400' : 'text-emerald-400'}`}>
+                     {stats.losses > 3 ? '-50% Risk' : 'Normal Risk'}
+                 </p>
+             </div>
+         </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
           title="Total Profit" 

@@ -108,7 +108,7 @@ export default function AssetDetails({ pair, onBack, userProfile }: AssetDetails
                   <div key={signal.id} className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-gold">{getBotCharacter(signal.ai_bot, userProfile.theme)}</span>
-                      <span className={`text-[10px] font-bold uppercase ${signal.status === 'tp_hit' ? 'text-emerald-400' : signal.status === 'sl_hit' ? 'text-red-400' : 'text-white/40'}`}>
+                      <span className={`text-[10px] font-bold uppercase ${signal.status.includes('tp') ? 'text-emerald-400' : signal.status === 'sl_hit' ? 'text-red-400' : 'text-white/40'}`}>
                         {signal.status.replace('_', ' ')}
                       </span>
                     </div>
@@ -126,9 +126,22 @@ export default function AssetDetails({ pair, onBack, userProfile }: AssetDetails
             <h3 className="text-lg font-display font-bold mb-4 flex items-center gap-2">
               <Sparkles className="text-gold" size={18} /> Oracle Insight
             </h3>
-            <p className="text-sm text-white/70 leading-relaxed italic">
+            <p className="text-sm text-white/70 leading-relaxed italic mb-4">
               "{pair} is currently exhibiting strong liquidity sweeps near key psychological levels. The Oracles suggest monitoring the H4 timeframe for a potential SMC reversal."
             </p>
+            
+            {/* PHASE 11: VISUAL ENGINE SIMULATION */}
+            <div className="relative h-32 rounded-lg bg-black/40 border border-white/5 overflow-hidden flex items-center justify-center group">
+               <div className="absolute inset-0 bg-[url('https://picsum.photos/seed/chart/800/400')] opacity-30 grayscale group-hover:grayscale-0 transition-all mix-blend-screen" />
+               <div className="relative z-10 flex flex-col items-center">
+                   <div className="px-3 py-1 bg-blue-500/20 border border-blue-500/50 rounded text-blue-400 text-[10px] font-bold uppercase tracking-widest mb-2 backdrop-blur-sm">
+                       Visual Engine Active
+                   </div>
+                   <p className="text-xs text-white/60 text-center px-4">
+                       Auto-generating chart screenshot with marked Entry, SL, and TP zones for the latest signal...
+                   </p>
+               </div>
+            </div>
           </div>
         </div>
       </div>

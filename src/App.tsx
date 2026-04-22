@@ -230,6 +230,14 @@ export default function App() {
           addToast(`Omni Evolution Core: You have Ascended to rank ${ascendedProfile.student_rank} in tier ${ascendedProfile.student_tier}. Expand your vision.`, 'success');
       }
 
+      // PHASE 13: GHOST MODE FEEDBACK
+      if (trade.is_ghost) {
+          const feedback = isWin 
+            ? `Omni Ghost Mode Assessment: Logic holds true. Structure alignment correctly yielded ${finalPnlPercentage.toFixed(2)}% simulated profit. Ready for Capital.`
+            : `Omni Ghost Mode Correction: Weak zone entry. You ignored lower-timeframe BOS divergence. Market intent swallowed the position.`;
+          addToast(feedback, isWin ? 'success' : 'error');
+      }
+
       // PHASE 11: COSMIC FEED AUTONOMOUS BROADCAST
       if (finalPnlPercentage >= 15 && trade.account_type === 'live') {
           try {

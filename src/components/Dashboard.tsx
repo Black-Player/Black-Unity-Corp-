@@ -463,6 +463,18 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
     try {
       const signalData = await generateTradingSignal(pair, timeframe, selectedBot, currentPrice, sentiment, boostAnalysis);
       
+      // Phase 4: SIGNAL ENGINE (STRICT FILTER)
+      const hasStructure = signalData.bos_detected || signalData.choch_detected || !!signalData.market_structure;
+      const hasLiquidity = signalData.liquidity_swept || signalData.analysis?.toLowerCase().includes('liquidity');
+      const hasSession = !!signalData.session_timing;
+      const hasTimeframeAlignment = !!(signalData as any).timeframe_alignment;
+      
+      if (!hasStructure || !hasLiquidity || !hasSession || !hasTimeframeAlignment) {
+          addToast("The Omni Core rejected the signal: Missing critical institutional confluence (Structure/Liquidity/Session). Capital protected.", "error");
+          setGenerating(false);
+          return;
+      }
+      
       const newSignal: Omit<Signal, 'id'> = {
         uid: userProfile.uid,
         pair,
@@ -478,6 +490,12 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         ai_bot: selectedBot.name,
         confidence: signalData.confidence,
         market_structure: signalData.market_structure,
+        liquidity_presence: signalData.liquidity_swept,
+        session_timing: signalData.session_timing,
+        timeframe_alignment: (signalData as any).timeframe_alignment,
+        order_type: (signalData as any).order_type,
+        execution: (signalData as any).execution,
+        risk_percent: (signalData as any).risk_percent,
         analysis: signalData.analysis,
         recommended_lot_size: signalData.recommended_lot_size,
         status: 'active',
@@ -555,9 +573,10 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
 
         if (lastTrades.length > 0) {
             const isRevenge = await BehavioralService.detectRevengeTrading(userProfile.uid, lastTrades[0].pnl);
-            if (isRevenge) {
-                addToast("Omni Evolution Core: Emotional pattern detected (Revenge Trading). Portal locked for 15 minutes of meditation.", "error");
-                await BehavioralService.triggerCooldown(userProfile.uid, "Revenge Trading Pattern");
+            // PHASE 12: PSYCHOLOGY ENGINE
+            if (isRevenge || (userProfile.consecutive_losses && userProfile.consecutive_losses >= 3 && lastTrades[0].pnl < 0)) {
+                addToast("Psychology Engine: Fear/Revenge pattern detected. Forced correction applied. Portal locked for 15 minutes of meditation.", "error");
+                await BehavioralService.triggerCooldown(userProfile.uid, "Revenge/Fear Trading Pattern");
                 return;
             }
         }
@@ -1132,11 +1151,31 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                           </div>
                           <div>
                             <h3 className="font-bold text-lg">{signal.pair} <span className="text-sm text-white/40 font-normal">({signal.timeframe})</span></h3>
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs text-gold/70">{getBotCharacter(signal.ai_bot, userProfile.theme)} • {signal.strategy}</p>
+                            <div className="flex flex-wrap items-center gap-2 mt-1">
+                              <p className="text-xs text-gold/70 shrink-0">{getBotCharacter(signal.ai_bot, userProfile.theme)} • {signal.strategy}</p>
                               {signal.market_structure && (
-                                <span className="px-1.5 py-0.5 rounded bg-gold/20 text-gold text-[8px] font-bold uppercase tracking-wider">
+                                <span className="px-1.5 py-0.5 rounded bg-gold/20 text-gold text-[8px] font-bold uppercase tracking-wider whitespace-nowrap">
                                   {signal.market_structure}
+                                </span>
+                              )}
+                              {signal.session_timing && (
+                                <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 text-[8px] font-bold uppercase tracking-wider whitespace-nowrap">
+                                  {signal.session_timing}
+                                </span>
+                              )}
+                              {signal.timeframe_alignment && (
+                                <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 text-[8px] font-bold uppercase tracking-wider whitespace-nowrap">
+                                  {signal.timeframe_alignment}
+                                </span>
+                              )}
+                              {signal.order_type && (
+                                <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/80 text-[8px] font-bold uppercase tracking-wider border border-white/20 whitespace-nowrap">
+                                  {signal.order_type}
+                                </span>
+                              )}
+                              {signal.execution && (
+                                <span className="px-1.5 py-0.5 rounded bg-white/10 text-white/80 text-[8px] font-bold uppercase tracking-wider border border-white/20 whitespace-nowrap">
+                                  {signal.execution}
                                 </span>
                               )}
                             </div>
@@ -1184,6 +1223,16 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                           <div className="flex items-center gap-2">
                             <BarChart3 size={12} />
                             RR: {signal.risk_reward}
+                          </div>
+                          {signal.risk_percent && (
+                            <div className="flex items-center gap-2">
+                              <Shield size={12} />
+                              Risk: {signal.risk_percent}%
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2">
+                            <Target size={12} />
+                            Lot: {signal.recommended_lot_size || 'Auto'}
                           </div>
                           <button 
                             onClick={() => handleTakeTrade(signal)}

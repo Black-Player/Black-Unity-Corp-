@@ -50,37 +50,44 @@ export class StrategyService {
             - logic: Detailed step-by-step entry/exit logic
         `;
 
-        const response = await ai.models.generateContent({
-            model,
-            contents: prompt,
-            config: {
-                systemInstruction: SYSTEM_ROLE + "\n\nYou are in STRATEGY CREATION MODE. Innovate, test, and evolve.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        name: { type: Type.STRING },
-                        description: { type: Type.STRING },
-                        indicators: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        risk_reward_target: { type: Type.NUMBER },
-                        win_rate_target: { type: Type.NUMBER },
-                        logic: { type: Type.STRING },
-                    },
-                    required: ["name", "description", "indicators", "risk_reward_target", "win_rate_target", "logic"],
+        try {
+            const response = await ai.models.generateContent({
+                model,
+                contents: prompt,
+                config: {
+                    systemInstruction: SYSTEM_ROLE + "\n\nYou are in STRATEGY CREATION MODE. Innovate, test, and evolve.",
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            name: { type: Type.STRING },
+                            description: { type: Type.STRING },
+                            indicators: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            risk_reward_target: { type: Type.NUMBER },
+                            win_rate_target: { type: Type.NUMBER },
+                            logic: { type: Type.STRING },
+                        },
+                        required: ["name", "description", "indicators", "risk_reward_target", "win_rate_target", "logic"],
+                    }
                 }
+            });
+
+            const strategyData = JSON.parse(response.text || '{}');
+            const strategy: TradingStrategy = {
+                ...strategyData,
+                id: crypto.randomUUID(),
+                is_active: true,
+                created_at: new Date().toISOString(),
+                last_optimized: new Date().toISOString()
+            };
+
+            return strategy;
+        } catch (error: any) {
+            if (error.message?.includes("API key not valid") || error.status === "INVALID_ARGUMENT") {
+                throw new Error("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.");
             }
-        });
-
-        const strategyData = JSON.parse(response.text || '{}');
-        const strategy: TradingStrategy = {
-            ...strategyData,
-            id: crypto.randomUUID(),
-            is_active: true,
-            created_at: new Date().toISOString(),
-            last_optimized: new Date().toISOString()
-        };
-
-        return strategy;
+            throw error;
+        }
     }
 
     static async fuseStrategies(target: TradingStrategy, source: TradingStrategy): Promise<TradingStrategy> {
@@ -111,37 +118,44 @@ export class StrategyService {
             - logic: Detailed step-by-step entry/exit logic taking the best rules from both.
         `;
 
-        const response = await ai.models.generateContent({
-            model,
-            contents: prompt,
-            config: {
-                systemInstruction: SYSTEM_ROLE + "\n\nYou are in STRATEGY FUSION MODE. Eliminate weaknesses, combine strengths.",
-                responseMimeType: "application/json",
-                responseSchema: {
-                    type: Type.OBJECT,
-                    properties: {
-                        name: { type: Type.STRING },
-                        description: { type: Type.STRING },
-                        indicators: { type: Type.ARRAY, items: { type: Type.STRING } },
-                        risk_reward_target: { type: Type.NUMBER },
-                        win_rate_target: { type: Type.NUMBER },
-                        logic: { type: Type.STRING },
-                    },
-                    required: ["name", "description", "indicators", "risk_reward_target", "win_rate_target", "logic"],
+        try {
+            const response = await ai.models.generateContent({
+                model,
+                contents: prompt,
+                config: {
+                    systemInstruction: SYSTEM_ROLE + "\n\nYou are in STRATEGY FUSION MODE. Eliminate weaknesses, combine strengths.",
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: Type.OBJECT,
+                        properties: {
+                            name: { type: Type.STRING },
+                            description: { type: Type.STRING },
+                            indicators: { type: Type.ARRAY, items: { type: Type.STRING } },
+                            risk_reward_target: { type: Type.NUMBER },
+                            win_rate_target: { type: Type.NUMBER },
+                            logic: { type: Type.STRING },
+                        },
+                        required: ["name", "description", "indicators", "risk_reward_target", "win_rate_target", "logic"],
+                    }
                 }
+            });
+
+            const strategyData = JSON.parse(response.text || '{}');
+            const strategy: TradingStrategy = {
+                ...strategyData,
+                id: crypto.randomUUID(),
+                is_active: true,
+                created_at: new Date().toISOString(),
+                last_optimized: new Date().toISOString()
+            };
+
+            return strategy;
+        } catch (error: any) {
+            if (error.message?.includes("API key not valid") || error.status === "INVALID_ARGUMENT") {
+                throw new Error("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.");
             }
-        });
-
-        const strategyData = JSON.parse(response.text || '{}');
-        const strategy: TradingStrategy = {
-            ...strategyData,
-            id: crypto.randomUUID(),
-            is_active: true,
-            created_at: new Date().toISOString(),
-            last_optimized: new Date().toISOString()
-        };
-
-        return strategy;
+            throw error;
+        }
     }
 
     static async backtestStrategy(strategy: TradingStrategy, historicalData: any[]): Promise<any> {

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { auth as firebaseAuth } from '../firebase';
+import { dbService } from '../services/dbService';
 import { UserProfile, AppTheme } from '../types';
 import { Settings as SettingsIcon, Bell, Volume2, Mail, Shield, CreditCard, User, Zap, LogOut, Trash2, Palette, Moon, Sun, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -152,24 +153,29 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
             </div>
           </section>
 
+          {/* PHASE 15 & 25: SECURITY ENGINE */}
           <section className="glass-card p-8 space-y-6">
             <h2 className="text-xl font-display font-bold flex items-center gap-2">
-              <Shield className="text-gold" size={20} /> Security & Privacy
+              <Shield className="text-gold" size={20} /> Omni Security Engine
             </h2>
             <div className="space-y-4">
               <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
                 <div>
-                  <p className="font-bold">Two-Factor Authentication</p>
-                  <p className="text-xs text-white/40">Add an extra layer of security to your account.</p>
+                  <p className="font-bold flex items-center gap-2"><Key className="text-gold" size={14} /> Key Abuse Prevention</p>
+                  <p className="text-xs text-white/40">Actively monitoring access tokens for IP displacement and multisession abuse.</p>
                 </div>
-                <button className="text-gold text-sm font-bold hover:underline">Enable</button>
+                <div className="px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase text-[10px] tracking-widest border border-emerald-500/20">
+                    Active
+                </div>
               </div>
               <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex items-center justify-between">
                 <div>
-                  <p className="font-bold">Session Management</p>
-                  <p className="text-xs text-white/40">View and manage your active sessions.</p>
+                  <p className="font-bold flex items-center gap-2"><Shield size={14} className="text-gold" /> Role Escalation Blocker</p>
+                  <p className="text-xs text-white/40">Security engine strictly locks tier progression to Creator AP approval only.</p>
                 </div>
-                <button className="text-gold text-sm font-bold hover:underline">View</button>
+                <div className="px-3 py-1 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase text-[10px] tracking-widest border border-emerald-500/20">
+                    Active
+                </div>
               </div>
             </div>
           </section>

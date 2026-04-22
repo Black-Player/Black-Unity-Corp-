@@ -159,7 +159,7 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
   const currentMessages = chatMode === 'ai' ? messages : communityMessages;
 
   return (
-    <div className="h-[calc(100vh-180px)] lg:h-[calc(100vh-140px)] flex flex-col lg:flex-row gap-4 lg:gap-8">
+    <div className="h-[calc(100vh-140px)] lg:h-[calc(100vh-110px)] flex flex-col lg:flex-row gap-4 lg:gap-8">
       <div className="w-full lg:w-72 flex flex-col gap-4 lg:gap-6 shrink-0">
         <div className="glass-card p-1.5 flex gap-1 border-white/5">
           <button

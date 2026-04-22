@@ -56,7 +56,7 @@ export default function History({ userProfile, addToast }: HistoryProps) {
 
   const stats = {
     total: signals.length,
-    wins: signals.filter(s => s.status === 'tp_hit').length,
+    wins: signals.filter(s => s.status.includes('tp')).length,
     losses: signals.filter(s => s.status === 'sl_hit').length,
     active: signals.filter(s => s.status === 'active').length,
   };
@@ -186,11 +186,11 @@ export default function History({ userProfile, addToast }: HistoryProps) {
                       </td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest inline-flex items-center gap-1 ${
-                          signal.status === 'tp_hit' ? 'bg-emerald-400/10 text-emerald-400' :
+                          signal.status.includes('tp') ? 'bg-emerald-400/10 text-emerald-400' :
                           signal.status === 'sl_hit' ? 'bg-red-400/10 text-red-400' :
                           'bg-gold/10 text-gold'
                         }`}>
-                          {signal.status === 'tp_hit' ? <CheckCircle2 size={10} /> :
+                          {signal.status.includes('tp') ? <CheckCircle2 size={10} /> :
                            signal.status === 'sl_hit' ? <XCircle size={10} /> :
                            <Clock size={10} />}
                           {signal.status.replace('_', ' ')}
@@ -233,11 +233,11 @@ export default function History({ userProfile, addToast }: HistoryProps) {
                       </div>
                     </div>
                     <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest inline-flex items-center gap-1 ${
-                      signal.status === 'tp_hit' ? 'bg-emerald-400/10 text-emerald-400' :
+                      signal.status.includes('tp') ? 'bg-emerald-400/10 text-emerald-400' :
                       signal.status === 'sl_hit' ? 'bg-red-400/10 text-red-400' :
                       'bg-gold/10 text-gold'
                     }`}>
-                      {signal.status === 'tp_hit' ? <CheckCircle2 size={10} /> :
+                      {signal.status.includes('tp') ? <CheckCircle2 size={10} /> :
                        signal.status === 'sl_hit' ? <XCircle size={10} /> :
                        <Clock size={10} />}
                       {signal.status.replace('_', ' ')}

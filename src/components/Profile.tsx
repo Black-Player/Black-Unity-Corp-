@@ -205,6 +205,10 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
                   <span className={`text-sm font-bold uppercase tracking-widest ${getTierColor(profile.tier)}`}>
                     {profile.tier} Oracle
                   </span>
+                  {/* PHASE 14 & 23: DYNAMIC REPUTATION TITLES */}
+                  <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold tracking-wider uppercase">
+                    {profile.win_rate > 70 ? 'Grandmaster' : profile.win_rate > 55 ? 'Adept Executor' : 'Apprentice'}
+                  </span>
                   <span className="text-white/40 text-sm flex items-center gap-1">
                     <Clock className="w-4 h-4" />
                     Joined {new Date(profile.created_at).toLocaleDateString()}

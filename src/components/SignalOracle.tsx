@@ -291,8 +291,13 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
     <div className="space-y-8 pb-12">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-display font-bold gold-gradient">The Signal Oracle</h1>
-          <p className="text-white/40">Session-aware ritual recommendations and high-precision entries.</p>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-display font-bold gold-gradient">The Signal Oracle</h1>
+            <span className="px-2 py-1 align-middle rounded bg-gold/20 text-gold text-[8px] font-bold uppercase tracking-wider shadow shadow-gold/20 flex items-center gap-1">
+              <Zap size={10} /> Thinking Mode: Active
+            </span>
+          </div>
+          <p className="text-white/40">Session-aware ritual recommendations and high-precision Advanced Signal Generation.</p>
         </div>
         <div className="flex bg-white/5 rounded-xl p-1 border border-white/5">
           {Object.keys(SESSION_RECOMMENDATIONS).map((s) => (

@@ -4,7 +4,7 @@ import { dbService } from '../services/dbService';
 import { where } from 'firebase/firestore';
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Book, Plus, Trash2, TrendingUp, TrendingDown, Clock, Tag, MessageSquare, Brain, Sparkles, Filter, Save, Download, Bot } from 'lucide-react';
+import { Book, Plus, Trash2, TrendingUp, TrendingDown, Clock, Tag, MessageSquare, Brain, Sparkles, Filter, Save, Download, Bot, Sprout } from 'lucide-react';
 import { analyzeTradeReview } from '../services/aiService';
 
 interface JournalEntry {
@@ -70,47 +70,88 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
     };
   }, [userProfile.uid]);
 
-  const handleExportRecord = async () => {
+  const handleExportStatement = async (period: 'daily' | 'weekly' | 'monthly' | 'all') => {
       try {
-          addToast("Retrieving Immortal Trade Record...", "info");
-          const trades = await dbService.list('trades', [
+          addToast(`Generating ${period} statement...`, "info");
+          
+          let startDate = new Date(0); // Epoch for 'all'
+          const now = new Date();
+          if (period === 'daily') {
+             startDate = new Date(now.setHours(0,0,0,0));
+          } else if (period === 'weekly') {
+             startDate = new Date(now.setDate(now.getDate() - 7));
+          } else if (period === 'monthly') {
+             startDate = new Date(now.setMonth(now.getMonth() - 1));
+          }
+
+          const constraints = [
               where('uid', '==', userProfile.uid),
               where('status', '==', 'closed')
-          ]);
+          ];
           
-          if (!trades || trades.length === 0) {
-              addToast("No closed trades found in the archives.", "info");
+          const rawTrades = await dbService.list('trades', constraints);
+          const trades = rawTrades.filter((t: any) => new Date(t.closed_at) >= startDate);
+          
+          const { data: rawJournals } = await supabase.from('journal').select('*').eq('uid', userProfile.uid);
+          const journals = (rawJournals || []).filter((j: any) => new Date(j.created_at) >= startDate);
+          
+          if (trades.length === 0 && journals.length === 0) {
+              addToast(`No activity found for the ${period} period.`, "info");
               return;
           }
 
           let csvContent = "data:text/csv;charset=utf-8,";
-          csvContent += "ID,Pair,Type,Entry Price,Closing Price,P/L,Close Reason,Closed At\n";
+          
+          if (trades.length > 0) {
+              csvContent += "--- TRADE HISTORY ---\n";
+              csvContent += "ID,Pair,Type,Entry Price,Closing Price,P/L,Close Reason,Closed At\n";
 
-          trades.forEach((trade: any) => {
-              const row = [
-                  trade.id,
-                  trade.pair,
-                  trade.type,
-                  trade.entry_price,
-                  trade.exit_price ||trade.current_price, // fallback
-                  trade.pnl,
-                  trade.close_reason || 'Unknown',
-                  trade.closed_at || ''
-              ].join(",");
-              csvContent += row + "\r\n";
-          });
+              trades.forEach((trade: any) => {
+                  const row = [
+                      trade.id,
+                      trade.pair,
+                      trade.type,
+                      trade.entry_price,
+                      trade.exit_price ||trade.current_price, // fallback
+                      trade.pnl,
+                      trade.close_reason || 'Unknown',
+                      trade.closed_at || ''
+                  ].join(",");
+                  csvContent += row + "\r\n";
+              });
+          }
+
+          if (journals.length > 0) {
+              csvContent += (trades.length > 0 ? "\n\n" : "");
+              csvContent += "--- JOURNAL ENTRIES ---\n";
+              csvContent += "Date,Pair,Type,P/L,Emotion,Notes,Mistakes\n";
+              journals.forEach((j: any) => {
+                  const notesSafe = j.notes ? j.notes.replace(/"/g, '""') : "";
+                  const mistakesSafe = j.mistakes ? j.mistakes.join('; ') : "";
+                  const row = [
+                      j.created_at,
+                      j.pair,
+                      j.type,
+                      j.pnl,
+                      j.emotion,
+                      `"${notesSafe}"`,
+                      `"${mistakesSafe}"`
+                  ].join(",");
+                  csvContent += row + "\r\n";
+              });
+          }
 
           const encodedUri = encodeURI(csvContent);
           const link = document.createElement("a");
           link.setAttribute("href", encodedUri);
-          link.setAttribute("download", `immortal_trade_record_${new Date().toISOString().split('T')[0]}.csv`);
+          link.setAttribute("download", `account_statement_${period}_${new Date().toISOString().split('T')[0]}.csv`);
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
 
-          addToast("Immortal Trade Record Downloaded.", "success");
+          addToast(`${period.charAt(0).toUpperCase() + period.slice(1)} Statement Downloaded.`, "success");
       } catch (err) {
-          addToast("Failed to retrieve Immortal Record.", "error");
+          addToast("Failed to retrieve statement.", "error");
           console.error(err);
       }
   };
@@ -182,7 +223,7 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
       );
 
       // Append Zion's analysis to the entry's notes
-      const zionFeedback = `\n\n[Zion AI Reflection]\nEmotion Score: ${insight.emotional_state}\nStrategy Adherence: ${insight.strategy_adherence}\nImprovement Advice: ${insight.potential_improvements}\nOverall Quality: ${insight.overall_rating}/10`;
+      const zionFeedback = `\n\n[Zion AI Reflection]\nEmotion Score: ${insight.emotional_state}\nStrategy Adherence: ${insight.strategy_adherence}\nImprovement Advice: ${insight.potential_improvements}\nOverall Quality: ${insight.overall_rating}/10\n\n[Cosmic Summary]\n${insight.trade_summary}`;
       
       const { error } = await supabase
         .from('journal')
@@ -218,12 +259,19 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
           <p className="text-white/40">Reflect on your prophecies, analyze your emotions, and master the self.</p>
         </div>
         <div className="flex gap-4">
-            <button 
-                onClick={handleExportRecord}
-                className="px-6 py-2 border border-gold/40 text-gold hover:bg-gold hover:text-black rounded-lg font-bold transition-all flex items-center gap-2"
-            >
-                <Download size={18} /> Immortal Record
-            </button>
+            <div className="relative group">
+              <button 
+                  className="px-6 py-2 border border-gold/40 text-gold hover:bg-gold hover:text-black rounded-lg font-bold transition-all flex items-center gap-2"
+              >
+                  <Download size={18} /> Export Activity
+              </button>
+              <div className="absolute right-0 top-full mt-2 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                 <button onClick={() => handleExportStatement('daily')} className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-white/5 text-white/60 hover:text-white">Daily Statement</button>
+                 <button onClick={() => handleExportStatement('weekly')} className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-white/5 text-white/60 hover:text-white">Weekly Statement</button>
+                 <button onClick={() => handleExportStatement('monthly')} className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-white/5 text-white/60 hover:text-white">Monthly Statement</button>
+                 <button onClick={() => handleExportStatement('all')} className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-white/5 text-gold border-t border-white/5">Complete Archive</button>
+              </div>
+            </div>
             <button 
               onClick={() => setIsAdding(true)}
               className="gold-button px-6 py-2 flex items-center gap-2"
@@ -280,7 +328,46 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
                 </div>
 
                 <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-2 relative">
-                  <p className="text-sm text-white/60 italic whitespace-pre-wrap">"{entry.notes}"</p>
+                  {(() => {
+                    const notes = entry.notes;
+                    if (!notes.includes('[Zion AI Reflection]')) {
+                      return <p className="text-sm text-white/60 italic whitespace-pre-wrap">"{notes}"</p>;
+                    }
+
+                    const parts = notes.split('[Zion AI Reflection]');
+                    const userNotes = parts[0].trim();
+                    const aiNotes = parts[1] || '';
+
+                    let summary = '';
+                    let restAi = aiNotes;
+                    if (aiNotes.includes('[Cosmic Summary]')) {
+                      const summaryParts = aiNotes.split('[Cosmic Summary]');
+                      restAi = summaryParts[0].trim();
+                      summary = summaryParts[1] ? summaryParts[1].trim() : '';
+                    }
+
+                    return (
+                      <div className="space-y-4">
+                        <p className="text-sm text-white/60 italic whitespace-pre-wrap">"{userNotes}"</p>
+                        
+                        <div className="p-4 rounded-xl bg-black/40 border border-gold/10 space-y-3">
+                          <h4 className="text-[10px] font-bold uppercase tracking-widest text-gold flex items-center gap-2">
+                            <Bot size={14} /> Zion AI Reflection
+                          </h4>
+                          <p className="text-xs text-white/70 whitespace-pre-wrap leading-relaxed">{restAi}</p>
+                        </div>
+
+                        {summary && (
+                          <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 space-y-3">
+                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-purple-400 flex items-center gap-2">
+                              <Sparkles size={14} /> Detailed Trade Narrative
+                            </h4>
+                            <p className="text-xs text-white/70 whitespace-pre-wrap leading-relaxed text-justify">{summary}</p>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   
                   {!entry.notes.includes('[Zion AI Reflection]') && (
                     <button
@@ -362,6 +449,37 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
               ))}
             </div>
           </div>
+
+          {/* PHASE 25: COSMIC MILESTONES (ACHIEVEMENTS) */}
+          <div className="glass-card p-6 border-purple-500/20 bg-purple-500/5 space-y-6">
+            <h3 className="text-lg font-display font-bold flex items-center gap-2 text-purple-400">
+              <Sprout size={20} /> Cosmic Milestones
+            </h3>
+            <p className="text-xs text-white/40 italic">Unlock the secrets of the universe through disciplined trading.</p>
+            <div className="grid grid-cols-2 gap-3">
+               <div className="p-3 bg-white/5 border border-purple-500/30 rounded-xl text-center">
+                  <div className="w-8 h-8 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center mx-auto mb-2 text-lg">🛡️</div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/80">Iron Discipline</p>
+                  <p className="text-[8px] text-white/40 mt-1">10 trades w/ 1% risk</p>
+               </div>
+               <div className="p-3 bg-white/5 border border-emerald-500/30 rounded-xl text-center relative overflow-hidden">
+                  <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-500/10 rotate-45 blur-xl"></div>
+                  <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-2 text-lg">👁️</div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/80">Zen Master</p>
+                  <p className="text-[8px] text-white/40 mt-1">5 'Calm' entries</p>
+               </div>
+               <div className="p-3 bg-white/5 border border-white/5 opacity-50 grayscale rounded-xl text-center cursor-not-allowed">
+                  <div className="w-8 h-8 rounded-full bg-white/10 text-white/40 flex items-center justify-center mx-auto mb-2 text-lg">🔒</div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/80">The Oracle</p>
+                  <p className="text-[8px] text-white/40 mt-1">80% WR over 50 trades</p>
+               </div>
+               <div className="p-3 bg-white/5 border border-white/5 opacity-50 grayscale rounded-xl text-center cursor-not-allowed">
+                  <div className="w-8 h-8 rounded-full bg-white/10 text-white/40 flex items-center justify-center mx-auto mb-2 text-lg">🔒</div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-white/80">Abyssal Voyager</p>
+                  <p className="text-[8px] text-white/40 mt-1">Survive 15% drawdown</p>
+               </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -435,11 +553,12 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Notes & Reflection</label>
+                    <label className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Notes & Outcome (BE, TP, SL)</label>
                     <textarea 
                       value={newEntry.notes}
                       onChange={(e) => setNewEntry(prev => ({ ...prev, notes: e.target.value }))}
                       rows={4}
+                      placeholder="E.g. Price swept liquidity then perfectly hit TP1 before I trailed to Breakeven..."
                       className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:border-gold/50 transition-all outline-none resize-none"
                     />
                   </div>

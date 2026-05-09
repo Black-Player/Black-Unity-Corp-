@@ -299,8 +299,12 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       setSentiment(sentimentData);
       setNews(newsData);
       addToast('Celestial Alignment Complete. Market data synchronized.', 'success');
-    } catch (err) {
-      addToast('Cosmic interference during synchronization.', 'error');
+    } catch (err: any) {
+      if (err.message?.includes("quota") || err.message?.includes("429") || err.status === "RESOURCE_EXHAUSTED") {
+          addToast('Synchronization failed: Gemini API Quota exceeded.', 'error');
+      } else {
+          addToast('Cosmic interference during synchronization.', 'error');
+      }
     } finally {
       setTimeout(() => setSyncing(false), 1500); 
     }

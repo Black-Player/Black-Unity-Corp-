@@ -8,6 +8,9 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import TradeHistory from './TradeHistory';
 import AssetHeatmap from './AssetHeatmap';
 
+import { dbService } from '../services/dbService';
+import { where, orderBy as firestoreOrderBy } from 'firebase/firestore';
+
 interface PerformanceReportsProps {
   userProfile: UserProfile;
 }
@@ -20,16 +23,14 @@ export default function PerformanceReports({ userProfile }: PerformanceReportsPr
   useEffect(() => {
     const fetchTrades = async () => {
       try {
-        const { data, error } = await supabase
-          .from('trades')
-          .select('*')
-          .eq('uid', userProfile.uid)
-          .order('created_at', { ascending: false });
-        
-        if (error) throw error;
+        setLoading(true);
+        const data = await dbService.list('trades', [
+          where('uid', '==', userProfile.uid),
+          firestoreOrderBy('created_at', 'desc')
+        ]);
         setTrades(data as Trade[]);
       } catch (err) {
-        await handleSupabaseError(err, OperationType.LIST, 'trades');
+        console.error("Failed to fetch trades via dbService:", err);
       } finally {
         setLoading(false);
       }
@@ -37,21 +38,13 @@ export default function PerformanceReports({ userProfile }: PerformanceReportsPr
 
     fetchTrades();
 
-    const channel = supabase
-      .channel('trades-performance')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'trades',
-        filter: `uid=eq.${userProfile.uid}`
-      }, () => {
-        fetchTrades();
-      })
-      .subscribe();
+    const unsubscribe = dbService.subscribeCollection('trades', [
+      where('uid', '==', userProfile.uid)
+    ], (data) => {
+      setTrades(data as Trade[]);
+    });
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => unsubscribe();
   }, [userProfile.uid]);
 
   const stats = useMemo(() => {

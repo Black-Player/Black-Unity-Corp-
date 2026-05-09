@@ -11,6 +11,7 @@ interface EconomicCalendarProps {
 export const EconomicCalendar: React.FC<EconomicCalendarProps> = ({ compact = false }) => {
   const [events, setEvents] = useState<EconomicEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchEvents = async () => {
@@ -21,8 +22,13 @@ export const EconomicCalendar: React.FC<EconomicCalendarProps> = ({ compact = fa
           ? data.filter(e => e.impact === 'high').slice(0, 3) 
           : data;
         setEvents(filteredData.length > 0 ? filteredData : data.slice(0, 2));
-      } catch (error) {
-        console.error("Failed to fetch economic events", error);
+      } catch (err: any) {
+        console.error("Failed to fetch economic events", err);
+        if (err.message?.includes("quota") || err.message?.includes("429") || err.status === "RESOURCE_EXHAUSTED") {
+            setError("Quota exceeded. Please check your Gemini API plan.");
+        } else {
+            setError("Oracle connection temporarily interrupted.");
+        }
       } finally {
         setLoading(false);
       }
@@ -72,6 +78,11 @@ export const EconomicCalendar: React.FC<EconomicCalendarProps> = ({ compact = fa
         <div className={`flex flex-col items-center justify-center ${compact ? 'py-10' : 'py-20'} space-y-4`}>
           <div className="w-8 h-8 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin" />
           <p className="text-xs text-blue-200/60 animate-pulse">Consulting the cosmic timeline...</p>
+        </div>
+      ) : error ? (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-2xl p-6 text-center">
+          <AlertTriangle className="w-6 h-6 text-red-500 mx-auto mb-2" />
+          <p className="text-xs text-red-200">{error}</p>
         </div>
       ) : events.length > 0 ? (
         <div className="grid gap-4">

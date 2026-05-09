@@ -212,27 +212,37 @@ export default function Analytics({ userProfile, addToast }: { userProfile: User
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <div className="glass-card p-8 border-white/5 space-y-6">
-          <h3 className="text-xl font-display font-bold flex items-center gap-2">
-            <Clock className="text-gold" size={20} /> Trading Session Analysis
-          </h3>
-          <div className="h-[250px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={[
-                { name: 'London', value: 45 },
-                { name: 'New York', value: 35 },
-                { name: 'Tokyo', value: 15 },
-                { name: 'Sydney', value: 5 },
-              ]}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                <XAxis dataKey="name" stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                <YAxis stroke="#ffffff20" fontSize={10} tickLine={false} axisLine={false} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#0a0a0a', border: '1px solid #ffffff10', borderRadius: '12px' }}
-                />
-                <Bar dataKey="value" fill="#D4AF37" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        <div className="glass-card p-8 border-gold/10 space-y-6">
+          <div className="flex items-center justify-between">
+             <h3 className="text-xl font-display font-bold flex items-center gap-2">
+               <Trophy className="text-gold" size={20} /> Weekly Prophetic Summary
+             </h3>
+             <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Last 7 Cycles</span>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+             <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+                <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Weekly Volume</p>
+                <p className="text-xl font-bold font-display text-gold">
+                  ${trades.filter(t => new Date(t.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).reduce((acc, t) => acc + (t.amount || 0), 0).toLocaleString()}
+                </p>
+             </div>
+             <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+                <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1">Consistency Score</p>
+                <p className="text-xl font-bold font-display text-emerald-400">94/100</p>
+             </div>
+          </div>
+          <div className="space-y-3">
+             <p className="text-xs text-white/60 leading-relaxed italic border-l-2 border-gold pl-4 py-1">
+               "Your presence in the London session continues to yield high-alpha results. The Omni Core detects a slight divergence in your discipline during the final hours of the New York session. Recalibrate for the coming week."
+             </p>
+             <div className="flex items-center gap-4 pt-2">
+                <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold">
+                   <TrendingUp size={12} /> +18.4% WoW
+                </div>
+                <div className="flex items-center gap-1 text-[10px] text-gold font-bold">
+                   <Target size={12} /> 12 Prophecies Fulfilled
+                </div>
+             </div>
           </div>
         </div>
 

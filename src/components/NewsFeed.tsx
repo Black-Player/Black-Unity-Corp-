@@ -7,14 +7,20 @@ import { MarketNews } from '../types';
 export const NewsFeed: React.FC = () => {
   const [news, setNews] = useState<MarketNews[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchNews = async () => {
       try {
         const data = await getMarketNews();
         setNews(data);
-      } catch (error) {
-        console.error('Failed to fetch news:', error);
+      } catch (err: any) {
+        console.error('Failed to fetch news:', err);
+        if (err.message?.includes("quota") || err.message?.includes("429") || err.status === "RESOURCE_EXHAUSTED") {
+            setError("Quota exceeded. Please check your Gemini API plan.");
+        } else {
+            setError("News stream temporarily interrupted.");
+        }
       } finally {
         setLoading(false);
       }
@@ -31,6 +37,14 @@ export const NewsFeed: React.FC = () => {
         {[1, 2, 3].map((i) => (
           <div key={i} className="h-24 bg-white/5 rounded-xl animate-pulse" />
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-center">
+        <p className="text-xs text-red-300">{error}</p>
       </div>
     );
   }

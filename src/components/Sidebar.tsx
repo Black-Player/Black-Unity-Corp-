@@ -1,4 +1,4 @@
-import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock, User, Ghost } from 'lucide-react';
+import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock, User, Ghost, Activity } from 'lucide-react';
 import { supabase } from '../supabase';
 import { auth as firebaseAuth } from '../firebase';
 import { UserProfile, Tier, hasTierAccess } from '../types';
@@ -16,6 +16,7 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
       label: 'Core',
       items: [
         { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+        { id: 'closed-trades', label: 'Closed Trades', icon: History },
         { id: 'notifications', label: 'Cosmic Alerts', icon: Bell, badge: userProfile?.notification_count },
         { id: 'feed', label: 'Cosmic Feed', icon: Globe },
         { id: 'zion', label: 'Zion AI', icon: Bot },
@@ -38,6 +39,7 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
     {
       label: 'Laboratory',
       items: [
+        { id: 'simulator', label: 'Trading Simulator', icon: Activity },
         { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
         { id: 'alchemist', label: 'The Alchemist', icon: Settings2, requiredTier: 'zion' },
         { id: 'strategy-builder', label: 'The Weaver', icon: Layers, requiredTier: 'legendary' },

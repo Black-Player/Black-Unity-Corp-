@@ -2,19 +2,45 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TrendingUp, TrendingDown, Eye, Zap, Sparkles, Activity, Target, Palette, Code, Check, Search, Globe, Clock, BarChart3, Layers, Shield, ChevronRight, LayoutGrid, List } from 'lucide-react';
 import LightweightChart from './LightweightChart';
+import TradingViewWidget from './TradingViewWidget';
 import { useMarketContext } from '../MarketContext';
 
 const SYMBOLS = [
+  // Synthetic Indices
   { id: 'R_10', name: 'Volatility 10 Index', category: 'Synthetics' },
   { id: 'R_25', name: 'Volatility 25 Index', category: 'Synthetics' },
   { id: 'R_50', name: 'Volatility 50 Index', category: 'Synthetics' },
   { id: 'R_75', name: 'Volatility 75 Index', category: 'Synthetics' },
   { id: 'R_100', name: 'Volatility 100 Index', category: 'Synthetics' },
+  { id: 'BOOM300', name: 'Boom 300', category: 'Synthetics' },
+  { id: 'BOOM500', name: 'Boom 500', category: 'Synthetics' },
+  { id: 'BOOM1000', name: 'Boom 1000', category: 'Synthetics' },
+  { id: 'CRASH300', name: 'Crash 300', category: 'Synthetics' },
+  { id: 'CRASH500', name: 'Crash 500', category: 'Synthetics' },
+  { id: 'CRASH1000', name: 'Crash 1000', category: 'Synthetics' },
+  { id: 'STEP', name: 'Step Index', category: 'Synthetics' },
+  { id: 'RANGE100', name: 'Range Break 100', category: 'Synthetics' },
+  { id: 'RANGE200', name: 'Range Break 200', category: 'Synthetics' },
+  // Forex
   { id: 'frxEURUSD', name: 'EUR/USD', category: 'Forex' },
   { id: 'frxGBPUSD', name: 'GBP/USD', category: 'Forex' },
   { id: 'frxUSDJPY', name: 'USD/JPY', category: 'Forex' },
-  { id: 'frxXAUUSD', name: 'Gold/USD', category: 'Commodities' },
+  { id: 'frxUSDCHF', name: 'USD/CHF', category: 'Forex' },
+  { id: 'frxAUDUSD', name: 'AUD/USD', category: 'Forex' },
+  { id: 'frxUSDCAD', name: 'USD/CAD', category: 'Forex' },
+  { id: 'frxEURGBP', name: 'EUR/GBP', category: 'Forex' },
+  { id: 'frxEURJPY', name: 'EUR/JPY', category: 'Forex' },
+  { id: 'frxGBPJPY', name: 'GBP/JPY', category: 'Forex' },
+  { id: 'frxAUDJPY', name: 'AUD/JPY', category: 'Forex' },
+  // Commodities
+  { id: 'frxXAUUSD', name: 'Gold/USD (XAU/USD)', category: 'Commodities' },
+  { id: 'frxXAGUSD', name: 'Silver/USD (XAG/USD)', category: 'Commodities' },
+  { id: 'WTI', name: 'US Oil (WTI)', category: 'Commodities' },
+  { id: 'BRENT', name: 'UK Oil (Brent)', category: 'Commodities' },
+  // Crypto
   { id: 'cryBTCUSD', name: 'Bitcoin/USD', category: 'Crypto' },
+  { id: 'cryETHUSD', name: 'Ethereum/USD', category: 'Crypto' },
+  { id: 'cryLTCUSD', name: 'Litecoin/USD', category: 'Crypto' },
 ];
 
 export default function AdvancedChart() {
@@ -145,49 +171,67 @@ export default function AdvancedChart() {
         </header>
 
         <div className="flex-1 glass-card border-white/5 overflow-hidden relative">
-          <LightweightChart symbol={selectedSymbol} height={600} />
+          <TradingViewWidget />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="glass-card p-6 border-white/5 space-y-4">
             <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
-              <Activity size={16} /> Market Sentiment
+              <Activity size={16} /> Trade Context
             </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between text-xs">
-                <span className="text-emerald-400 font-bold">Bullish (64%)</span>
-                <span className="text-rose-400 font-bold">Bearish (36%)</span>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Strategy Used</p>
+                <p className="text-sm font-bold text-emerald-400">SMC / Sniper</p>
               </div>
-              <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden flex">
-                <div className="h-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.3)]" style={{ width: '64%' }} />
-                <div className="h-full bg-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.3)]" style={{ width: '36%' }} />
+              <div>
+                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Confidence</p>
+                <p className="text-sm font-bold text-gold">High (88%)</p>
               </div>
-              <p className="text-[10px] text-white/20 italic text-center">Based on real-time order flow and social sentiment.</p>
+              <div>
+                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Risk/Reward</p>
+                <p className="text-sm font-bold text-white">1:3.5</p>
+              </div>
+              <div>
+                <p className="text-[10px] text-white/40 uppercase font-bold tracking-widest mb-1">Market Session</p>
+                <p className="text-sm font-bold text-white">New York <span className="text-emerald-400 border border-emerald-400/20 bg-emerald-400/10 px-1 py-0.5 rounded text-[8px] ml-1">ACTIVE</span></p>
+              </div>
             </div>
           </div>
 
           <div className="glass-card p-6 border-white/5 space-y-4">
             <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
-              <Zap size={16} /> AI Insight
+              <Zap size={16} /> AI Logic & Context
             </h3>
             <div className="p-3 rounded-xl bg-gold/5 border border-gold/10">
               <p className="text-xs text-white/60 leading-relaxed">
-                "The current structure suggests a liquidity sweep below the previous low. Watch for a rejection candle to confirm the bullish reversal."
+                "The current structure suggests a liquidity sweep below the previous low. Watch for a rejection candle in the 15M timeframe to confirm the bullish reversal before SMC execution."
               </p>
             </div>
           </div>
 
           <div className="glass-card p-6 border-white/5 space-y-4">
             <h3 className="text-sm font-bold uppercase tracking-widest text-white/40 flex items-center gap-2">
-              <Shield size={16} /> Risk Guard
+              <Shield size={16} /> Market State
             </h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold text-white">Volatility Risk</p>
-                <p className="text-[10px] text-emerald-400 uppercase font-bold">Low Impact</p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-white">Volatility Regime</p>
+                  <p className="text-[10px] text-emerald-400 uppercase font-bold">Optimal / Trending</p>
+                </div>
+                <div className="w-10 h-10 rounded-full border-2 border-emerald-400/20 flex items-center justify-center">
+                  <Check size={20} className="text-emerald-400" />
+                </div>
               </div>
-              <div className="w-10 h-10 rounded-full border-2 border-emerald-400/20 flex items-center justify-center">
-                <Check size={20} className="text-emerald-400" />
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold text-white">Zone Overlay</p>
+                  <p className="text-[10px] text-gold uppercase font-bold">In Demand Zone</p>
+                </div>
+                <div className="w-10 h-10 rounded-full border-2 border-gold/20 flex items-center justify-center">
+                  <Target size={20} className="text-gold" />
+                </div>
               </div>
             </div>
           </div>

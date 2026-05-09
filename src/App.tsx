@@ -10,6 +10,7 @@ import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import History from './components/History';
 import Analytics from './components/Analytics';
+import PerformanceReports from './components/PerformanceReports';
 import Leaderboard from './components/Leaderboard';
 import Social from './components/Social';
 import Profile from './components/Profile';
@@ -47,8 +48,10 @@ import Settings from './components/Settings';
 import Subscription from './components/Subscription';
 import Diagnostics from './components/Diagnostics';
 import ErrorBoundary from './components/ErrorBoundary';
+import TradingGame from './components/TradingGame';
+import TickerTape from './components/TickerTape';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, Hammer, Book, Zap, Video, Layers, Layout, Settings2, Target, ShoppingBag, Ghost } from 'lucide-react';
+import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, Hammer, Book, Zap, Video, Layers, Layout, Settings2, Target, ShoppingBag, Ghost, History as HistoryIcon, Activity } from 'lucide-react';
 
 interface Toast {
   id: string;
@@ -462,6 +465,8 @@ export default function App() {
         return <Council {...props} />;
       case 'analytics':
         return <Analytics {...props} />;
+      case 'closed-trades':
+        return <PerformanceReports userProfile={userProfile} />;
       case 'vision':
         return <AdvancedChart />;
       case 'portfolio':
@@ -486,6 +491,8 @@ export default function App() {
         return <Nexus {...props} />;
       case 'marketplace':
         return <Marketplace userProfile={userProfile} addToast={addToast} />;
+      case 'simulator':
+        return <TradingGame userProfile={userProfile} addToast={addToast} />;
       default:
         return <Dashboard {...props} />;
     }
@@ -493,7 +500,9 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-cosmic-black flex relative overflow-x-hidden">
+      <div className="min-h-screen bg-cosmic-black flex flex-col relative overflow-x-hidden">
+        <TickerTape />
+        <div className="flex flex-1 overflow-hidden relative">
         <GlobalSearch 
           isOpen={isSearchOpen} 
           onClose={() => setIsSearchOpen(false)} 
@@ -561,6 +570,7 @@ export default function App() {
                 <div className="flex-1 overflow-y-auto p-4 space-y-1">
                   {[
                     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                    { id: 'closed-trades', label: 'Closed Trades', icon: HistoryIcon },
                     { id: 'feed', label: 'Cosmic Feed', icon: Globe },
                     { id: 'zion', label: 'Zion AI', icon: Bot },
                     { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
@@ -574,6 +584,7 @@ export default function App() {
                     { id: 'signal-stream', label: 'Signal Stream', icon: Zap },
                     { id: 'signal-oracle', label: 'Signal Oracle', icon: Target },
                     { id: 'gallery', label: 'The Gallery', icon: ShoppingBag },
+                    { id: 'simulator', label: 'Trading Simulator', icon: Activity },
                     { id: 'alchemist', label: 'The Alchemist', icon: Settings2 },
                     { id: 'marketplace', label: 'Marketplace', icon: Search },
                     { id: 'council', label: 'Council', icon: Users },
@@ -744,6 +755,7 @@ export default function App() {
         {/* Cosmic Background Accents */}
         <div className="fixed top-0 right-0 w-[500px] h-[500px] bg-gold/5 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
         <div className="fixed bottom-0 left-64 w-[300px] h-[300px] bg-cosmic-accent/20 rounded-full blur-[100px] -z-10 pointer-events-none"></div>
+        </div>
       </div>
     </ErrorBoundary>
   );

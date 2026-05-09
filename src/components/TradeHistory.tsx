@@ -1,8 +1,8 @@
 import { useState, useMemo } from 'react';
 import { Trade } from '../types';
-import { Search, Filter, Download, ArrowUpRight, ArrowDownRight, Calendar, Clock, Target, Activity, ShieldAlert, ShieldCheck, BookOpen, Smile, Frown, Meh, Zap, AlertTriangle, X } from 'lucide-react';
+import { Search, Filter, Download, ArrowUpRight, ArrowDownRight, Calendar, Clock, Target, Activity, ShieldAlert, ShieldCheck, BookOpen, Smile, Frown, Meh, Zap, AlertTriangle, X, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { dbService } from '../services/dbService';
 
 interface TradeHistoryProps {
   trades: Trade[];
@@ -42,18 +42,13 @@ export default function TradeHistory({ trades, userId }: TradeHistoryProps) {
   const saveJournal = async () => {
     if (!editingTrade) return;
     try {
-      const { error } = await supabase
-        .from('trades')
-        .update({
+      await dbService.update('trades', editingTrade.id, {
           notes: journalNote,
           emotion: journalEmotion
-        })
-        .eq('id', editingTrade.id);
-      
-      if (error) throw error;
+      });
       setEditingTrade(null);
     } catch (err) {
-      await handleSupabaseError(err, OperationType.UPDATE, 'trades');
+      console.error("Journal update failed", err);
     }
   };
 
@@ -71,9 +66,26 @@ export default function TradeHistory({ trades, userId }: TradeHistoryProps) {
     { id: 'fearful', icon: ShieldAlert, color: 'text-rose-400', label: 'Fearful' },
   ];
 
-  const exportToCSV = () => {
+  const exportToCSV = (period: 'daily' | 'weekly' | 'monthly' | 'all') => {
+    let startDate = new Date(0); // Epoch for 'all'
+    const now = new Date();
+    if (period === 'daily') {
+       startDate = new Date(now.setHours(0,0,0,0));
+    } else if (period === 'weekly') {
+       startDate = new Date(now.setDate(now.getDate() - 7));
+    } else if (period === 'monthly') {
+       startDate = new Date(now.setMonth(now.getMonth() - 1));
+    }
+
+    const filteredForExport = filteredTrades.filter(t => new Date(t.created_at) >= startDate);
+
+    if (filteredForExport.length === 0) {
+       alert(`No trades found for the ${period} period.`);
+       return;
+    }
+
     const headers = ['Date', 'Pair', 'Type', 'Entry', 'Exit', 'PnL', 'PnL %', 'MAE', 'MFE', 'Status', 'Reason'];
-    const rows = filteredTrades.map(t => [
+    const rows = filteredForExport.map(t => [
       new Date(t.created_at).toLocaleString(),
       t.pair,
       t.type.toUpperCase(),
@@ -92,7 +104,7 @@ export default function TradeHistory({ trades, userId }: TradeHistoryProps) {
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", `oracle_ledger_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute("download", `oracle_ledger_${period}_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -136,13 +148,20 @@ export default function TradeHistory({ trades, userId }: TradeHistoryProps) {
               className="w-full cosmic-input pl-10 py-2 text-xs"
             />
           </div>
-          <button 
-            onClick={exportToCSV}
-            className="p-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-gold hover:border-gold/50 transition-all"
-            title="Export to CSV"
-          >
-            <Download size={18} />
-          </button>
+          <div className="relative group">
+            <button 
+              className="p-2 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:text-gold hover:border-gold/50 transition-all"
+              title="Export to CSV"
+            >
+              <Download size={18} />
+            </button>
+            <div className="absolute right-0 top-full mt-2 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+               <button onClick={() => exportToCSV('daily')} className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-white/5 text-white/60 hover:text-white">Daily</button>
+               <button onClick={() => exportToCSV('weekly')} className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-white/5 text-white/60 hover:text-white">Weekly</button>
+               <button onClick={() => exportToCSV('monthly')} className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-white/5 text-white/60 hover:text-white">Monthly</button>
+               <button onClick={() => exportToCSV('all')} className="w-full text-left px-4 py-3 text-xs font-bold uppercase tracking-widest hover:bg-white/5 text-gold border-t border-white/5">Complete History</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -158,8 +177,7 @@ export default function TradeHistory({ trades, userId }: TradeHistoryProps) {
                 <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest">Type</th>
                 <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest">Entry/Exit</th>
                 <th onClick={() => handleSort('pnl')} className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest cursor-pointer hover:text-white transition-colors">PnL</th>
-                <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest">MAE/MFE</th>
-                <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest">Status</th>
+                <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest">Status / Reason</th>
                 <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest">Journal</th>
               </tr>
             </thead>
@@ -207,27 +225,18 @@ export default function TradeHistory({ trades, userId }: TradeHistoryProps) {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex flex-col gap-1">
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 h-1 bg-white/5 rounded-full overflow-hidden">
-                              <div className="h-full bg-rose-400/50" style={{ width: `${Math.min(100, Math.abs(trade.mae || 0) * 10)}%` }}></div>
-                            </div>
-                            <span className="text-[9px] font-mono text-rose-400/60">{trade.mae?.toFixed(1) || '0.0'}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <div className="w-16 h-1 bg-white/5 rounded-full overflow-hidden">
-                              <div className="h-full bg-emerald-400/50" style={{ width: `${Math.min(100, Math.abs(trade.mfe || 0) * 10)}%` }}></div>
-                            </div>
-                            <span className="text-[9px] font-mono text-emerald-400/60">{trade.mfe?.toFixed(1) || '0.0'}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-widest ${
-                            trade.status === 'open' ? 'bg-gold/10 text-gold border border-gold/20' : 'bg-white/5 text-white/40'
+                          <span className={`px-2 py-1 rounded-lg text-[9px] font-bold uppercase tracking-widest inline-flex items-center gap-1 ${
+                            trade.status === 'open' ? 'bg-gold/10 text-gold border border-gold/20' : 
+                            trade.pnl >= 0 ? 'bg-emerald-400/10 text-emerald-400' : 'bg-rose-400/10 text-rose-400'
                           }`}>
+                            {trade.status === 'open' ? <Clock size={10} /> : <CheckCircle2 size={10} />}
                             {trade.status}
                           </span>
+                          {trade.close_reason && (
+                            <span className="text-[8px] text-white/30 uppercase tracking-widest font-bold ml-1">
+                              {trade.close_reason}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4">

@@ -10,7 +10,8 @@ import {
   Target, 
   Save,
   Info,
-  Clock
+  Clock,
+  Activity
 } from 'lucide-react';
 
 interface RiskManagementProps {
@@ -57,7 +58,56 @@ export const RiskManagement: React.FC<RiskManagementProps> = ({ userProfile, add
   };
 
   return (
-    <div className="space-y-8">
+      <div className="space-y-8">
+      {/* PHASE 24: RISK OF RUIN SIMULATOR */}
+      <div className="glass-card p-8 border-rose-500/20 bg-rose-500/5 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
+          <Activity size={120} className="text-rose-400" />
+        </div>
+        <div className="relative z-10">
+          <h2 className="text-2xl font-display font-bold text-rose-400 flex items-center gap-3">
+            <Activity className="text-rose-400" /> Phase 24: Risk of Ruin Simulator
+          </h2>
+          <p className="text-white/40 mt-2 max-w-2xl text-sm leading-relaxed mb-6">
+            Understand the mathematical probability of blowing your account based on your current Risk Per Trade and estimated Win Rate. (Assuming 1:2 R:R).
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-end">
+            <div className="space-y-2">
+              <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Estimated Win Rate (%)</label>
+              <input 
+                type="number" 
+                defaultValue={45}
+                id="ruin-wr"
+                className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Risk Per Trade (%)</label>
+              <input 
+                type="number" 
+                value={settings.risk_per_trade}
+                readOnly
+                className="w-full bg-black/50 border border-white/10 rounded-lg px-4 py-2 opacity-50 text-gold font-bold"
+              />
+            </div>
+            <button 
+              onClick={() => {
+                const wr = parseFloat((document.getElementById('ruin-wr') as HTMLInputElement).value) / 100;
+                const risk = settings.risk_per_trade / 100;
+                const p = wr;
+                const q = 1 - p;
+                const minRuin = Math.pow(q/p, 1/risk);
+                const ruinProb = (p > 0.5) ? 'Near 0%' : (minRuin > 0.99 || p < 0.33 ? '99.9% (Guaranteed Blowout)' : `${(minRuin * 100).toFixed(2)}%`);
+                addToast(`Probability of account ruin: ${ruinProb}`, p > 0.4 ? 'success' : 'error');
+              }}
+              className="px-6 py-2 bg-rose-500/20 text-rose-400 border border-rose-500/50 hover:bg-rose-500/40 rounded-lg font-bold uppercase tracking-widest text-xs h-10"
+            >
+              Simulate Ruin
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* PHASE 21: PROP FIRM MODE */}
       <div className={`glass-card p-8 border-2 transition-all relative overflow-hidden ${settings.prop_firm_mode ? 'border-purple-500/50 bg-purple-500/10' : 'border-white/10 bg-white/5'}`}>
          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">

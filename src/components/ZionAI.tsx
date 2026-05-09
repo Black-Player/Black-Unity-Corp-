@@ -83,12 +83,12 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
     setIsLoading(true);
 
     try {
-      const apiKey = process.env.GEMINI_API_KEY;
+      const apiKey = process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
         throw new Error("GEMINI_API_KEY is missing from environment.");
       }
       const ai = new GoogleGenAI({ apiKey });
-      const modelName = "gemini-3-flash-preview";
+      const modelName = "gemini-2.0-flash";
       
       const contents: any[] = [
         {
@@ -97,7 +97,7 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
             { text: `The user's profile: ${JSON.stringify(userProfile)}. 
               The user asks: ${input || 'Please analyze this document and extract the core trading rules.'}. 
               Provide a response based on your core directives. 
-              IF a document is provided, focus on PART 6: DOCUMENT LEARNING ENGINE. Extract Entry rules, Exit rules, Indicators, and Risk models.` }
+              IF a document is provided, focus on PDF LEARNING INTEGRATION. Extract Entry rules, Exit rules, Indicators, and Risk models.` }
           ]
         }
       ];
@@ -115,7 +115,7 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
         model: modelName,
         contents,
         config: {
-          systemInstruction: SYSTEM_ROLE + "\n\nYou are the Omni Evolution Core acting as Zion AI. You are a teacher and protector. Follow PART 6: DOCUMENT LEARNING ENGINE strictly for document analysis. Guide the user with mystical and professional precision.",
+          systemInstruction: SYSTEM_ROLE + "\n\nYou are the Omni Evolution Core acting as Zion AI (Blāck-Plāyer The Creator's teachings). You are a teacher and protector. Follow the PDF LEARNING INTEGRATION rule strictly for document analysis. TEACHING MODE IS ACTIVE: When the user asks 'Explain', break down strategy logic, why it works, and how to replicate it into Beginner, Intermediate, and Advanced tiers.",
         }
       });
 
@@ -127,8 +127,16 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
       };
 
       setMessages(prev => [...prev, assistantMsg]);
-    } catch (err) {
-      addToast('The Oracle connection was interrupted.', 'error');
+    } catch (err: any) {
+      if (err.message?.includes("API key not valid") || err.message?.includes("API_KEY_INVALID")) {
+          addToast("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.", "error");
+      } else if (err.status === "INVALID_ARGUMENT") {
+          addToast("Oracle Error: Invalid Argument format sent to the cosmic winds. " + err.message, "error");
+      } else if (err.message?.includes("quota") || err.message?.includes("429") || err.status === "RESOURCE_EXHAUSTED") {
+          addToast("Quota exceeded: Please check your Gemini API plan limits.", "error");
+      } else {
+          addToast('The Oracle connection was interrupted.', 'error');
+      }
       console.error(err);
     } finally {
       setIsLoading(false);

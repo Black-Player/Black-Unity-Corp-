@@ -125,10 +125,10 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
     setTesting(true);
     try {
       const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY?.trim()! });
       
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: `As the Eternal Intelligence Core, evaluate this trading bot logic:
         Name: ${newBot.name}
         Strategy: ${newBot.strategy}
@@ -140,7 +140,15 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
 
       setTestResult(response.text);
     } catch (err: any) {
-      addToast('Cosmic interference during testing.', 'error');
+      if (err.message?.includes("API key not valid") || err.message?.includes("API_KEY_INVALID")) {
+          addToast("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.", "error");
+      } else if (err.status === "INVALID_ARGUMENT") {
+          addToast("Oracle Error: Invalid Argument format sent. " + err.message, "error");
+      } else if (err.message?.includes("quota") || err.message?.includes("429") || err.status === "RESOURCE_EXHAUSTED") {
+          addToast("Quota exceeded: Please check your Gemini API plan limits.", "error");
+      } else {
+          addToast('Cosmic interference during testing.', 'error');
+      }
     } finally {
       setTesting(false);
     }

@@ -137,7 +137,7 @@ export const dbService = {
          .from(table)
          .select('*')
          .eq('id', id)
-         .single();
+         .maybeSingle();
        
        if (supError) throw supError;
        return data;

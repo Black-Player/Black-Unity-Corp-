@@ -261,6 +261,14 @@ class DerivService {
               time: c.epoch
             }));
             resolve(candles);
+          } else if (data.error) {
+            // Handle specific "invalid symbol" error
+            if (data.error.code === 'InvalidSymbol' || data.error.message?.includes('invalid')) {
+              console.warn(`Symbol ${symbol} is not available on this Deriv account.`);
+              resolve([]); // Resolve with empty history instead of crashing
+            } else {
+              reject(new Error(data.error.message));
+            }
           } else {
             reject(new Error(`Unexpected response type: ${data.msg_type}`));
           }

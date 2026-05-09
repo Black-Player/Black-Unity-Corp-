@@ -551,16 +551,19 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
     }
 
     if (tps && tps.length > 0) {
+      const tpColors = ['#059669', '#10b981', '#34d399', '#6ee7b7'];
       tps.forEach((tpValue, index) => {
         if (tpValue) {
+          const color = tpColors[index % tpColors.length];
           const isLastTp = index === tps.length - 1;
+          const label = index === 0 ? 'TP1(Partial)' : index === 1 ? 'TP2(Main)' : index === 2 ? 'TP3(Extended)' : `TP${index+1}(Runner)`;
           const line = seriesRef.current.createPriceLine({
             price: tpValue,
-            color: isLastTp ? '#10b981' : '#34d399', // Emerald/Green
+            color: color,
             lineWidth: isLastTp ? 2 : 1,
             lineStyle: LineStyle.Dotted,
             axisLabelVisible: true,
-            title: `TP${index + 1} @ ${tpValue.toFixed(5)}`,
+            title: `${label} @ ${tpValue.toFixed(5)}`,
           });
           tpLineRefs.current.push(line);
         }

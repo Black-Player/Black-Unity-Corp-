@@ -24,13 +24,13 @@ export interface TradingStrategy {
 }
 
 export class StrategyService {
-    private static apiKey = process.env.GEMINI_API_KEY;
+    private static apiKey = process.env.GEMINI_API_KEY?.trim();
 
     static async createAutonomousStrategy(bot: Bot): Promise<TradingStrategy> {
         if (!this.apiKey) throw new Error("API Key missing");
 
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
-        const model = "gemini-3-flash-preview";
+        const model = "gemini-2.0-flash";
         
         const prompt = `
             Task: Create an autonomous, high-performance trading strategy for a bot named ${bot.name} using ${bot.strategy} as a base.
@@ -83,7 +83,7 @@ export class StrategyService {
 
             return strategy;
         } catch (error: any) {
-            if (error.message?.includes("API key not valid") || error.status === "INVALID_ARGUMENT") {
+            if (error.message?.includes("API key not valid") || error.message?.includes("API_KEY_INVALID")) {
                 throw new Error("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.");
             }
             throw error;
@@ -94,7 +94,7 @@ export class StrategyService {
         if (!this.apiKey) throw new Error("API Key missing");
 
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
-        const model = "gemini-3-flash-preview";
+        const model = "gemini-2.0-flash";
 
         const prompt = `
             Task: Perform "Strategy Fusion" (PART 9) to combine the strengths of two successful trading strategies into one Apex strategy.
@@ -151,7 +151,7 @@ export class StrategyService {
 
             return strategy;
         } catch (error: any) {
-            if (error.message?.includes("API key not valid") || error.status === "INVALID_ARGUMENT") {
+            if (error.message?.includes("API key not valid") || error.message?.includes("API_KEY_INVALID")) {
                 throw new Error("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.");
             }
             throw error;
@@ -176,7 +176,7 @@ export class StrategyService {
         if (!this.apiKey) throw new Error("API Key missing");
 
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
-        const model = "gemini-3-flash-preview";
+        const model = "gemini-2.0-flash";
 
         const prompt = `
             Optimize the following trading strategy: ${JSON.stringify(strategy)}

@@ -1,11 +1,15 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, setLogLevel } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+// Suppress internal Firestore logs about connection issues
+setLogLevel('silent');
+
 export const googleProvider = new GoogleAuthProvider();
 
 export async function loginWithGoogle() {
@@ -17,16 +21,3 @@ export async function loginWithGoogle() {
     throw error;
   }
 }
-
-async function testConnection() {
-  try {
-    // Attempt a cold-boot connectivity test
-    await getDocFromServer(doc(db, 'system', 'connection_test'));
-  } catch (error) {
-    if(error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration or internet connection.");
-    }
-  }
-}
-
-testConnection();

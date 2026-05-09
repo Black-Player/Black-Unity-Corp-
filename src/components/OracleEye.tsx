@@ -28,11 +28,11 @@ export default function OracleEye({ userProfile, addToast }: { userProfile: User
 
     setIsAnalyzing(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY?.trim() });
       
       const base64Data = selectedImage.split(',')[1];
       const result = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: [
           "Analyze this trading chart. Identify key support and resistance levels, current trend, potential patterns (like head and shoulders, double top, etc.), and provide a high-probability trading recommendation (Buy/Sell/Wait) with Entry, SL, and TP. Use a professional, cosmic-themed tone.",
           {
@@ -46,9 +46,17 @@ export default function OracleEye({ userProfile, addToast }: { userProfile: User
 
       setAnalysis(result.text || "The Oracle Eye is silent. No analysis could be generated.");
       addToast('The Oracle Eye has revealed the chart secrets.', 'success');
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      addToast('The Oracle Eye is clouded. Please try again.', 'error');
+      if (error.message?.includes("API key not valid") || error.message?.includes("API_KEY_INVALID")) {
+          addToast("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.", "error");
+      } else if (error.status === "INVALID_ARGUMENT") {
+          addToast("Oracle Error: Invalid image or argument format sent. " + error.message, "error");
+      } else if (error.message?.includes("quota") || error.message?.includes("429") || error.status === "RESOURCE_EXHAUSTED") {
+          addToast("Quota exceeded: Please check your Gemini API plan limits.", "error");
+      } else {
+          addToast('The Oracle Eye is clouded. Please try again.', 'error');
+      }
     } finally {
       setIsAnalyzing(false);
     }

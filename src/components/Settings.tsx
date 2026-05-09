@@ -3,7 +3,7 @@ import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { auth as firebaseAuth } from '../firebase';
 import { dbService } from '../services/dbService';
 import { UserProfile, AppTheme } from '../types';
-import { Settings as SettingsIcon, Bell, Volume2, Mail, Shield, CreditCard, User, Zap, LogOut, Trash2, Palette, Moon, Sun, Sparkles } from 'lucide-react';
+import { Settings as SettingsIcon, Bell, Volume2, Mail, Shield, CreditCard, User, Zap, LogOut, Trash2, Palette, Moon, Sun, Sparkles, Key } from 'lucide-react';
 import { motion } from 'motion/react';
 
 interface SettingsProps {

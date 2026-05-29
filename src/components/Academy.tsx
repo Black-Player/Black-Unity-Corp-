@@ -88,12 +88,12 @@ export const Academy: React.FC<AcademyProps> = ({ userProfile, addToast, setActi
         <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
            <BookOpen size={120} className="text-gold" />
         </div>
-        <div className="relative z-10 max-w-xl">
+         <div className="relative z-10 max-w-xl">
            <h2 className="text-xl font-display font-bold gold-gradient flex items-center gap-3">
-             <Star className="text-gold" size={24} /> Cosmic Library & AI Integration Array
+             <Star className="text-gold" size={24} /> Blāck-Plāyer Education Engine
            </h2>
            <p className="text-white/60 mt-2 text-sm leading-relaxed">
-             Feed the Universal Matrix. Upload expansive PDFs (up to 15MB) containing edge strategies, psychology doctrines, or logic models. The Global AI mind evolves with every addition, teaching Creators and Students alike.
+             Feed the Evolution Intelligence Layer. Upload expansive PDFs (up to 15MB) containing edge strategies, psychology doctrines, or logic models. The AI mind will parse, extract, backtest, and score logic before integrating it into live systems.
            </p>
         </div>
         <div className="relative z-10">
@@ -104,19 +104,19 @@ export const Academy: React.FC<AcademyProps> = ({ userProfile, addToast, setActi
                     if (file.size > 15 * 1024 * 1024) {
                        addToast('Knowledge Grimoire exceeds the 15MB limit. Please compress.', 'error');
                     } else {
-                       addToast(`Absorbing ${file.name}... The Omni Core is parsing new neural pathways.`, 'info');
+                       addToast(`Absorbing ${file.name}... Extracting strategy rules and risk logic.`, 'info');
                        
-                       // Phase 2: PDF Intelligence Engine Simulation
-                       setTimeout(() => addToast(`Extracting structures from ${file.name}...`, 'info'), 2000);
-                       setTimeout(() => addToast(`Backtesting concepts against Prophet Engine...`, 'info'), 4500);
+                       // Phase 2: PDF Intelligence Engine
+                       setTimeout(() => addToast(`Simulating strategy behavior & backtesting historically...`, 'info'), 2000);
+                       setTimeout(() => addToast(`Scoring concept effectiveness against internal strict criteria...`, 'info'), 4500);
                        
                        setTimeout(() => {
                            const isStrong = Math.random() > 0.3; // 70% chance of strong strategy
                            if (isStrong) {
-                               addToast(`PDF Knowledge Validated! Score: 92%. Weighted prioritized and instantly applied.`, 'success');
-                               addToast(`Auto-generating new AI-Taught lesson with real chart examples...`, 'info');
+                               addToast(`PDF Knowledge Validated! Score: 92%. Weighted prioritized and integrated into live trading systems.`, 'success');
+                               addToast(`Auto-generating new AI-Taught interactive lesson for your specific skill level...`, 'info');
                            } else {
-                               addToast(`PDF Knowledge Suppressed. Score: 41%. Patterns too weak for current market regime.`, 'error');
+                               addToast(`PDF Knowledge Suppressed. Score: 41%. Patterns too weak for current market regime. Rejected to protect capital.`, 'error');
                            }
                        }, 8000);
                     }

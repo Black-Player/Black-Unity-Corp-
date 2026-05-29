@@ -46,12 +46,19 @@ export function evaluateCapitalSafety(userProfile: UserProfile, openTradesCount:
     const maxExposure = userProfile.account_type === 'demo' ? 5 : (userProfile.risk_settings?.max_open_positions || 3);
     
     if (openTradesCount >= maxExposure) {
-        return { safe: false, reason: "Maximum celestial exposure reached. Close existing portals first." };
+        return { safe: false, reason: "Maximum celestial exposure reached. Risk of correlation is too high. Close existing portals first." };
     }
     
-    // PART 3: Anti-Loss Guard
+    // PART 3: Anti-Loss Guard (Evolved)
     if (userProfile.consecutive_losses >= 3) {
-        return { safe: false, reason: "Anti-Loss Engine Active: Hard Pause due to consecutive failures. Meditation required." };
+        return { safe: false, reason: "Anti-Loss Engine Active: The impatient hunter returns hungry. Hard Pause due to consecutive failures. Meditation required." };
+    }
+
+    if (userProfile.consecutive_losses === 2) {
+        // Enforce strict rules
+        if (openTradesCount >= 1) {
+            return { safe: false, reason: "Capital Protection Mode: Danger detected. Limit 1 open trade while recovering."};
+        }
     }
 
     return { safe: true };
@@ -59,12 +66,14 @@ export function evaluateCapitalSafety(userProfile: UserProfile, openTradesCount:
 
 /**
  * Dynamic SL System
- * Ensures SL is structure-based and volatility-aware.
+ * Ensures SL is structure-based, volatility-aware, never random.
  */
 export function validateSLRange(entry: number, sl: number, tp: number): boolean {
     const risk = Math.abs(entry - sl);
     const reward = Math.abs(tp - entry);
     
-    // Minimum 1:2 RR for the Oracle
+    if (risk === 0) return false;
+
+    // Minimum 1:2 RR for the Oracle to ensure Strict Institutional Grade rules.
     return reward >= risk * 2;
 }

@@ -159,51 +159,59 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
         fontFamily: 'JetBrains Mono, monospace',
       },
       grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.03)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.03)' },
+        vertLines: { color: 'rgba(255, 255, 255, 0.04)', style: LineStyle.SparseDotted },
+        horzLines: { color: 'rgba(255, 255, 255, 0.04)', style: LineStyle.SparseDotted },
       },
       width: chartContainerRef.current.clientWidth,
       height: isFullScreen ? window.innerHeight - 100 : height,
       // @ts-ignore
       watermark: {
         visible: true,
-        fontSize: 24,
+        fontSize: 32,
         horzAlign: 'center',
         vertAlign: 'center',
-        color: 'rgba(255, 215, 0, 0.05)',
+        color: 'rgba(255, 255, 255, 0.03)',
         text: 'ZION ORACLE VISION',
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: timeframe <= 300,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: 'rgba(255, 255, 255, 0.05)',
+        rightOffset: 12,
+        barSpacing: 10,
       },
       rightPriceScale: {
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: 'rgba(255, 255, 255, 0.05)',
         autoScale: true,
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.1,
+        },
       },
       crosshair: {
         vertLine: {
-          color: theme.colors.primary,
+          color: 'rgba(255, 255, 255, 0.4)',
           width: 1,
-          style: LineStyle.Solid,
+          style: LineStyle.Dashed,
           labelBackgroundColor: theme.colors.primary,
         },
         horzLine: {
-          color: theme.colors.primary,
+          color: 'rgba(255, 255, 255, 0.4)',
           width: 1,
-          style: LineStyle.Solid,
+          style: LineStyle.Dashed,
           labelBackgroundColor: theme.colors.primary,
         },
       },
     });
 
     const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#10b981',
+      upColor: '#22c55e',
       downColor: '#ef4444',
-      borderVisible: false,
-      wickUpColor: '#10b981',
+      borderVisible: true,
+      wickUpColor: '#22c55e',
       wickDownColor: '#ef4444',
+      borderUpColor: '#22c55e',
+      borderDownColor: '#ef4444',
     });
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
@@ -221,32 +229,34 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
     });
 
     const smaSeries = chart.addSeries(LineSeries, {
-      color: theme.colors.primary,
-      lineWidth: 1,
-      lineStyle: LineStyle.Dashed,
+      color: '#facc15', // Vibrant gold
+      lineWidth: 2,
+      crosshairMarkerVisible: false,
       title: 'SMA 20',
       visible: showIndicators,
     });
 
     const bbUpper = chart.addSeries(LineSeries, {
-      color: 'rgba(16, 185, 129, 0.4)',
+      color: 'rgba(52, 211, 153, 0.4)', // Emerald
       lineWidth: 1,
-      title: 'BB Upper',
+      lineStyle: LineStyle.Solid,
+      title: 'BB Up',
       visible: showBB,
     });
 
     const bbLower = chart.addSeries(LineSeries, {
-      color: 'rgba(239, 68, 68, 0.4)',
+      color: 'rgba(239, 68, 68, 0.4)', // Red
       lineWidth: 1,
-      title: 'BB Lower',
+      lineStyle: LineStyle.Solid,
+      title: 'BB Low',
       visible: showBB,
     });
 
     const bbMiddle = chart.addSeries(LineSeries, {
-      color: 'rgba(255, 255, 255, 0.2)',
+      color: 'rgba(255, 255, 255, 0.1)',
       lineWidth: 1,
-      lineStyle: LineStyle.Dotted,
-      title: 'BB Middle',
+      lineStyle: LineStyle.Dashed,
+      title: 'BB Mid',
       visible: showBB,
     });
 
@@ -257,25 +267,26 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
     });
 
     const macdLine = chart.addSeries(LineSeries, {
-      color: '#00f2ff',
-      lineWidth: 1,
+      color: '#06b6d4', // Cyan
+      lineWidth: 2,
       priceScaleId: 'macd',
       visible: showMACD,
     });
 
     const macdSignal = chart.addSeries(LineSeries, {
-      color: '#ff00ff',
-      lineWidth: 1,
+      color: '#ec4899', // Pink
+      lineWidth: 2,
       priceScaleId: 'macd',
       visible: showMACD,
     });
 
     chart.priceScale('macd').applyOptions({
       scaleMargins: {
-        top: 0.7,
-        bottom: 0.05,
+        top: 0.75,
+        bottom: 0.0,
       },
-      borderVisible: false,
+      borderVisible: true,
+      borderColor: 'rgba(255, 255, 255, 0.1)',
     });
 
     chartRef.current = chart;

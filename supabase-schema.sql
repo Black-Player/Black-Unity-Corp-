@@ -135,6 +135,31 @@ CREATE TABLE access_keys (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Tribes Table
+CREATE TABLE tribes (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  creator_id TEXT,
+  members TEXT[] DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tasks Table
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY,
+  assigner_id TEXT,
+  assignee_id TEXT,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT DEFAULT 'pending',
+  deadline TIMESTAMPTZ,
+  tribe_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- RPC for incrementing usage count
 CREATE OR REPLACE FUNCTION increment_usage_count(key_id UUID)
 RETURNS void AS $$

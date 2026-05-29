@@ -92,6 +92,33 @@
         "bot_name": { "type": "string" },
         "created_at": { "type": "string", "format": "date-time" }
       }
+    },
+    "Tribe": {
+      "title": "Cosmic Tribe",
+      "description": "User created groups.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "creator_id": { "type": "string" },
+        "members": { "type": "array", "items": { "type": "string" } },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "Task": {
+      "title": "Delegated Task",
+      "description": "Tasks delegated within tribes.",
+      "type": "object",
+      "properties": {
+        "assigner_id": { "type": "string" },
+        "assignee_id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] },
+        "deadline": { "type": "string", "format": "date-time" },
+        "tribe_id": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "firestore": {
@@ -114,6 +141,15 @@
     "/community_chat/{msgId}": {
       "schema": "Message",
       "description": "Global community chat."
+    },
+    "/tribes/{tribeId}": {
+      "schema": "Tribe",
+      "description": "Global tribes."
+    },
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Tasks for tribes."
     }
   }
 }
+

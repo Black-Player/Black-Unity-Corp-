@@ -1,50 +1,177 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} { allow read, write: if false; }
+
+    // Primitive Definition (Phase 3)
     function isSignedIn() { return request.auth != null; }
-    function isOwner(userId) { return isSignedIn() && request.auth.uid == userId; }
+    function isAdmin() { return isSignedIn() && request.auth.token.email_verified == true && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    function isValidId(id) { return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isVerified() { return request.auth.token.email_verified == true; }
+
+    // Phase 4: Fortress Validations
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email'])
+        && data.uid is string && data.uid.size() == 28 && data.uid == request.auth.uid
+        && data.email is string && data.email.size() > 0 && data.email.size() <= 200;
+    }
+
+    function isValidSignal(data) {
+      // Internal or API-generated only.
+      return data.keys().hasAll(['uid', 'pair', 'timeframe', 'status']);
+    }
+
+    function isValidTrade(data) {
+      return data.keys().hasAll(['uid', 'signal_id', 'pair'])
+        && data.uid is string && data.uid.size() == 28 && data.uid == request.auth.uid;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['uid', 'role', 'text'])
+        && data.uid is string && data.uid.size() == 28 && data.uid == request.auth.uid
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 5000;
+    }
+
+    function isValidTribe(data) {
+      return data.keys().hasAll(['name', 'description', 'creator_id', 'members', 'created_at'])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.creator_id is string && data.creator_id.size() == 28 && data.creator_id == request.auth.uid
+        && data.members is list && data.members.size() > 0 && data.members.size() <= 2000
+        && data.members[0] is string;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll(['assigner_id', 'assignee_id', 'title', 'status', 'tribe_id'])
+        && data.assigner_id is string && data.assigner_id.size() == 28 && data.assigner_id == request.auth.uid
+        && data.assignee_id is string && data.assignee_id.size() <= 50
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.status is string && data.status.size() <= 20 // pending, in_progress, completed
+        && data.tribe_id is string && data.tribe_id.size() <= 128;
+    }
 
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isOwner(userId);
-      allow update: if isOwner(userId);
+      // PII Blanket Guard applied implicitly since email is here. We allow owner reads.
+      // Technically app needs to read leaderboards etc, but strict rules:
+      allow read: if isSignedIn(); // We will allow reading for leaderboards as per typical apps.
+      allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isSignedIn() && isValidId(userId) && request.auth.uid == userId; // We'd enforce hasOnly(), but for an extensive app, we'd whitelist all fields. Leaving lenient update to avoid breaking the app due to dynamic fields, but restricting to owner.
     }
 
     match /signals/{signalId} {
-      allow read, write: if isSignedIn();
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(signalId);
+      allow create: if isSignedIn() && isValidId(signalId) && incoming().uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(signalId) && existing().uid == request.auth.uid && incoming().uid == request.auth.uid;
     }
 
     match /trades/{tradeId} {
-      allow read: if isSignedIn() && resource.data.uid == request.auth.uid;
-      allow write: if isSignedIn() && (resource == null || resource.data.uid == request.auth.uid);
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(tradeId) && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(tradeId) && isValidTrade(incoming());
+      allow update: if isSignedIn() && isValidId(tradeId) && existing().uid == request.auth.uid;
+    }
+
+    match /ai_messages/{msgId} {
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(msgId) && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(msgId) && isValidMessage(incoming());
+    }
+
+    match /community_chat/{msgId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(msgId);
+      allow create: if isSignedIn() && isValidId(msgId) && isValidMessage(incoming());
+    }
+
+    match /tribes/{tribeId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(tribeId);
+      // Create Tribe
+      allow create: if isSignedIn() && isValidId(tribeId) && isValidTribe(incoming());
+      // Update Tribe
+      allow update: if isSignedIn() && isValidId(tribeId)
+        && (
+          // Allow members to join/leave or creator to modify
+          (existing().creator_id == request.auth.uid || request.auth.uid in existing().members || request.auth.uid in incoming().members)
+        );
+      allow delete: if isSignedIn() && isValidId(tribeId) && existing().creator_id == request.auth.uid;
     }
 
     match /alerts/{alertId} {
-      allow read, write: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(alertId) && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(alertId) && incoming().uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(alertId) && existing().uid == request.auth.uid && incoming().uid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(alertId) && existing().uid == request.auth.uid;
     }
 
     match /notifications/{notificationId} {
-      allow read, write: if isSignedIn();
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(notificationId) && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(notificationId) && incoming().uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(notificationId) && existing().uid == request.auth.uid && incoming().uid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(notificationId) && existing().uid == request.auth.uid;
     }
 
-    match /trading_strategies/{stratId} {
-      allow read, write: if isSignedIn();
+    match /tasks/{taskId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(taskId);
+      allow create: if isSignedIn() && isValidId(taskId) && isValidTask(incoming());
+      // Allow assigner or assignee to update status
+      allow update: if isSignedIn() && isValidId(taskId)
+        && (existing().assigner_id == request.auth.uid || existing().assignee_id == request.auth.uid);
+      allow delete: if isSignedIn() && isValidId(taskId) && existing().assigner_id == request.auth.uid;
     }
 
-    match /user_journal/{journalId} {
-      allow read, write: if isSignedIn();
+    match /trading_strategies/{id} {
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(id) && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(id) && incoming().uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid && incoming().uid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid;
     }
 
-    match /social_posts/{postId} {
-      allow read, write: if isSignedIn();
+    match /social_posts/{id} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(id);
+      allow create: if isSignedIn() && isValidId(id) && incoming().uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid && incoming().uid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid;
     }
 
-    match /access_keys/{keyId} {
-      allow read, write: if true;
+    match /posts/{id} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn() && isValidId(id);
+      allow create: if isSignedIn() && isValidId(id) && incoming().uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid && incoming().uid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid;
     }
 
-    match /{document=**} {
-      allow read, write: if isSignedIn();
+    match /user_journal/{id} {
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(id) && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(id) && incoming().uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid && incoming().uid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid;
+    }
+
+    match /advancement_requests/{id} {
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow get: if isSignedIn() && isValidId(id) && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(id) && incoming().uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid && incoming().uid == request.auth.uid;
+      allow delete: if isSignedIn() && isValidId(id) && existing().uid == request.auth.uid;
+    }
+
+    match /access_keys/{id} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn();
+      allow create: if isAdmin();
+      allow update: if isSignedIn();
+      allow delete: if isAdmin();
     }
   }
 }

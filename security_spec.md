@@ -1,27 +1,27 @@
-# Zion Trading System Security Specification
+# Security Spec & TDD Payload Matrix
 
-## Data Invariants
-1. **User Safety**: A user can only access and modify their own profile, trades, and private AI messages.
-2. **Signal Integrity**: Signals can be read by everyone (or restricted by tier), but can only be created by authenticated users (or system-logic).
-3. **Financial Integrity**: Trades must have valid entry/exit prices and belong to a valid user.
-4. **Chat Decorum**: Community messages are public but immutable by other users.
+## 1. Data Invariants
+- A user can only create/update their own profile.
+- Trades can only be read/written by their owner.
+- Signals can be read by any signed-in user, but cannot be modified indiscriminately.
+- Tasks must belong to a valid Tribe.
+- Only a member of a Tribe can write/update a Task for that Tribe.
+- Tribes can be created by anyone, but only members can modify them.
 
-## The "Dirty Dozen" Payloads (Rejected Cases)
-1.  **Identity Spoofing**: Attempt to update `users/otherUID` as `request.auth.uid`.
-2.  **Role Escalation**: Attempt to set `role: 'creator'` on self.
-3.  **Tier Sabotage**: Attempt to set `tier: 'mythic'` on self without payment.
-4.  **Orphaned Trade**: Attempt to create a trade with a non-existent `uid`.
-5.  **Status Shortcut**: Transitioning a trade from 'closed' back to 'open'.
-6.  **Value Poisoning**: Injecting a 2MB string into a signal's `analysis` field.
-7.  **Resource Poisoning**: Using a 10KB string as a `tradeId`.
-8.  **Shadow Update**: Adding a field `is_admin: true` to a user profile.
-9.  **Time Spoofing**: Setting `created_at` to a date in the past.
-10. **PnL Injection**: Manually updating `pnl` without closing a trade properly.
-11. **Cross-User Leak**: Non-admin querying all private AI messages.
-12. **Blanket Read Attack**: Requesting `list /users` without being an admin.
+## 2. The "Dirty Dozen" Payloads
 
-## Evaluation & Mitigation
--   Uses `affectedKeys().hasOnly()` for all state transitions.
--   Uses `isValidId()` for all document IDs.
--   Enforces `request.time` for all timestamps.
--   Uses `get()` to verify owner/user existence where applicable.
+1. **Identity Spoofing**: `{"uid": "attacker_id"}` in a `/users/{adminId}` update.
+2. **Ghost Field Update**: `{"isAdmin": true}` in a `/users/{myId}` update.
+3. **Array Deny**: Setting `members` array to 10,000 items in a Tribe.
+4. **Relational Sync Failure**: Creating a task for a tribe ID the user is not a member of.
+5. **PII Blanket**: Attempting to read `/users` list via a generic get.
+6. **State Shortcutting**: Updating a Task's status directly from "pending" to "completed" while masquerading as someone else.
+7. **Type Poisoning**: `{"title": 1234}` in a task.
+8. **ID Poisoning**: `{"tribeId": "some_long_invalid_string_with_*("}`.
+9. **Creation Orphan**: Creating a task lacking `assigner_id`.
+10. **Immutable Field Attack**: Trying to modify `created_at` on an update.
+11. **Timestamp Forgery**: `{"created_at": "ancient_past_string"}`.
+12. **Unverified Auth**: Accessing rules with an auth token where `email_verified == false`.
+
+## 3. Test Runner
+(Simulated inside `firestore.rules.test.ts` to reject all payloads above.)

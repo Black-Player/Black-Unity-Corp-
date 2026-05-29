@@ -329,7 +329,7 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
 
                 <div className="p-4 rounded-xl bg-white/5 border border-white/5 space-y-2 relative">
                   {(() => {
-                    const notes = entry.notes;
+                    const notes = entry.notes || '';
                     if (!notes.includes('[Zion AI Reflection]')) {
                       return <p className="text-sm text-white/60 italic whitespace-pre-wrap">"{notes}"</p>;
                     }
@@ -369,7 +369,7 @@ export default function Archive({ userProfile, addToast }: { userProfile: UserPr
                     );
                   })()}
                   
-                  {!entry.notes.includes('[Zion AI Reflection]') && (
+                  {!(entry.notes || '').includes('[Zion AI Reflection]') && (
                     <button
                       onClick={() => handleAnalyzeTrade(entry)}
                       disabled={analyzingId === entry.id}

@@ -61,7 +61,7 @@ interface Toast {
 
 import { useMarketPrices } from './hooks/useMarketPrices';
 import { useTradeMonitor } from './hooks/useTradeMonitor';
-import { MOTIVATIONAL_SCRIPTURES } from './constants/themes';
+import { THEMES, MOTIVATIONAL_SCRIPTURES } from './constants/themes';
 
 import { derivService } from './services/derivService';
 
@@ -183,8 +183,19 @@ export default function App() {
   useEffect(() => {
     if (userProfile?.theme) {
       document.documentElement.setAttribute('data-theme', userProfile.theme);
+      const themeConfig = THEMES.find(t => t.id === userProfile.theme);
+      if (themeConfig) {
+        document.documentElement.style.setProperty('--theme-primary', themeConfig.colors.primary);
+        document.documentElement.style.setProperty('--theme-light', themeConfig.colors.secondary);
+        document.documentElement.style.setProperty('--theme-dark', themeConfig.colors.accent);
+        document.documentElement.style.setProperty('--theme-bg', themeConfig.colors.background);
+      }
     } else {
       document.documentElement.setAttribute('data-theme', 'cosmic');
+      document.documentElement.style.removeProperty('--theme-primary');
+      document.documentElement.style.removeProperty('--theme-light');
+      document.documentElement.style.removeProperty('--theme-dark');
+      document.documentElement.style.removeProperty('--theme-bg');
     }
   }, [userProfile?.theme]);
 
@@ -366,7 +377,7 @@ export default function App() {
     );
   }
 
-  if (loading) {
+  if (loading || error) {
     return (
       <div className="min-h-screen bg-cosmic-black flex flex-col items-center justify-center space-y-6 p-8">
         <motion.div 
@@ -400,13 +411,14 @@ export default function App() {
             </button>
             {error && (
                <button 
-               onClick={() => {
+               onClick={async () => {
+                 await firebaseAuth.signOut();
                  localStorage.clear();
                  window.location.reload();
                }}
                className="text-[10px] text-white/20 hover:text-white/40 font-bold uppercase tracking-widest transition-all underline underline-offset-4"
              >
-               Clear Local Workspace
+               Clear Local Workspace & Sign Out
              </button>
             )}
           </div>

@@ -1,12 +1,171 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Users, Plus, Trash2, Shield, Zap, MessageSquare, UserPlus, X, Search } from 'lucide-react';
+import { Users, Plus, Trash2, Shield, Zap, MessageSquare, UserPlus, X, Search, LogOut, CheckCircle2, Clock, PlayCircle } from 'lucide-react';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
-import { Tribe, UserProfile } from '../types';
+import { Tribe, UserProfile, DelegatedTask } from '../types';
 
 interface TribesProps {
   userProfile: UserProfile;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+}
+
+const TribeWorkspace: React.FC<{ tribe: Tribe; userProfile: UserProfile; onBack: () => void; addToast: (message: string, type?: 'success' | 'error' | 'info') => void }> = ({ tribe, userProfile, onBack, addToast }) => {
+  const [tasks, setTasks] = useState<DelegatedTask[]>([]);
+  const [members, setMembers] = useState<UserProfile[]>([]);
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [newTask, setNewTask] = useState({ title: '', description: '', assignee_id: '', deadline: '' });
+
+  useEffect(() => {
+    const fetchWorkspaceData = async () => {
+      // Fetch members
+      const { data: mData } = await supabase.from('users').select('*').in('uid', tribe.members);
+      if (mData) setMembers(mData as UserProfile[]);
+
+      // Fetch tasks
+      const { data: tData } = await supabase.from('tasks').select('*').eq('tribe_id', tribe.id);
+      if (tData) setTasks(tData as DelegatedTask[]);
+    };
+    fetchWorkspaceData();
+
+    const taskChannel = supabase.channel(`tasks:${tribe.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `tribe_id=eq.${tribe.id}` }, fetchWorkspaceData)
+      .subscribe();
+
+    return () => { supabase.removeChannel(taskChannel); };
+  }, [tribe.id]);
+
+  const handleAssignTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTask.assignee_id || !newTask.title || !newTask.deadline) return;
+
+    try {
+      const { error } = await supabase.from('tasks').insert([{
+        assigner_id: userProfile.uid,
+        assignee_id: newTask.assignee_id,
+        title: newTask.title,
+        description: newTask.description,
+        status: 'pending',
+        deadline: new Date(newTask.deadline).toISOString(),
+        created_at: new Date().toISOString(),
+        tribe_id: tribe.id
+      }]);
+      if (error) throw error;
+      addToast('Task assigned successfully', 'success');
+      setShowTaskForm(false);
+      setNewTask({ title: '', description: '', assignee_id: '', deadline: '' });
+    } catch (error) {
+      addToast('Failed to assign task', 'error');
+    }
+  };
+
+  const handleUpdateStatus = async (taskId: string, newStatus: string) => {
+    try {
+      const { error } = await supabase.from('tasks').update({ status: newStatus }).eq('id', taskId);
+      if (error) throw error;
+      addToast('Task status updated', 'success');
+    } catch (error) {
+      addToast('Failed to update task', 'error');
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-4 border-b border-white/10 pb-4">
+        <button onClick={onBack} className="text-white/40 hover:text-white px-3 py-1 bg-white/5 rounded-lg border border-white/10">&larr; Back</button>
+        <div>
+          <h2 className="text-2xl font-bold text-emerald-400">{tribe.name} Workspace</h2>
+          <p className="text-sm text-white/50">Manage operations and delegated tasks</p>
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center">
+        <h3 className="text-lg font-bold text-white">Delegated Tasks</h3>
+        <button onClick={() => setShowTaskForm(!showTaskForm)} className="px-4 py-2 bg-emerald-500 text-white rounded-lg flex items-center gap-2 font-bold text-sm">
+          <Plus className="w-4 h-4" /> Assign Task
+        </button>
+      </div>
+
+      {showTaskForm && (
+        <form onSubmit={handleAssignTask} className="glass-card p-6 space-y-4 border-emerald-500/20">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-white/40">Title</label>
+              <input required type="text" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-emerald-500/50 outline-none" placeholder="Task title..." />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-white/40">Assign To</label>
+              <select required value={newTask.assignee_id} onChange={e => setNewTask({...newTask, assignee_id: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-emerald-500/50 outline-none">
+                <option value="">Select Member</option>
+                {members.map(m => (
+                  <option key={m.uid} value={m.uid}>{m.username || m.email}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-white/40">Description</label>
+            <textarea required value={newTask.description} onChange={e => setNewTask({...newTask, description: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-emerald-500/50 outline-none min-h-[80px]" placeholder="Task details..." />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-white/40">Deadline</label>
+            <input required type="datetime-local" value={newTask.deadline} onChange={e => setNewTask({...newTask, deadline: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:border-emerald-500/50 outline-none [color-scheme:dark]" />
+          </div>
+          <div className="flex justify-end gap-3 pt-2">
+            <button type="button" onClick={() => setShowTaskForm(false)} className="px-6 py-2 bg-white/5 text-white/60 rounded-xl text-sm font-bold hover:bg-white/10">Cancel</button>
+            <button type="submit" className="px-6 py-2 bg-emerald-500 text-white rounded-xl text-sm font-bold hover:bg-emerald-600 shadow-lg shadow-emerald-500/20">Assign Task</button>
+          </div>
+        </form>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {tasks.map(task => {
+          const assignee = members.find(m => m.uid === task.assignee_id);
+          const isAssignee = task.assignee_id === userProfile.uid;
+          const isAssigner = task.assigner_id === userProfile.uid;
+          
+          return (
+            <div key={task.id} className="glass-card p-5 border-white/5 space-y-4">
+               <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-bold text-white">{task.title}</h4>
+                    <p className="text-xs text-emerald-400 mt-1">Assigned to: {assignee?.username || 'Unknown'}</p>
+                  </div>
+                  <span className={`px-2 py-1 rounded text-[10px] uppercase font-bold tracking-widest ${
+                    task.status === 'completed' ? 'bg-emerald-500/20 text-emerald-400' :
+                    task.status === 'in_progress' ? 'bg-blue-500/20 text-blue-400' :
+                    'bg-white/10 text-white/40'
+                  }`}>
+                    {task.status.replace('_', ' ')}
+                  </span>
+               </div>
+               <p className="text-sm text-white/60 line-clamp-2">{task.description}</p>
+               <div className="flex justify-between items-center text-xs text-white/40">
+                 <span className="flex items-center gap-1"><Clock size={12}/> Due: {new Date(task.deadline).toLocaleDateString()}</span>
+               </div>
+               
+               {(isAssignee || isAssigner) && task.status !== 'completed' && (
+                 <div className="flex gap-2 pt-2 border-t border-white/5">
+                   {task.status === 'pending' && (
+                     <button onClick={() => handleUpdateStatus(task.id, 'in_progress')} className="flex-1 py-1.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-blue-500/20">
+                       <PlayCircle size={14}/> Start
+                     </button>
+                   )}
+                   {task.status === 'in_progress' && (
+                     <button onClick={() => handleUpdateStatus(task.id, 'completed')} className="flex-1 py-1.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg text-xs font-bold flex items-center justify-center gap-1 hover:bg-emerald-500/20">
+                       <CheckCircle2 size={14}/> Complete
+                     </button>
+                   )}
+                 </div>
+               )}
+            </div>
+          )
+        })}
+        {tasks.length === 0 && (
+          <div className="col-span-full text-center p-8 text-white/30 italic">No tasks active in this tribe.</div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 export const Tribes: React.FC<TribesProps> = ({ userProfile, addToast }) => {
@@ -17,6 +176,7 @@ export const Tribes: React.FC<TribesProps> = ({ userProfile, addToast }) => {
     name: '',
     description: ''
   });
+  const [selectedTribeId, setSelectedTribeId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchTribes = async () => {
@@ -110,6 +270,13 @@ export const Tribes: React.FC<TribesProps> = ({ userProfile, addToast }) => {
     t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.description.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  if (selectedTribeId) {
+    const selectedTribe = tribes.find(t => t.id === selectedTribeId);
+    if (selectedTribe) {
+      return <TribeWorkspace tribe={selectedTribe} userProfile={userProfile} onBack={() => setSelectedTribeId(null)} addToast={addToast} />;
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -243,12 +410,22 @@ export const Tribes: React.FC<TribesProps> = ({ userProfile, addToast }) => {
 
                 <div className="mt-6">
                   {isMember ? (
-                    <button
-                      onClick={() => handleLeave(tribe.id)}
-                      className="w-full py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white/40 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400 transition-all"
-                    >
-                      Leave Tribe
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setSelectedTribeId(tribe.id)}
+                        className="flex-1 py-2.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-xl text-xs font-bold hover:bg-emerald-500/20 transition-all flex items-center justify-center gap-2"
+                      >
+                        <Zap className="w-4 h-4" />
+                        Workspace
+                      </button>
+                      <button
+                        onClick={() => handleLeave(tribe.id)}
+                        className="px-4 py-2.5 bg-white/5 border border-white/10 rounded-xl text-xs font-bold text-white/40 hover:bg-red-500/10 hover:border-red-500/20 hover:text-red-400 transition-all flex items-center justify-center"
+                        title="Leave Tribe"
+                      >
+                        <LogOut className="w-4 h-4" />
+                      </button>
+                    </div>
                   ) : (
                     <button
                       onClick={() => handleJoin(tribe.id)}

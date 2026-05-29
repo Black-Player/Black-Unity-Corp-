@@ -52,7 +52,12 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   throw lastError;
 }
 
-export async function generateTradingSignal(pair: string, timeframe: string, bot: Bot, currentPrice: number, marketData: any, chartAnalysis?: any) {
+export interface AdvancedSignalOptions {
+  propFirmMode?: boolean;
+  capitalProtectionMode?: boolean;
+}
+
+export async function generateTradingSignal(pair: string, timeframe: string, bot: Bot, currentPrice: number, marketData: any, chartAnalysis?: any, advancedOptions?: AdvancedSignalOptions) {
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     console.error("GEMINI_API_KEY is missing from environment.");
@@ -71,33 +76,60 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         - AI Bot: ${bot.name}
         - Risk Profile: ${bot.risk_profile || 'balanced'}
         - Personality: ${bot.personality || 'analytical'}
+        - Prop Firm Mode (Strict): ${advancedOptions?.propFirmMode ? 'ENABLED (Use lower risk, higher drawdown protection, 6/7 confirmation threshold minimum)' : 'DISABLED'}
+        - Capital Protection Mode: ${advancedOptions?.capitalProtectionMode ? 'ENABLED (Recent losses detected. Force high-confluence only. Reduce signal frequency)' : 'DISABLED'}
         ${chartAnalysis ? `- Oracle Eye Visionary Analysis: ${JSON.stringify(chartAnalysis)}` : ''}
         
-        Task: Generate a high-probability "NOW" trading signal as Blāck-Plāyer The Creator for ${pair}.
+        Task: You are the Evolution Intelligence Layer of Blāck-Plāyer RSA for ${pair}.
+        Your purpose is NOT merely to generate signals. Your primary directive is CAPITAL PRESERVATION.
+        You are a trade rejection engine. Reject 90% of setups. ONLY trade elite conditions.
+        If any critical condition fails, you MUST return "No Trade".
         The "entry" MUST be the current price: ${currentPrice}.
         
-        CRITICAL INSTRUCTION FOR BOOM/CRASH INDICES: If the pair (${pair}) is a Boom or Crash index, DO NOT assume Boom is only for buying spikes or Crash is only for selling spikes. You MUST treat them like normal markets. Evaluate both Buy and Sell opportunities (or No Trade) fully based on technical analysis, SMC, ICT, and current market structure, not simply their names. Both sides of the market are valid to trade.
+        "MASTER EVOLUTION PROTOCOL" DIRECTIVES:
 
-        OMNI EVOLUTION CORE DIRECTIVES (7 PHASES):
-        1. STRATEGY ENGINE: You ONLY generate trades when multi-layer confluence aligns.
-        2. STEP 1 - MARKET STRUCTURE (FOUNDATION): Identify Trend, BOS, CHOCH. RULE: No clear structure -> NO TRADE.
-        3. STEP 2 - LIQUIDITY ANALYSIS: Detect Equal highs/lows, Liquidity pools, Stop hunts, Inducement zones. RULE: Trade AFTER liquidity is taken.
-        4. STEP 3 - KEY ZONES: Mark Order Blocks (OB), Fair Value Gaps (FVG), Supply & Demand Zones. RULE: Entry MUST occur at a key zone.
-        5. STEP 4 - INDICATOR CONFLUENCE: Use MACD Divergence or Momentum shift. RULE: At least ONE indicator confirms bias.
-        6. STEP 5 - SESSION FILTER: Only trade during London or New York Session. Avoid Asian session (unless strong scalp).
-        7. STEP 6 - MULTI-TIMEFRAME ALIGNMENT: HTF (H1/H4) -> Bias. LTF (M5/M15) -> Entry. RULE: Conflict = NO TRADE.
-        8. STEP 7 - ENTRY CRITERIA (UNIFIED): Valid ONLY if: Liquidity sweep confirmed, Price reaches OB/FVG/Zone, Structure aligns, MACD confirms, Session valid.
+        1. MARKET REGIME INTELLIGENCE ENGINE (Highest Priority):
+           - Classify strictly: Trending, Ranging, Expansion, Compression, Manipulative, High Volatility, Dead Market.
+           - Trending Market: Allow Continuation setups & Pullback entries. AVOID Countertrend trades.
+           - Ranging Market: Allow Mean reversion & Range extremes. AVOID Mid-range entries.
+           - Manipulative (stop hunts/spikes/fakeouts) or Dead Market: ACTION -> MUST RETURN "No Trade".
         
-        Technical Requirements (CRITICAL SL/TP RULES):
-        - Stop Loss Logic: MUST be below/above liquidity, matching account size. Not too wide, not too tight. (Max Risk 1-2%).
-        - TP1 -> Internal liquidity (Minimum RR 1:2 overall).
-        - TP2 -> External liquidity.
-        - TP3 -> Major structure level.
-        - Trailing Stop: Note trailing logic in the analysis.
-        (Note: For JPY pairs, 1 pip = 0.01. For standard Forex, 1 pip = 0.0001. For Indices, 1 pip = 1 full point).
+        2. LIQUIDITY & PURGE MODEL (MANDATORY):
+           - NEVER enter before liquidity is purged. Requirement: Sweep of prominent highs/lows (BSL/SSL), stop hunts, or clear inducement trap.
         
-        REASONING ENGINE:
-        Explain Structure, Liquidity taken, Zone used, Indicator confirmation, why SL is placed there, why TP levels make sense.
+        3. CONFLUENCE & CONFIRMATION SCORING (MULTI-AI CONSENSUS):
+           - You are running multiple layers: Structure AI, Liquidity AI, Volatility AI, Momentum AI, Psychology AI, Risk AI.
+           - Each layer votes independently. If consensus is weak (Score < 6/7): ACTION -> MUST RETURN "No Trade".
+           - Align HTF (H1/H4/D1) Trend with LTF (M5/M15/H1) entry direction. Conflict = "No Trade".
+           
+        4. DYNAMIC CAPITAL PROTECTION ENGINE:
+           - Protect user capital aggressively. If Capital Protection Mode is ENABLED, tighten confirmation standards and reduce Risk %.
+           - Set Risk % logically based on the profile and recent performance.
+           
+        5. PRECISION STOP LOSS & TAKE PROFIT (DYNAMIC RISK ENGINE):
+           - SL MUST NEVER BE: Random, excessively wide, or too tight.
+           - SL placement must consider Volatility, Liquidity, Structure, Account size.
+           - Small accounts = Precision entries, tight efficient SLs (tucked behind unmitigated OB/wick).
+           - Large accounts = Structural SLs allowed.
+           - Execution Style: Based on ${timeframe}, explicitly select "Scalp", "Intraday", or "Swing". Ensure logical math.
+           - Calculate TPs strictly using Liquidity targets, Volatility, and Structure.
+           - TP1 MUST be >= 1:2 RR minimum to secure partials.
+           - TP2 = Structure target. TP3 = Deep liquidity. TP4 = Lunar runner.
+
+        6. GHOST SIMULATION ENGINE:
+           - Before deciding, simulate multiple outcomes, volatility scenarios, and liquidity sweeps.
+           - Only deploy if survival probability is high. Otherwise, "No Trade".
+
+        7. AI EDUCATION & CULTURAL INTELLIGENCE (TRANSPARENCY):
+           - Maintain an African-rooted, disciplined, and institutional tone (e.g., "The impatient hunter returns hungry.").
+           - Provide philosophical guidance in 'decision_reasoning' where appropriate to build a disciplined trader.
+           - Explicitly identify retail traps in 'psychological_trap'.
+           
+        8. PERFECT ENTRY TIMING:
+           - Execute EXACTLY at the FVG mitigation, OB pull-back, or psychological level retest. If price is in the middle of nowhere, return "No Trade".
+
+        FINAL COMMAND: Calculate entry, SL, and TP confidently with strict math. If Entry = 1.00, SL = 0.90 (Risk = 0.10). TP1 MUST be > 1.20 (1:2 RR).
+        If conditions are NOT absolutely perfect, return "No Trade" to protect capital.
         
         Return the signal in JSON format with the following fields:
         - decision: "Buy", "Sell", or "No Trade"
@@ -117,7 +149,11 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         - liquidity_swept: boolean
         - primary_poi: string
         - session_timing: string
-        - analysis: string (detailed confluence explanation including MTF alignment and indicator confluence)
+        - grade: string ("A+", "A", "B", "C", "D")
+        - market_regime: string ("Trending", "Ranging", "Manipulative", "Dead")
+        - confluence_score: string (e.g., "5/7")
+        - dynamic_sl_logic: string
+        - analysis: string (MUST include Confluence score, RR ratio, Dynamic SL logic, and Invalidation condition)
         - psychological_trap: string (explaining the retail trap)
         - strategy_type: string
         - market_personality: "trending" | "ranging" | "volatile"
@@ -156,6 +192,10 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
               order_type: { type: Type.STRING, enum: ["Market", "Stop", "Stop Limit"] },
               execution: { type: Type.STRING, enum: ["Scalp", "Intraday", "Swing"] },
               risk_percent: { type: Type.NUMBER },
+              grade: { type: Type.STRING, enum: ["A+", "A", "B", "C", "D"] },
+              market_regime: { type: Type.STRING, enum: ["Trending", "Ranging", "Manipulative", "Dead"] },
+              confluence_score: { type: Type.STRING },
+              dynamic_sl_logic: { type: Type.STRING },
               analysis: { type: Type.STRING },
               psychological_trap: { type: Type.STRING },
               strategy_type: { type: Type.STRING },
@@ -168,6 +208,7 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
               "risk_reward", "confidence", "bos_detected", "choch_detected", 
               "liquidity_swept", "primary_poi", "market_structure", "market_personality",
               "session_timing", "timeframe_alignment", "order_type", "execution", "risk_percent",
+              "grade", "market_regime", "confluence_score", "dynamic_sl_logic",
               "analysis", "psychological_trap", "strategy_type", "visual_blueprint", "recommended_lot_size"
             ],
           },
@@ -183,36 +224,34 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
     });
   } catch (error: any) {
     if (error.message?.includes("Quota") || error.message?.includes("quota") || error.message?.includes("Oracle")) {
-      const isBuy = Math.random() > 0.5;
-      const offset = currentPrice * 0.005;
       return {
-        decision: isBuy ? "Buy" : "Sell",
-        decision_reasoning: "SIMULATED SIGNAL: Oracle Quota has been reached. Analysis is randomized. Use extreme caution.",
-        ai_sentiment_feedback: "Operating on low energy. Quota limits active.",
+        decision: "No Trade",
+        decision_reasoning: `EVOLUTION DIRECTIVE 14: AI Quota Reached. Trading blindly is gambling. No mathematical edge. Capital preserved.`,
+        ai_sentiment_feedback: "Operating on low energy. Quota limits active. Systems shutting down.",
         entry: currentPrice,
-        stop_loss: isBuy ? currentPrice - offset : currentPrice + offset,
-        tp1: isBuy ? currentPrice + offset : currentPrice - offset,
-        tp2: isBuy ? currentPrice + offset * 2 : currentPrice - offset * 2,
-        tp3: isBuy ? currentPrice + offset * 3 : currentPrice - offset * 3,
-        tp4: isBuy ? currentPrice + offset * 4 : currentPrice - offset * 4,
-        risk_reward: 3,
-        confidence: 45,
+        stop_loss: currentPrice,
+        tp1: currentPrice,
+        tp2: currentPrice,
+        tp3: currentPrice,
+        tp4: currentPrice,
+        risk_reward: 0,
+        confidence: 0,
         bos_detected: false,
         choch_detected: false,
         liquidity_swept: false,
-        primary_poi: "Simulated POI",
-        market_structure: "Simulated Structure",
+        primary_poi: "None",
+        market_structure: "Unknown",
         market_personality: "volatile",
-        session_timing: "Simulated Session",
-        timeframe_alignment: "Simulated Alignment",
+        session_timing: "N/A",
+        timeframe_alignment: "N/A",
         order_type: "Market",
         execution: "Intraday",
-        risk_percent: 1,
-        analysis: "SIMULATED SIGNAL: Oracle Quota has been reached. Analysis is randomized. Use extreme caution. Do not trade this.",
-        psychological_trap: "Quota Trap",
-        strategy_type: "Simulated Strategy",
-        visual_blueprint: "Simulated Visual Backdrop",
-        recommended_lot_size: 0.01
+        risk_percent: 0,
+        analysis: "SYSTEM OFFLINE. No edge present.",
+        psychological_trap: "Gambling Trap. Do not force trades when the Oracle is blind.",
+        strategy_type: "Preservation",
+        visual_blueprint: "Void",
+        recommended_lot_size: 0
       };
     }
     throw error;
@@ -293,7 +332,8 @@ export async function analyzeTradeReview(tradeDetails: any, journalNotes: string
         emotional_state: "Simulated review due to Quota.",
         strategy_adherence: "Simulated adherence evaluation.",
         potential_improvements: "Manage your API limit like you manage risk.",
-        overall_rating: 5
+        overall_rating: 5,
+        trade_summary: "Simulated cosmic broken down summary."
       };
     }
     throw error;
@@ -571,19 +611,22 @@ export async function analyzeChartImage(base64Image: string, mimeType: string, u
       const ai = new GoogleGenAI({ apiKey });
       const model = "gemini-2.0-flash";
       let prompt = `
-        You are the "Oracle Eye," an advanced AI vision system for technical analysis.
-        Analyze this forex/synthetic index chart screenshot.
+        You are the "Oracle Eye," an elite institutional visual AI system for technical analysis.
+        Analyze this forex/crypto/synthetic index chart screenshot.
         
         Tasks:
-        1. Identify the Market Structure (Bullish, Bearish, or Ranging).
-        2. Mark key technical elements using **Smart Money Concepts (SMC)** and **ICT**:
-           - Order Blocks (OB) and Mitigation Blocks.
-           - Fair Value Gaps (FVG) and Liquidity Pools.
+        1. Identify the Market Structure & Regime (Trending, Ranging, Accumulation, Manipulation, Distribution).
+        2. Detect core **Smart Money Concepts (SMC)** and **ICT** points of interest:
+           - Validated Order Blocks (OB), Breaker Blocks, and Mitigation Blocks.
+           - Fair Value Gaps (FVG) and Imbalances.
+           - Major Liquidity Pools (buy-side / sell-side liquidity).
            - Break of Structure (BOS) / Change of Character (CHoCH).
-           - Supply and Demand zones (Rally-Base-Drop, etc.).
-        3. Identify any visible chart patterns (Head & Shoulders, Double Top/Bottom, Wedges).
-        4. Provide a "Visionary Insight" - a high-probability prediction based on the visual evidence, incorporating **Market Maker Model (MMM)** logic (AMD phases).
-        5. Suggest a potential Trade Setup (Entry, SL, TP) if a clear opportunity exists. **Ensure the Stop Loss is tight and placed at a logical technical level (e.g., just above/below the OB or FVG).**
+        3. Identify any Retail Traps (trendlines, retail support/resistance being engineered for liquidity sweeps).
+        4. Provide a "Visionary Insight" - a high-probability institutional prediction based on where the algorithm will draw price next.
+        5. Suggest a potential Trade Setup (Entry, SL, TP) ONLY IF a Grade A+ opportunity exists. 
+           - **If the chart shows chop, consolidation, or unclear structure, declare NO SETUP.**
+           - **Ensure the Stop Loss is structurally safe, mathematically sound, and placed behind unmitigated structure.**
+           - **Aim for at least 1:3 RR.**
         `;
 
       if (userAnalysis && selectedBot) {

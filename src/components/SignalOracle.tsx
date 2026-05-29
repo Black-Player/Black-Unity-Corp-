@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Zap, Target, Activity, Shield, Sparkles, TrendingUp, TrendingDown, Clock, BarChart3, Eye, ChevronRight, AlertTriangle, CheckCircle2, History, PieChart as PieChartIcon, Share2, Globe } from 'lucide-react';
+import { Zap, Target, Activity, Shield, ShieldAlert, Sparkles, TrendingUp, TrendingDown, Clock, BarChart3, Eye, ChevronRight, AlertTriangle, CheckCircle2, History, PieChart as PieChartIcon, Share2, Globe } from 'lucide-react';
 import { dbService } from '../services/dbService';
 import { where } from 'firebase/firestore';
 import { UserProfile, Signal, TIER_LIMITS, Trade, Tier } from '../types';
@@ -77,6 +77,19 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
   const [activeSignal, setActiveSignal] = useState<Partial<Signal> | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [signalTab, setSignalTab] = useState<'execution' | 'logic' | 'visual'>('execution');
+  const [isAutomatedMode, setIsAutomatedMode] = useState(true);
+  const [isPropFirmMode, setIsPropFirmMode] = useState(false);
+  const [isCapitalProtectionMode, setIsCapitalProtectionMode] = useState(true);
+
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    if (userProfile.last_reset_date !== today) {
+      dbService.update('users', userProfile.uid, {
+        signals_used_today: 0,
+        last_reset_date: today
+      }).catch(console.error);
+    }
+  }, [userProfile.uid, userProfile.last_reset_date]);
 
   useEffect(() => {
     const hour = new Date().getUTCHours();
@@ -93,6 +106,10 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
   const formatPairName = (pair: string) => {
     return pair.replace('frx', '').replace('cry', '').replace('OTC_', '').replace('_', ' ');
   };
+
+  const dailyLimit = TIER_LIMITS[userProfile.tier] || 2;
+  const signalsUsed = userProfile.signals_used_today || 0;
+  const isLimitReached = signalsUsed >= dailyLimit && userProfile.tier !== 'creator';
 
   const generateSignal = async (pair: string) => {
     // Check Trading Hours
@@ -143,13 +160,33 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
         icon: 'Zap',
         personality: 'mystical' as const
       };
+      
+      const advancedOptions = {
+        propFirmMode: isPropFirmMode,
+        capitalProtectionMode: isCapitalProtectionMode
+      };
+      
       const aiSignal = await generateTradingSignal(
         pair,
         'M15',
         oracleBot as any,
         currentPrice,
-        sentiment
+        sentiment,
+        undefined,
+        advancedOptions
       );
+
+      // STRICT FILTER (like Manual)
+      const hasStructure = aiSignal.bos_detected || aiSignal.choch_detected || !!aiSignal.market_structure;
+      const hasLiquidity = aiSignal.liquidity_swept || aiSignal.analysis?.toLowerCase().includes('liquidity');
+      const hasSession = !!aiSignal.session_timing;
+      const hasTimeframeAlignment = !!(aiSignal as any).timeframe_alignment;
+      
+      if (!hasStructure || !hasLiquidity || !hasSession || !hasTimeframeAlignment || aiSignal.decision === 'No Trade') {
+          addToast("Auto-Scan rejected setup: Missing critical institutional confluence.", "info");
+          setIsGenerating(false);
+          return;
+      }
 
       const signalData: Omit<Signal, 'id'> = {
         uid: userProfile.uid,
@@ -176,7 +213,11 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
         order_type: (aiSignal as any).order_type,
         execution: (aiSignal as any).execution,
         risk_percent: (aiSignal as any).risk_percent,
-        confirmations_count: 5, // Just set it hardcoded or derived
+        grade: (aiSignal as any).grade,
+        market_regime: (aiSignal as any).market_regime,
+        confluence_score: (aiSignal as any).confluence_score,
+        dynamic_sl_logic: (aiSignal as any).dynamic_sl_logic,
+        confirmations_count: 5,
         analysis: aiSignal.analysis,
         recommended_lot_size: aiSignal.recommended_lot_size,
         status: 'active',
@@ -294,12 +335,54 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-display font-bold gold-gradient">The Signal Oracle</h1>
             <span className="px-2 py-1 align-middle rounded bg-gold/20 text-gold text-[8px] font-bold uppercase tracking-wider shadow shadow-gold/20 flex items-center gap-1">
-              <Zap size={10} /> Thinking Mode: Active
+              <Zap size={10} /> {isAutomatedMode ? 'Auto-Detection: Active' : 'Manual Mode'}
             </span>
           </div>
           <p className="text-white/40">Session-aware ritual recommendations and high-precision Advanced Signal Generation.</p>
+          
+          <div className="flex flex-col gap-2 mt-4">
+            <div className="flex bg-black/40 rounded-lg p-1 border border-white/5 w-fit">
+              <button
+                onClick={() => setIsAutomatedMode(true)}
+                className={`px-3 py-1 text-[10px] uppercase tracking-widest font-bold rounded flex items-center gap-2 transition-all ${
+                  isAutomatedMode ? 'bg-gold/20 text-gold border border-gold/30' : 'text-white/40 hover:text-white'
+                }`}
+              >
+                <Activity size={12} /> Auto Detection (Default)
+              </button>
+              <button
+                onClick={() => setIsAutomatedMode(false)}
+                className={`px-3 py-1 text-[10px] uppercase tracking-widest font-bold rounded flex items-center gap-2 transition-all ${
+                  !isAutomatedMode ? 'bg-white/10 text-white border border-white/20' : 'text-white/40 hover:text-white'
+                }`}
+              >
+                <Zap size={12} /> Manual Scan
+              </button>
+            </div>
+            
+            <div className="flex bg-black/40 rounded-lg p-1 border border-white/5 w-fit gap-1">
+              <button
+                onClick={() => setIsCapitalProtectionMode(!isCapitalProtectionMode)}
+                className={`px-3 py-1 text-[10px] uppercase tracking-widest font-bold rounded flex items-center gap-2 transition-all ${
+                  isCapitalProtectionMode ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-white/40 hover:text-white'
+                }`}
+                title="Capital Protection Mode: Reduces risk after losses, blocks weak setups."
+              >
+                <Shield size={12} /> Cap-Protect
+              </button>
+              <button
+                onClick={() => setIsPropFirmMode(!isPropFirmMode)}
+                className={`px-3 py-1 text-[10px] uppercase tracking-widest font-bold rounded flex items-center gap-2 transition-all ${
+                  isPropFirmMode ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 'text-white/40 hover:text-white'
+                }`}
+                title="Prop Firm Mode: Enforces extreme drawdown limits and sniper-only conditions."
+              >
+                <ShieldAlert size={12} /> Prop Firm
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="flex bg-white/5 rounded-xl p-1 border border-white/5">
+        <div className="flex bg-white/5 rounded-xl p-1 border border-white/5 flex-wrap justify-end">
           {Object.keys(SESSION_RECOMMENDATIONS).map((s) => (
             <button
               key={s}
@@ -337,22 +420,38 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
             <p className="text-sm text-white/60 leading-relaxed">{recommendation.description}</p>
             
             <div className="space-y-3 pt-4">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-white/40">Recommended Rituals</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-white/40">Recommended Rituals</p>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-gold text-right">
+                   {userProfile.tier !== 'creator' ? `Signal Usage: ${signalsUsed} / ${dailyLimit}` : 'Signal Usage: ∞'}
+                </div>
+              </div>
               <div className="grid grid-cols-1 gap-2">
                 {recommendation.pairs.map((pair) => (
                   <button
                     key={pair}
                     onClick={() => generateSignal(pair)}
-                    disabled={isGenerating}
-                    className="w-full p-3 rounded-xl bg-white/5 border border-white/5 hover:border-gold/30 hover:bg-gold/5 transition-all flex items-center justify-between group"
+                    disabled={isGenerating || isLimitReached}
+                    className={`w-full p-3 rounded-xl border transition-all flex items-center justify-between group ${
+                       isLimitReached ? 'bg-red-500/5 border-red-500/20 opacity-50 cursor-not-allowed' : 'bg-white/5 border-white/5 hover:border-gold/30 hover:bg-gold/5'
+                    }`}
                   >
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-gold/20 flex items-center justify-center">
-                        <Target size={14} className="text-gold" />
+                        {isAutomatedMode ? <Activity size={14} className="text-gold animate-pulse" /> : <Target size={14} className="text-gold" />}
                       </div>
-                      <span className="font-mono font-bold text-white/80">{formatPairName(pair)}</span>
+                      <div className="text-left">
+                        <span className="font-mono font-bold text-white/80 block">{formatPairName(pair)}</span>
+                        <span className="text-[8px] text-white/40 uppercase tracking-widest">{isAutomatedMode ? 'Awaiting Conditions...' : 'Manual Scan'}</span>
+                      </div>
                     </div>
-                    <ChevronRight size={16} className="text-white/20 group-hover:text-gold transition-all" />
+                    {isLimitReached ? (
+                       <span className="text-[10px] text-red-500/80 font-bold uppercase tracking-widest">Limit Reached</span>
+                    ) : isAutomatedMode ? (
+                      <span className="text-[10px] text-gold/70 flex items-center gap-1"><Activity size={10} /> Scan</span>
+                    ) : (
+                      <ChevronRight size={16} className="text-white/20 group-hover:text-gold transition-all" />
+                    )}
                   </button>
                 ))}
               </div>
@@ -517,7 +616,25 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
                           </div>
                         )}
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                          <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Grade</p>
+                          <p className={`text-[12px] font-black uppercase ${activeSignal.grade?.includes('A') ? 'text-emerald-400' : 'text-gold'}`}>{activeSignal.grade || 'N/A'}</p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                          <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Market Regime</p>
+                          <p className="text-[10px] font-mono font-bold text-blue-400">{activeSignal.market_regime || 'N/A'}</p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                          <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Confluence</p>
+                          <p className="text-[10px] font-mono font-bold text-white">{activeSignal.confluence_score || 'N/A'}</p>
+                        </div>
+                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
+                          <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Confirmations</p>
+                          <p className="text-[10px] font-mono font-bold text-white">{activeSignal.confirmations_count || 0}</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
                         <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
                           <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Structure</p>
                           <p className="text-[10px] font-mono font-bold text-gold">{activeSignal.market_structure || 'N/A'}</p>
@@ -530,11 +647,13 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
                           <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Volatility</p>
                           <div className={`w-2 h-2 rounded-full ${activeSignal.volatility_validation ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-red-400/20'}`} />
                         </div>
-                        <div className="p-2 rounded-lg bg-white/5 border border-white/5 flex flex-col items-center justify-center text-center">
-                          <p className="text-[8px] text-white/40 uppercase font-bold mb-1">Confirmations</p>
-                          <p className="text-[10px] font-mono font-bold text-white">{activeSignal.confirmations_count || 0}</p>
-                        </div>
                       </div>
+                      {activeSignal.dynamic_sl_logic && (
+                         <div className="p-4 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                            <h4 className="text-[10px] font-bold uppercase tracking-widest text-orange-400 mb-1">Dynamic SL / TP Engine Logic</h4>
+                            <p className="text-xs text-white/60 italic">{activeSignal.dynamic_sl_logic}</p>
+                         </div>
+                      )}
                     </motion.div>
                   )}
 

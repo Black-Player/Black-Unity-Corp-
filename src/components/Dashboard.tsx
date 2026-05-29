@@ -38,7 +38,7 @@ import { THEMES } from '../constants/themes';
 import { AppTheme } from '../types';
 import { getBotCharacter } from '../lib/themeUtils';
 
-import { useMarketContext } from '../MarketContext';
+import { useMarketContext, useMarketRef } from '../MarketContext';
 
 interface DashboardProps {
   userProfile: UserProfile;
@@ -47,10 +47,12 @@ interface DashboardProps {
 }
 
 import { memo } from 'react';
-
 import { speak } from '../lib/voice';
 
-const MarketPriceCard = memo(({ symbol, data, onSelect }: { symbol: string, data: any, onSelect: (symbol: string) => void }) => {
+const MarketPriceCard = memo(({ symbol, onSelect }: { symbol: string, onSelect: (symbol: string) => void }) => {
+  const { marketPrices } = useMarketContext();
+  const data = marketPrices[symbol] || { price: 0, change: 0 };
+  
   return (
     <div 
       className="glass-card p-2 sm:p-3 flex flex-col items-center justify-center space-y-1 border-white/5 hover:border-gold/20 transition-all cursor-pointer min-w-0"
@@ -66,12 +68,53 @@ const MarketPriceCard = memo(({ symbol, data, onSelect }: { symbol: string, data
   );
 });
 
-const MarketPriceGrid = memo(({ marketPrices, onSelect }: { marketPrices: Record<string, any>, onSelect: (symbol: string) => void }) => {
+const MarketPriceGrid = memo(({ onSelect }: { onSelect: (symbol: string) => void }) => {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 lg:gap-4">
-      {Object.entries(marketPrices).map(([symbol, data]) => (
-        <MarketPriceCard key={symbol} symbol={symbol} data={data} onSelect={onSelect} />
+      {DERIV_SYMBOLS.map((s) => (
+        <MarketPriceCard key={s.symbol} symbol={s.symbol} onSelect={onSelect} />
       ))}
+    </div>
+  );
+});
+
+const LivePriceDisplay = memo(({ symbol }: { symbol: string }) => {
+  const { marketPrices } = useMarketContext();
+  const data = marketPrices[symbol] || { price: 0, change: 0 };
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-xs font-mono font-bold">
+        {data.price?.toFixed(2) || '0.00'}
+      </span>
+      <span className={`text-[10px] font-bold ${data.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+        {data.change >= 0 ? '+' : ''}{(data.change || 0).toFixed(2)}%
+      </span>
+    </div>
+  );
+});
+
+const LiveTradeRowData = memo(({ trade }: { trade: Trade }) => {
+  const { marketPrices } = useMarketContext();
+  const currentPrice = marketPrices[trade.pair]?.price;
+  const diff = currentPrice 
+    ? (trade.type === 'buy' ? currentPrice - trade.entry_price : trade.entry_price - currentPrice)
+    : 0;
+  
+  const lotMultiplier = trade.lot_size ? trade.lot_size * 10 : 0.1;
+  const pnl = currentPrice ? diff * lotMultiplier * 10 : (trade.pnl || 0);
+
+  const pnlPercentage = currentPrice 
+    ? (pnl / (trade.entry_price * 100)) * 100
+    : (trade.pnl_percentage || 0);
+
+  return (
+    <div className="text-right w-24">
+      <div className={`text-lg font-bold font-mono ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+        {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
+      </div>
+      <div className={`text-[10px] font-bold ${pnl >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}`}>
+        {pnlPercentage.toFixed(2)}%
+      </div>
     </div>
   );
 });
@@ -90,7 +133,7 @@ const getFallbackPrice = (pair: string) => {
 };
 
 export default function Dashboard({ userProfile, addToast, handleCloseTrade }: DashboardProps) {
-  const { marketPrices } = useMarketContext();
+  const marketPricesRef = useMarketRef();
   const [activeSignals, setActiveSignals] = useState<Signal[]>([]);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
   const [pair, setPair] = useState('CRASH500');
@@ -103,6 +146,16 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   const [showThemeSelector, setShowThemeSelector] = useState(false);
 
   const theme = THEMES.find(t => t.id === (userProfile.theme || 'cosmic')) || THEMES[0];
+
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    if (userProfile.last_reset_date !== today) {
+      dbService.update('users', userProfile.uid, {
+        signals_used_today: 0,
+        last_reset_date: today
+      }).catch(console.error);
+    }
+  }, [userProfile.uid, userProfile.last_reset_date]);
 
   useEffect(() => {
     document.documentElement.style.setProperty('--theme-primary', theme.colors.primary);
@@ -157,11 +210,6 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
 
     return () => unsubscribe();
   }, [userProfile.uid]);
-
-  const marketPricesRef = useRef(marketPrices);
-  useEffect(() => {
-    marketPricesRef.current = marketPrices;
-  }, [marketPrices]);
 
   useEffect(() => {
     if (activeAlerts.length === 0) return;
@@ -460,12 +508,20 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       }
     }
 
-    const currentPrice = marketPrices[pair]?.price || getFallbackPrice(pair);
+    const currentPrice = marketPricesRef.current[pair]?.price || getFallbackPrice(pair);
 
     setGenerating(true);
     setError('');
+    const isPropFirmMode = userProfile.risk_settings?.prop_firm_mode || false;
+    const isCapitalProtectionMode = (userProfile.consecutive_losses || 0) > 1;
+
     try {
-      const signalData = await generateTradingSignal(pair, timeframe, selectedBot, currentPrice, sentiment, boostAnalysis);
+      const advancedOptions = {
+        propFirmMode: isPropFirmMode,
+        capitalProtectionMode: isCapitalProtectionMode
+      };
+
+      const signalData = await generateTradingSignal(pair, timeframe, selectedBot, currentPrice, sentiment, boostAnalysis, advancedOptions);
       
       // Phase 4: SIGNAL ENGINE (STRICT FILTER)
       const hasStructure = signalData.bos_detected || signalData.choch_detected || !!signalData.market_structure;
@@ -473,7 +529,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       const hasSession = !!signalData.session_timing;
       const hasTimeframeAlignment = !!(signalData as any).timeframe_alignment;
       
-      if (!hasStructure || !hasLiquidity || !hasSession || !hasTimeframeAlignment) {
+      if (!hasStructure || !hasLiquidity || !hasSession || !hasTimeframeAlignment || signalData.decision === 'No Trade') {
           addToast("The Omni Core rejected the signal: Missing critical institutional confluence (Structure/Liquidity/Session). Capital protected.", "error");
           setGenerating(false);
           return;
@@ -995,7 +1051,6 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           </div>
 
           <MarketPriceGrid 
-            marketPrices={marketPrices} 
             onSelect={(symbol) => {
               setPair(symbol);
               setShowDetails(true);
@@ -1012,14 +1067,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                 {DERIV_SYMBOLS.slice(0, 4).map(s => (
                   <div key={s.symbol} className="p-3 rounded-xl bg-white/5 border border-white/5 space-y-1">
                     <p className="text-[10px] font-bold uppercase tracking-wider text-white/40">{s.name}</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono font-bold">
-                        {marketPrices[s.symbol]?.price?.toFixed(2) || '0.00'}
-                      </span>
-                      <span className={`text-[10px] font-bold ${marketPrices[s.symbol]?.change >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {marketPrices[s.symbol]?.change >= 0 ? '+' : ''}{(marketPrices[s.symbol]?.change || 0).toFixed(2)}%
-                      </span>
-                    </div>
+                    <LivePriceDisplay symbol={s.symbol} />
                   </div>
                 ))}
               </div>
@@ -1267,20 +1315,6 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                   <div className="text-center py-12 text-white/20 italic">No open trades. Take a signal to start paper trading.</div>
                 ) : (
                   activeTrades.map((trade) => {
-                    const currentPrice = marketPrices[trade.pair]?.price;
-                    const diff = currentPrice 
-                      ? (trade.type === 'buy' ? currentPrice - trade.entry_price : trade.entry_price - currentPrice)
-                      : 0;
-                    
-                    // Simple lot multiplier calculation for display. 
-                    // Real deriv logic requires point values per instrument. 
-                    const lotMultiplier = trade.lot_size ? trade.lot_size * 10 : 0.1;
-                    const pnl = currentPrice ? diff * lotMultiplier * 10 : (trade.pnl || 0);
-
-                    const pnlPercentage = currentPrice 
-                      ? (pnl / (trade.entry_price * 100)) * 100
-                      : (trade.pnl_percentage || 0);
-
                     return (
                       <motion.div
                         key={trade.id}
@@ -1299,14 +1333,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                               <p className="text-[10px] text-white/40 font-mono">Entry: {trade.entry_price} | Lot: {trade.lot_size || '0.01'}</p>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className={`text-lg font-bold font-mono ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                              {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
-                            </div>
-                            <div className={`text-[10px] font-bold ${pnl >= 0 ? 'text-emerald-400/60' : 'text-red-400/60'}`}>
-                              {pnlPercentage.toFixed(2)}%
-                            </div>
-                          </div>
+                          <LiveTradeRowData trade={trade} />
                         </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2 mb-4">

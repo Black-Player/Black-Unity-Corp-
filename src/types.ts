@@ -143,6 +143,10 @@ export interface Signal {
   execution?: 'Scalp' | 'Intraday' | 'Swing';
   risk_percent?: number;
   confirmations_count?: number;
+  grade?: 'A+' | 'A' | 'B' | 'C' | 'D';
+  market_regime?: 'Trending' | 'Ranging' | 'Manipulative' | 'Dead';
+  confluence_score?: string;
+  dynamic_sl_logic?: string;
   analysis: string;
   recommended_lot_size: number;
   status: 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'tp4_hit' | 'sl_hit';
@@ -355,4 +359,16 @@ export interface LeaderboardEntry {
   tier: Tier;
   win_streak?: number;
   best_asset?: string;
+}
+
+export interface DelegatedTask {
+  id: string;
+  assigner_id: string; // The user assigning the task
+  assignee_id: string; // The user who must complete the task
+  title: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  deadline: string; // ISO String
+  created_at: string;
+  tribe_id?: string;
 }

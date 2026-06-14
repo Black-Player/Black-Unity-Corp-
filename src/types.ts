@@ -148,8 +148,9 @@ export interface Signal {
   confluence_score?: string;
   dynamic_sl_logic?: string;
   analysis: string;
+  psychological_trap?: string;
   recommended_lot_size: number;
-  status: 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'tp4_hit' | 'sl_hit';
+  status: 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'tp4_hit' | 'sl_hit' | 'rejected';
   created_at: string;
   is_shared?: boolean;
   likes_count?: number;

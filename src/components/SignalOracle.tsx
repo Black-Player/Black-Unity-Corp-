@@ -80,6 +80,7 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
   const [isAutomatedMode, setIsAutomatedMode] = useState(true);
   const [isPropFirmMode, setIsPropFirmMode] = useState(false);
   const [isCapitalProtectionMode, setIsCapitalProtectionMode] = useState(true);
+  const [selectedTimeframe, setSelectedTimeframe] = useState('M15');
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -168,7 +169,7 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
       
       const aiSignal = await generateTradingSignal(
         pair,
-        'M15',
+        selectedTimeframe,
         oracleBot as any,
         currentPrice,
         sentiment,
@@ -191,7 +192,7 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
       const signalData: Omit<Signal, 'id'> = {
         uid: userProfile.uid,
         pair,
-        timeframe: 'M15',
+        timeframe: selectedTimeframe,
         decision: aiSignal.decision,
         decision_reasoning: aiSignal.decision_reasoning,
         visual_blueprint: aiSignal.visual_blueprint,
@@ -382,18 +383,34 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
             </div>
           </div>
         </div>
-        <div className="flex bg-white/5 rounded-xl p-1 border border-white/5 flex-wrap justify-end">
-          {Object.keys(SESSION_RECOMMENDATIONS).map((s) => (
-            <button
-              key={s}
-              onClick={() => setSelectedSession(s)}
-              className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
-                selectedSession === s ? 'bg-gold text-black' : 'text-white/40 hover:text-white'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex bg-white/5 rounded-xl p-1 border border-white/5 flex-wrap justify-end">
+            {Object.keys(SESSION_RECOMMENDATIONS).map((s) => (
+              <button
+                key={s}
+                onClick={() => setSelectedSession(s)}
+                className={`px-3 py-1.5 text-[10px] font-bold rounded-lg transition-all ${
+                  selectedSession === s ? 'bg-gold text-black' : 'text-white/40 hover:text-white'
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 justify-end">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-white/40">Timeframe:</span>
+            {['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1', '1M'].map((tf) => (
+              <button
+                key={tf}
+                onClick={() => setSelectedTimeframe(tf)}
+                className={`px-2 py-1 text-[10px] font-bold rounded-lg transition-all border ${
+                  selectedTimeframe === tf ? 'bg-gold text-black border-gold' : 'text-white/40 hover:text-white border-white/5 bg-white/5'
+                }`}
+              >
+                {tf}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
@@ -498,6 +515,7 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
                     sl={activeSignal.stop_loss}
                     tps={[activeSignal.tp1!, activeSignal.tp2!, activeSignal.tp3!]}
                     height={450}
+                    timeframeStr={selectedTimeframe}
                   />
                 </div>
                 

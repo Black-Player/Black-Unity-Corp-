@@ -155,7 +155,13 @@ class DerivService {
 
   changeTimeframe(symbol: string, granularity: number) {
     if (this.socket?.readyState === WebSocket.OPEN) {
-      this.socket.send(JSON.stringify({ ohlc: symbol, subscribe: 1, granularity }));
+      // Valid granularities: 60, 120, 180, 300, 600, 900, 1800, 3600, 7200, 14400, 28800, 86400
+      const validGranularities = [60, 120, 180, 300, 600, 900, 1800, 3600, 7200, 14400, 28800, 86400];
+      let safeGranularity = validGranularities.includes(granularity) ? granularity : 86400;
+      if (granularity < 60) safeGranularity = 60;
+      if (granularity > 86400) safeGranularity = 86400;
+      
+      this.socket.send(JSON.stringify({ ohlc: symbol, subscribe: 1, granularity: safeGranularity }));
     }
   }
 
@@ -207,9 +213,12 @@ class DerivService {
       'M1': 60,
       'M5': 300,
       'M15': 900,
+      'M30': 1800,
       'H1': 3600,
       'H4': 14400,
-      'D1': 86400
+      'D1': 86400,
+      'W1': 86400, // Deriv max is daily
+      '1M': 86400
     };
     const granularity = granularityMap[timeframe] || 60;
 

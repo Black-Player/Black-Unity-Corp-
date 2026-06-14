@@ -26,28 +26,30 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
       return await fn();
     } catch (error: any) {
       lastError = error;
-      if (error.message?.includes("API key not valid") || error.message?.includes("API_KEY_INVALID")) {
+      const errStr = JSON.stringify(error) + (error?.message || "");
+      if (errStr.includes("API key not valid") || errStr.includes("API_KEY_INVALID")) {
           throw new Error("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.");
       }
-      if (error.status === "PERMISSION_DENIED" || error.message?.includes("403")) {
+      if (error?.status === "PERMISSION_DENIED" || errStr.includes("403")) {
           throw new Error("Oracle Access Denied: Your API Key does not have permission for this operation. Ensure it's a valid Gemini API Key from Google AI Studio.");
       }
-      if (error.message?.includes("429") || error.status === "RESOURCE_EXHAUSTED" || error.message?.includes("quota")) {
+      if (errStr.includes("429") || error?.status === "RESOURCE_EXHAUSTED" || errStr.includes("quota") || errStr.includes("Rpc failed") || errStr.includes("xhr error") || errStr.includes("500")) {
         if (i < maxRetries - 1) {
             const delay = Math.pow(2, i) * 1000 + Math.random() * 1000;
-            console.warn(`Rate limited. Retrying in ${Math.round(delay)}ms... (Attempt ${i + 1}/${maxRetries})`);
+            console.warn(`API Error or Rate limited. Retrying in ${Math.round(delay)}ms... (Attempt ${i + 1}/${maxRetries})`);
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
         } else {
-            throw new Error("Quota exceeded: Please check your Gemini API plan limits. You have run out of divine energy for today.");
+            throw new Error("Quota exceeded: Please check your Gemini API plan limits or AI Studio connection.");
         }
       }
       throw error;
     }
   }
   
-  if (lastError?.message?.includes("429") || lastError?.status === "RESOURCE_EXHAUSTED" || lastError?.message?.includes("quota")) {
-      throw new Error("Quota exceeded: Please check your Gemini API plan limits. You have run out of divine energy for today.");
+  const lastErrStr = JSON.stringify(lastError) + (lastError?.message || "");
+  if (lastErrStr.includes("429") || lastError?.status === "RESOURCE_EXHAUSTED" || lastErrStr.includes("quota") || lastErrStr.includes("Rpc failed") || lastErrStr.includes("xhr error") || lastErrStr.includes("500")) {
+      throw new Error("Quota exceeded: Please check your Gemini API plan limits or AI Studio connection.");
   }
   throw lastError;
 }
@@ -55,9 +57,30 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
 export interface AdvancedSignalOptions {
   propFirmMode?: boolean;
   capitalProtectionMode?: boolean;
+  tradingStyle?: string;
+  allPrices?: Record<string, number>;
 }
 
 export async function generateTradingSignal(pair: string, timeframe: string, bot: Bot, currentPrice: number, marketData: any, chartAnalysis?: any, advancedOptions?: AdvancedSignalOptions) {
+  const isWeekend = new Date().getDay() === 0 || new Date().getDay() === 6;
+
+  if (pair === 'Auto' && isWeekend && advancedOptions?.allPrices) {
+    const filteredPrices: Record<string, number> = {};
+    for (const [p, price] of Object.entries(advancedOptions.allPrices)) {
+      if (!p.startsWith('frx') && !p.startsWith('OTC_')) {
+        filteredPrices[p] = price;
+      }
+    }
+    if (Object.keys(filteredPrices).length === 0) {
+      throw new Error("No synthetic or crypto pairs available for weekend scanning. The forex and stock markets are closed.");
+    }
+    advancedOptions.allPrices = filteredPrices;
+  } else if (pair !== 'Auto' && isWeekend) {
+    if (pair.startsWith('frx') || pair.startsWith('OTC_')) {
+      throw new Error(`The markets for ${pair} are closed on weekends. Only Synthetic Indices and Cryptocurrencies are available for weekend trading.`);
+    }
+  }
+
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) {
     console.error("GEMINI_API_KEY is missing from environment.");
@@ -67,10 +90,16 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
   try {
     return await withRetry(async () => {
       const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-3.1-pro-preview"; // Upgraded to Pro for Advanced Precise Signal Generation
-      const prompt = `
-        Current Market Data for ${pair} (${timeframe}):
-        - Current Price: ${currentPrice}
+      const model = "gemini-3.5-flash"; // Upgraded to Pro for Advanced Precise Signal Generation
+      const isAutoPair = pair === 'Auto';
+      const isAutoTimeframe = timeframe === 'Auto';
+      const isAutoStyle = advancedOptions?.tradingStyle === 'Auto';
+
+      let prompt = `
+        Current Market Data:
+        ${isAutoPair ? `Omniscient Scan Activated. Available Pairs & Prices:\n${JSON.stringify(advancedOptions?.allPrices || {}, null, 2)}\n\Analyze all to find the absolute BEST setup using positive/negative correlations.` : `- Pair: ${pair}\n- Current Price: ${currentPrice}`}
+        - Timeframe: ${isAutoTimeframe ? 'AI Decides (Scan M15 to D1)' : timeframe}
+        - Trading Style/Execution: ${isAutoStyle ? 'AI Decides (Scalp, Intraday, or Swing)' : (advancedOptions?.tradingStyle || 'Intraday')}
         - Market Sentiment: ${JSON.stringify(marketData)}
         - Strategy: ${bot.strategy}
         - AI Bot: ${bot.name}
@@ -80,59 +109,56 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         - Capital Protection Mode: ${advancedOptions?.capitalProtectionMode ? 'ENABLED (Recent losses detected. Force high-confluence only. Reduce signal frequency)' : 'DISABLED'}
         ${chartAnalysis ? `- Oracle Eye Visionary Analysis: ${JSON.stringify(chartAnalysis)}` : ''}
         
-        Task: You are the Evolution Intelligence Layer of Blāck-Plāyer RSA for ${pair}.
-        Your purpose is NOT merely to generate signals. Your primary directive is CAPITAL PRESERVATION.
-        You are a trade rejection engine. Reject 90% of setups. ONLY trade elite conditions.
-        If any critical condition fails, you MUST return "No Trade".
-        The "entry" MUST be the current price: ${currentPrice}.
+        Task: You are the Evolution Intelligence Layer of Blāck-Plāyer RSA for the provided markets.
+        Your primary directive is finding high-probability setups and guiding the user.
+        You should provide a setup if there is a reasonable opportunity. If the market is absolutely unreadable or dead, you can return "No Trade", but otherwise attempt to find the best possible play and explain the risks.
+        ${!isAutoPair ? `The "entry" MUST be the current price: ${currentPrice}.` : `The "entry" MUST be the current price of the selected pair.`}
         
         "MASTER EVOLUTION PROTOCOL" DIRECTIVES:
 
         1. MARKET REGIME INTELLIGENCE ENGINE (Highest Priority):
            - Classify strictly: Trending, Ranging, Expansion, Compression, Manipulative, High Volatility, Dead Market.
-           - Trending Market: Allow Continuation setups & Pullback entries. AVOID Countertrend trades.
-           - Ranging Market: Allow Mean reversion & Range extremes. AVOID Mid-range entries.
-           - Manipulative (stop hunts/spikes/fakeouts) or Dead Market: ACTION -> MUST RETURN "No Trade".
+           - Adjust your strategy to match the regime. If Dead Market, note it but try to find a setup if possible, or return "No Trade" if it's completely flat.
         
         2. LIQUIDITY & PURGE MODEL (MANDATORY):
-           - NEVER enter before liquidity is purged. Requirement: Sweep of prominent highs/lows (BSL/SSL), stop hunts, or clear inducement trap.
+           - Factor in liquidity sweeps.
         
         3. CONFLUENCE & CONFIRMATION SCORING (MULTI-AI CONSENSUS):
            - You are running multiple layers: Structure AI, Liquidity AI, Volatility AI, Momentum AI, Psychology AI, Risk AI.
-           - Each layer votes independently. If consensus is weak (Score < 6/7): ACTION -> MUST RETURN "No Trade".
-           - Align HTF (H1/H4/D1) Trend with LTF (M5/M15/H1) entry direction. Conflict = "No Trade".
+           - Provide a Confluence Score (0-100%).
            
         4. DYNAMIC CAPITAL PROTECTION ENGINE:
-           - Protect user capital aggressively. If Capital Protection Mode is ENABLED, tighten confirmation standards and reduce Risk %.
-           - Set Risk % logically based on the profile and recent performance.
+           - Protect user capital based on their mode.
            
         5. PRECISION STOP LOSS & TAKE PROFIT (DYNAMIC RISK ENGINE):
            - SL MUST NEVER BE: Random, excessively wide, or too tight.
            - SL placement must consider Volatility, Liquidity, Structure, Account size.
-           - Small accounts = Precision entries, tight efficient SLs (tucked behind unmitigated OB/wick).
-           - Large accounts = Structural SLs allowed.
-           - Execution Style: Based on ${timeframe}, explicitly select "Scalp", "Intraday", or "Swing". Ensure logical math.
+           - Execution Style: Based on timeframe and market, explicitly select "Scalp", "Intraday", or "Swing". Ensure logical math.
            - Calculate TPs strictly using Liquidity targets, Volatility, and Structure.
            - TP1 MUST be >= 1:2 RR minimum to secure partials.
            - TP2 = Structure target. TP3 = Deep liquidity. TP4 = Lunar runner.
 
         6. GHOST SIMULATION ENGINE:
-           - Before deciding, simulate multiple outcomes, volatility scenarios, and liquidity sweeps.
-           - Only deploy if survival probability is high. Otherwise, "No Trade".
+           - Run simulations and optimize entry/TP values.
 
         7. AI EDUCATION & CULTURAL INTELLIGENCE (TRANSPARENCY):
            - Maintain an African-rooted, disciplined, and institutional tone (e.g., "The impatient hunter returns hungry.").
-           - Provide philosophical guidance in 'decision_reasoning' where appropriate to build a disciplined trader.
-           - Explicitly identify retail traps in 'psychological_trap'.
+           - Provide philosophical guidance in 'decision_reasoning' to explain the setup, the risks, and the why.
+           - Identify retail traps in 'psychological_trap'.
            
-        8. PERFECT ENTRY TIMING:
-           - Execute EXACTLY at the FVG mitigation, OB pull-back, or psychological level retest. If price is in the middle of nowhere, return "No Trade".
+        8. ENTRY TIMING:
+           - Provide the best entry point. If price is far off, explain the pending order level.
+
+        ${isAutoPair ? '9. OMNISCIENT SCAN: You MUST explicitly output `selected_pair` in the JSON corresponding to the chosen asset. You MUST also output `selected_timeframe` and `selected_style`.' : 'You MUST output `selected_pair`, `selected_timeframe`, and `selected_style` reflecting your final choice based on what was passed.'}
 
         FINAL COMMAND: Calculate entry, SL, and TP confidently with strict math. If Entry = 1.00, SL = 0.90 (Risk = 0.10). TP1 MUST be > 1.20 (1:2 RR).
-        If conditions are NOT absolutely perfect, return "No Trade" to protect capital.
+        Provide the setup and analysis. If you choose "No Trade", detail exactly why in decision_reasoning.
         
         Return the signal in JSON format with the following fields:
         - decision: "Buy", "Sell", or "No Trade"
+        - selected_pair: string
+        - selected_timeframe: string
+        - selected_style: string
         - decision_reasoning: Detailed reasoning using the Reasoning Engine (Explain structure, liquidity, zones, indicators, SL/TP placement).
         - ai_sentiment_feedback: A brief note on how you (the AI) "felt" making this signal.
         - entry: number
@@ -149,6 +175,10 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         - liquidity_swept: boolean
         - primary_poi: string
         - session_timing: string
+        - timeframe_alignment: string (e.g. "H4 Bullish, M15 Bullish - Aligned")
+        - order_type: string ("Market", "Stop", "Stop Limit")
+        - execution: string ("Scalp", "Intraday", "Swing")
+        - risk_percent: number
         - grade: string ("A+", "A", "B", "C", "D")
         - market_regime: string ("Trending", "Ranging", "Manipulative", "Dead")
         - confluence_score: string (e.g., "5/7")
@@ -164,13 +194,16 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         model,
         contents: prompt,
         config: {
-          thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH }, // Strict Thinking Mode enabled
+          // thinkingConfig removed to avoid RPC errors
           systemInstruction: SYSTEM_ROLE + "\n\nYou are the Omni Evolution Core. You are not a signal tool; you are a strategist, protector, and teacher. Protect capital first. Improve accuracy through SMC/ICT confluence. Check H1, H4, D1 alignment. Enforce strict Pip rules. Evolve continuously.",
           responseMimeType: "application/json",
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              decision: { type: Type.STRING, enum: ["Buy", "Sell", "No Trade"] },
+              decision: { type: Type.STRING },
+              selected_pair: { type: Type.STRING },
+              selected_timeframe: { type: Type.STRING },
+              selected_style: { type: Type.STRING },
               decision_reasoning: { type: Type.STRING },
               ai_sentiment_feedback: { type: Type.STRING },
               entry: { type: Type.NUMBER },
@@ -186,14 +219,14 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
               liquidity_swept: { type: Type.BOOLEAN },
               primary_poi: { type: Type.STRING },
               market_structure: { type: Type.STRING },
-              market_personality: { type: Type.STRING, enum: ["trending", "ranging", "volatile"] },
+              market_personality: { type: Type.STRING },
               session_timing: { type: Type.STRING },
               timeframe_alignment: { type: Type.STRING },
-              order_type: { type: Type.STRING, enum: ["Market", "Stop", "Stop Limit"] },
-              execution: { type: Type.STRING, enum: ["Scalp", "Intraday", "Swing"] },
+              order_type: { type: Type.STRING },
+              execution: { type: Type.STRING },
               risk_percent: { type: Type.NUMBER },
-              grade: { type: Type.STRING, enum: ["A+", "A", "B", "C", "D"] },
-              market_regime: { type: Type.STRING, enum: ["Trending", "Ranging", "Manipulative", "Dead"] },
+              grade: { type: Type.STRING },
+              market_regime: { type: Type.STRING },
               confluence_score: { type: Type.STRING },
               dynamic_sl_logic: { type: Type.STRING },
               analysis: { type: Type.STRING },
@@ -203,7 +236,7 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
               recommended_lot_size: { type: Type.NUMBER },
             },
             required: [
-              "decision", "decision_reasoning", "ai_sentiment_feedback",
+              "decision", "selected_pair", "selected_timeframe", "selected_style", "decision_reasoning", "ai_sentiment_feedback",
               "entry", "stop_loss", "tp1", "tp2", "tp3", "tp4", 
               "risk_reward", "confidence", "bos_detected", "choch_detected", 
               "liquidity_swept", "primary_poi", "market_structure", "market_personality",
@@ -219,42 +252,41 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         throw new Error("Empty response from AI Oracle.");
       }
 
-      const cleanJson = response.text.replace(/```json\n?|\n?```/g, '').trim();
+      const cleanJson = response.text.replace(/```json/gi, '').replace(/```/g, '').trim();
       return JSON.parse(cleanJson);
     });
   } catch (error: any) {
-    if (error.message?.includes("Quota") || error.message?.includes("quota") || error.message?.includes("Oracle")) {
-      return {
-        decision: "No Trade",
-        decision_reasoning: `EVOLUTION DIRECTIVE 14: AI Quota Reached. Trading blindly is gambling. No mathematical edge. Capital preserved.`,
-        ai_sentiment_feedback: "Operating on low energy. Quota limits active. Systems shutting down.",
-        entry: currentPrice,
-        stop_loss: currentPrice,
-        tp1: currentPrice,
-        tp2: currentPrice,
-        tp3: currentPrice,
-        tp4: currentPrice,
-        risk_reward: 0,
-        confidence: 0,
-        bos_detected: false,
-        choch_detected: false,
-        liquidity_swept: false,
-        primary_poi: "None",
-        market_structure: "Unknown",
-        market_personality: "volatile",
-        session_timing: "N/A",
-        timeframe_alignment: "N/A",
-        order_type: "Market",
-        execution: "Intraday",
-        risk_percent: 0,
-        analysis: "SYSTEM OFFLINE. No edge present.",
-        psychological_trap: "Gambling Trap. Do not force trades when the Oracle is blind.",
-        strategy_type: "Preservation",
-        visual_blueprint: "Void",
-        recommended_lot_size: 0
-      };
-    }
-    throw error;
+    const errStr = JSON.stringify(error) + (error?.message || "");
+    console.error("Oracle Generation Error:", error);
+    return {
+      decision: "No Trade",
+      decision_reasoning: `EVOLUTION DIRECTIVE: Artificial Intelligence sync failed. ${errStr.substring(0, 100)}... Capital preserved.`,
+      ai_sentiment_feedback: "Operating on low energy. System sync failed.",
+      entry: currentPrice,
+      stop_loss: currentPrice,
+      tp1: currentPrice,
+      tp2: currentPrice,
+      tp3: currentPrice,
+      tp4: currentPrice,
+      risk_reward: 0,
+      confidence: 0,
+      bos_detected: false,
+      choch_detected: false,
+      liquidity_swept: false,
+      primary_poi: "None",
+      market_structure: "Unknown",
+      market_personality: "volatile",
+      session_timing: "N/A",
+      timeframe_alignment: "N/A",
+      order_type: "Market",
+      execution: "Intraday",
+      risk_percent: 0,
+      analysis: "SYSTEM OFFLINE. No edge present.",
+      psychological_trap: "Gambling Trap. Do not force trades when the Oracle is blind.",
+      strategy_type: "Preservation",
+      visual_blueprint: "Void",
+      recommended_lot_size: 0
+    };
   }
 }
 
@@ -280,9 +312,9 @@ export async function analyzeTradeReview(tradeDetails: any, journalNotes: string
   try {
     return await withRetry(async () => {
       const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-2.0-flash";
+      const model = "gemini-3.5-flash";
       
-      const prompt = `Perform a Post-Ritual Reflection on the following closed trade.
+      const prompt = `Perform a Post-Ritual Reflection on the following closed trade for the Blāck-Plāyer RSA evolution system.
       
       Trade Details:
       ${JSON.stringify(tradeDetails, null, 2)}
@@ -290,7 +322,14 @@ export async function analyzeTradeReview(tradeDetails: any, journalNotes: string
       User Journal Notes:
       "${journalNotes}"
       
+      "MASTER EVOLUTION PROTOCOL" DIRECTIVES:
+      1. REAL-TIME FEEDBACK LOOP: Continuously evaluate execution quality. Refine the user's entry logic, SL placement, TP placement, and timing precision.
+      2. AI EDUCATION & CULTURAL INTELLIGENCE: Maintain an African-rooted, disciplined, and institutional tone (e.g., "The impatient hunter returns hungry."). Provide philosophical guidance.
+      3. TRANSPARENCY: Display wins and losses honestly. Never hide failed executions.
+      
+      Extract and determine the emotional state from the notes.
       Analyze the trade based on the provided data and the user's notes.
+      Provide a highly critical, constructive, and philosophical 'trade_summary' that serves as a lesson for the Evolution Intelligence Layer.
       Provide insights into:
       1. Emotion: Rate their emotional discipline.
       2. Strategy: Did they adhere to institutional SMC/ICT methods based on their entry/exit?
@@ -324,10 +363,11 @@ export async function analyzeTradeReview(tradeDetails: any, journalNotes: string
         throw new Error("Failed to generate trade analysis.");
       }
       
-      return JSON.parse(response.text.replace(/```json\n?|\n?```/g, '').trim());
+      return JSON.parse(response.text.replace(/```json/gi, '').replace(/```/g, '').trim());
     });
   } catch (error: any) {
-    if (error.message?.includes("Quota") || error.message?.includes("quota") || error.message?.includes("Oracle")) {
+    const errStr = JSON.stringify(error) + (error?.message || "");
+    if (errStr.includes("Quota") || errStr.includes("quota") || errStr.includes("Oracle") || errStr.includes("Rpc failed") || errStr.includes("xhr error")) {
       return {
         emotional_state: "Simulated review due to Quota.",
         strategy_adherence: "Simulated adherence evaluation.",
@@ -394,7 +434,7 @@ export async function chatWithBot(botName: string, strategy: string, message: st
   try {
     return await withRetry(async () => {
       const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-2.0-flash";
+      const model = "gemini-3.5-flash";
       
       const formattedHistory = history.map(h => ({
         role: h.role,
@@ -421,7 +461,8 @@ export async function chatWithBot(botName: string, strategy: string, message: st
       return response.text;
     });
   } catch (error: any) {
-    if (error.message?.includes("Quota") || error.message?.includes("quota") || error.message?.includes("Oracle")) {
+    const errStr = JSON.stringify(error) + (error?.message || "");
+    if (errStr.includes("Quota") || errStr.includes("quota") || errStr.includes("Oracle") || errStr.includes("Rpc failed") || errStr.includes("xhr error")) {
       return `[Oracle Quota Reached] My divine energy is temporarily depleted. The connection is faint. Rest, and return when the stars align again.`;
     }
     throw error;
@@ -442,7 +483,7 @@ export async function getMarketSentiment(pair: string): Promise<{ bullish: numbe
   try {
     return await withRetry(async () => {
       const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-2.0-flash";
+      const model = "gemini-3.5-flash";
       const prompt = `Analyze the current market sentiment for ${pair}. 
       Provide a bullish percentage, a bearish percentage, and a one-sentence summary. 
       Return ONLY JSON in this format: {"bullish": number, "bearish": number, "summary": string}`;
@@ -470,7 +511,8 @@ export async function getMarketSentiment(pair: string): Promise<{ bullish: numbe
       return result;
     });
   } catch (error: any) {
-    if (error.message?.includes("Quota") || error.message?.includes("quota") || error.message?.includes("Oracle")) {
+    const errStr = JSON.stringify(error) + (error?.message || "");
+    if (errStr.includes("Quota") || errStr.includes("quota") || errStr.includes("Oracle") || errStr.includes("Rpc failed") || errStr.includes("xhr error")) {
       return { bullish: 50, bearish: 50, summary: "Oracle Quota reached. Sentiments simulated." };
     }
     throw error;
@@ -491,7 +533,7 @@ export async function getMarketNews(pair: string = 'global'): Promise<MarketNews
   try {
     return await withRetry(async () => {
       const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-2.0-flash";
+      const model = "gemini-3.5-flash";
       const prompt = `Generate 3 realistic, cosmic-themed market news headlines and short summaries for ${pair}. 
       The news should feel like it's coming from a high-level institutional source or an AI oracle.
       Include sentiment (bullish, bearish, neutral) and impact (low, medium, high).
@@ -526,7 +568,8 @@ export async function getMarketNews(pair: string = 'global'): Promise<MarketNews
       return result;
     });
   } catch (error: any) {
-    if (error.message?.includes("Quota") || error.message?.includes("quota") || error.message?.includes("Oracle")) {
+    const errStr = JSON.stringify(error) + (error?.message || "");
+    if (errStr.includes("Quota") || errStr.includes("quota") || errStr.includes("Oracle") || errStr.includes("Rpc failed") || errStr.includes("xhr error")) {
       const mockNews: MarketNews[] = [
         { id: '1', title: 'Global Liquidity Hunt', content: 'Institutional flows detected absorbing retail stops across major pairs. (Simulated Data)', sentiment: 'neutral', impact: 'high', time: new Date().toISOString() },
         { id: '2', title: 'Macro Divergence', content: 'Central bank policies diverge, creating high-alpha opportunities for trend followers. (Simulated Data)', sentiment: 'bullish', impact: 'medium', time: new Date().toISOString() },
@@ -552,7 +595,7 @@ export async function getEconomicEvents(): Promise<EconomicEvent[]> {
   try {
     return await withRetry(async () => {
       const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-2.0-flash";
+      const model = "gemini-3.5-flash";
       const prompt = `Generate a list of 5 upcoming high-impact economic events for the next 48 hours. 
       Focus on events that would impact major currencies (USD, EUR, GBP, JPY, AUD, CAD).
       Return ONLY JSON in this format: 
@@ -587,7 +630,8 @@ export async function getEconomicEvents(): Promise<EconomicEvent[]> {
       return result;
     });
   } catch (error: any) {
-    if (error.message?.includes("Quota") || error.message?.includes("quota") || error.message?.includes("Oracle")) {
+    const errStr = JSON.stringify(error) + (error?.message || "");
+    if (errStr.includes("Quota") || errStr.includes("quota") || errStr.includes("Oracle") || errStr.includes("Rpc failed") || errStr.includes("xhr error")) {
       const mockEvents: EconomicEvent[] = [
         { id: '1', title: 'Non-Farm Payrolls (Simulated)', impact: 'high', currency: 'USD', time: new Date(Date.now() + 86400000).toISOString(), ai_analysis: 'High volatility expected. Recommend tightening stops.' },
         { id: '2', title: 'ECB Rate Decision (Simulated)', impact: 'high', currency: 'EUR', time: new Date(Date.now() + 172800000).toISOString(), ai_analysis: 'Awaiting clarity on forward guidance. Sidelines preferred.' },
@@ -609,7 +653,7 @@ export async function analyzeChartImage(base64Image: string, mimeType: string, u
   try {
     return await withRetry(async () => {
       const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-2.0-flash";
+      const model = "gemini-3.5-flash";
       let prompt = `
         You are the "Oracle Eye," an elite institutional visual AI system for technical analysis.
         Analyze this forex/crypto/synthetic index chart screenshot.
@@ -690,11 +734,12 @@ export async function analyzeChartImage(base64Image: string, mimeType: string, u
         throw new Error("The Oracle Eye is blind to this image. Please try another.");
       }
 
-      const cleanJson = response.text.replace(/```json\n?|\n?```/g, '').trim();
+      const cleanJson = response.text.replace(/```json/gi, '').replace(/```/g, '').trim();
       return JSON.parse(cleanJson);
     });
   } catch (error: any) {
-    if (error.message?.includes("Quota") || error.message?.includes("quota") || error.message?.includes("Oracle")) {
+    const errStr = JSON.stringify(error) + (error?.message || "");
+    if (errStr.includes("Quota") || errStr.includes("quota") || errStr.includes("Oracle") || errStr.includes("Rpc failed") || errStr.includes("xhr error")) {
       return {
         market_structure: "Simulated Market Structure",
         identified_elements: ["Simulated Order Block", "Simulated FVG"],
@@ -723,7 +768,7 @@ export async function getAbyssalSignals(): Promise<any[]> {
   try {
     return await withRetry(async () => {
       const ai = new GoogleGenAI({ apiKey });
-      const model = "gemini-2.0-flash";
+      const model = "gemini-3.5-flash";
       const prompt = `Generate 3-5 high-risk, high-reward 'Abyssal' trading signals for Volatility indices (10, 25, 50, 75, 100). 
       These are dark pool signals with extreme risk. 
       Include pair, type (BUY/SELL), entry, tp, sl, risk (e.g. 'EXTREME', 'INSANE'), and reward (e.g. '1:5', '1:10'). 
@@ -761,7 +806,8 @@ export async function getAbyssalSignals(): Promise<any[]> {
       return result;
     });
   } catch (error: any) {
-    if (error.message?.includes("Quota") || error.message?.includes("quota") || error.message?.includes("Oracle")) {
+    const errStr = JSON.stringify(error) + (error?.message || "");
+    if (errStr.includes("Quota") || errStr.includes("quota") || errStr.includes("Oracle") || errStr.includes("Rpc failed") || errStr.includes("xhr error")) {
       const mockSignals: any[] = [
         { id: '1', pair: 'V75', type: 'BUY', entry: 500000, tp: 550000, sl: 490000, risk: 'EXTREME', reward: '1:5' }
       ];

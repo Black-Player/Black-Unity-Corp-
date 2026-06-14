@@ -88,7 +88,7 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
         throw new Error("GEMINI_API_KEY is missing from environment.");
       }
       const ai = new GoogleGenAI({ apiKey });
-      const modelName = "gemini-2.0-flash";
+      const modelName = "gemini-3.5-flash";
       
       const contents: any[] = [
         {
@@ -128,16 +128,17 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
 
       setMessages(prev => [...prev, assistantMsg]);
     } catch (err: any) {
-      if (err.message?.includes("API key not valid") || err.message?.includes("API_KEY_INVALID")) {
+      const errStr = JSON.stringify(err) + (err?.message || "");
+      if (errStr.includes("API key not valid") || errStr.includes("API_KEY_INVALID")) {
           addToast("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.", "error");
-      } else if (err.status === "INVALID_ARGUMENT") {
-          addToast("Oracle Error: Invalid Argument format sent to the cosmic winds. " + err.message, "error");
-      } else if (err.message?.includes("quota") || err.message?.includes("429") || err.status === "RESOURCE_EXHAUSTED") {
-          addToast("Quota exceeded: Please check your Gemini API plan limits.", "error");
+      } else if (err?.status === "INVALID_ARGUMENT") {
+          addToast("Oracle Error: Invalid Argument format sent to the cosmic winds. " + err?.message, "error");
+      } else if (errStr.includes("quota") || errStr.includes("429") || err?.status === "RESOURCE_EXHAUSTED" || errStr.includes("Rpc failed") || errStr.includes("xhr error") || errStr.includes("500")) {
+          addToast("Quota exceeded: Please check your Gemini API plan limits or AI Studio connection.", "error");
       } else {
           addToast('The Oracle connection was interrupted.', 'error');
+          console.error(err);
       }
-      console.error(err);
     } finally {
       setIsLoading(false);
     }

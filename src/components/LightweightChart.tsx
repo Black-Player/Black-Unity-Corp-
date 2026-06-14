@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { createChart, ColorType, IChartApi, LineStyle, Time, UTCTimestamp, CandlestickSeries, LineSeries, AreaSeries, HistogramSeries, PriceScaleMode } from 'lightweight-charts';
+import { createChart, ColorType, IChartApi, LineStyle, Time, UTCTimestamp, CandlestickSeries, LineSeries, AreaSeries, HistogramSeries, PriceScaleMode, createSeriesMarkers } from 'lightweight-charts';
 import { derivService, DerivCandle } from '../services/derivService';
 import { Eye, EyeOff, Activity, Maximize2, Minimize2, Settings2, TrendingUp, TrendingDown, BarChart3, Zap } from 'lucide-react';
 import { THEMES } from '../constants/themes';
+import { detectSMC } from '../utils/smc';
 
 interface LightweightChartProps {
   symbol: string;
@@ -13,6 +14,7 @@ interface LightweightChartProps {
   alerts?: { price: number; id: string }[];
   height?: number;
   themeId?: string;
+  timeframeStr?: string;
 }
 
 // Helper to calculate EMA
@@ -115,10 +117,11 @@ const calculateBollingerBands = (data: any[], period: number = 20, stdDev: numbe
   return { upper, lower, middle };
 };
 
-export default function LightweightChart({ symbol, entry, sl, tps, signalType, alerts, height = 400, themeId = 'cosmic' }: LightweightChartProps) {
+export default function LightweightChart({ symbol, entry, sl, tps, signalType, alerts, height = 400, themeId = 'cosmic', timeframeStr }: LightweightChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<any>(null);
+  const markersPluginRef = useRef<any>(null);
   const smaRef = useRef<any>(null);
   const bbUpperRef = useRef<any>(null);
   const bbLowerRef = useRef<any>(null);
@@ -130,6 +133,7 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
   
   const dataRef = useRef<any[]>([]);
   const [showIndicators, setShowIndicators] = useState(true);
+  const [showSMC, setShowSMC] = useState(true);
   const [showBB, setShowBB] = useState(false);
   const [showVolume, setShowVolume] = useState(true);
   const [showMACD, setShowMACD] = useState(false);
@@ -145,9 +149,22 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
     { label: 'M1', value: 60 },
     { label: 'M5', value: 300 },
     { label: 'M15', value: 900 },
+    { label: 'M30', value: 1800 },
     { label: 'H1', value: 3600 },
     { label: 'H4', value: 14400 },
+    { label: 'D1', value: 86400 },
+    { label: 'W1', value: 604800 },
+    { label: '1M', value: 2592000 }, // roughly 30 days
   ];
+
+  useEffect(() => {
+    if (timeframeStr) {
+      const matched = TIMEFRAMES.find(tf => tf.label === timeframeStr || (tf.label === '1M' && timeframeStr === 'MN'));
+      if (matched) {
+        setTimeframe(matched.value);
+      }
+    }
+  }, [timeframeStr]);
 
   useEffect(() => {
     if (!chartContainerRef.current) return;
@@ -291,6 +308,7 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
 
     chartRef.current = chart;
     seriesRef.current = candlestickSeries;
+    markersPluginRef.current = createSeriesMarkers(candlestickSeries, []);
     smaRef.current = smaSeries;
     bbUpperRef.current = bbUpper;
     bbLowerRef.current = bbLower;
@@ -391,6 +409,8 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
           macdRef.current.setData(macd.macd);
           macdSignalRef.current.setData(macd.signal);
           macdHistRef.current.setData(macd.histogram);
+          
+          updateMarkers();
         }
         setIsLoading(false);
       } catch (err) {
@@ -398,6 +418,27 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
         setError(err instanceof Error ? err.message : "Failed to fetch market data");
         setIsLoading(false);
       }
+    };
+
+    const updateMarkers = () => {
+      if (!seriesRef.current) return;
+      let markers: any[] = [];
+      
+      if (showSMC && dataRef.current && dataRef.current.length > 0) {
+          const smcMarkers = detectSMC(dataRef.current).map(m => ({
+              time: m.time,
+              position: m.position,
+              color: m.color,
+              shape: m.shape,
+              text: m.text,
+              size: 2
+          }));
+          markers = [...markers, ...smcMarkers];
+      }
+      
+      // Sort markers by time as strictly required by lightweight-charts
+      markers.sort((a, b) => a.time - b.time);
+      if (markersPluginRef.current) markersPluginRef.current.setMarkers(markers);
     };
 
     fetchHistory();
@@ -521,6 +562,27 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
       });
     }
   }, [symbol, timeframe, theme]);
+
+  useEffect(() => {
+    if (!seriesRef.current || !dataRef.current || dataRef.current.length === 0) return;
+    
+    let markers: any[] = [];
+    
+    if (showSMC) {
+        const smcMarkers = detectSMC(dataRef.current).map((m: any) => ({
+            time: m.time,
+            position: m.position,
+            color: m.color,
+            shape: m.shape,
+            text: m.text,
+            size: 2
+        }));
+        markers = [...markers, ...smcMarkers];
+    }
+    
+    markers.sort((a, b) => a.time - b.time);
+    if (markersPluginRef.current) markersPluginRef.current.setMarkers(markers);
+  }, [showSMC]);
 
   useEffect(() => {
     if (!seriesRef.current) return;
@@ -711,6 +773,13 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
             title="MACD"
           >
             <Zap size={16} />
+          </button>
+          <button 
+            onClick={() => setShowSMC(!showSMC)}
+            className={`p-2 rounded-lg transition-all ${showSMC ? 'text-gold bg-gold/10' : 'text-white/20 hover:text-white/40'}`}
+            title="Smart Money Concepts (SMC)"
+          >
+            <Eye size={16} />
           </button>
           <button 
             onClick={() => setIsFullScreen(!isFullScreen)}

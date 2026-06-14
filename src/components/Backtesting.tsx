@@ -62,7 +62,17 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
       } catch (e) {}
 
       // 1. Fetch Historical Data
-      const count = days * 24; // Rough estimate for H1
+      let candlesPerDay = 24;
+      if (timeframe === 'M1') candlesPerDay = 1440;
+      else if (timeframe === 'M5') candlesPerDay = 288;
+      else if (timeframe === 'M15') candlesPerDay = 96;
+      else if (timeframe === 'H1') candlesPerDay = 24;
+      else if (timeframe === 'H4') candlesPerDay = 6;
+      else if (timeframe === 'D1') candlesPerDay = 1;
+      
+      let count = days * candlesPerDay;
+      if (count > 4900) count = 4900; // Prevent Deriv API 'count' limits
+      
       const history = await derivService.getHistory(pair, timeframe, count);
       
       if (!history || history.length < 20) {
@@ -405,6 +415,7 @@ export const Backtesting: React.FC<BacktestingProps> = ({ userProfile, addToast 
                     sl={selectedTrade.sl} 
                     tps={selectedTrade.tps} 
                     themeId={userProfile.theme} 
+                    timeframeStr={timeframe}
                   />
                 </div>
               </motion.div>

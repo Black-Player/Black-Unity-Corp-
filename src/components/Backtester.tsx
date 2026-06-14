@@ -89,7 +89,7 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY?.trim()! });
         
         const response = await ai.models.generateContent({
-          model: "gemini-2.0-flash",
+          model: "gemini-3.5-flash",
           contents: `As the Eternal Intelligence Core, provide a "Prophet's Vision" for this backtest result:
           Bot: ${selectedBot}
           Symbol: ${selectedSymbol}

@@ -15,7 +15,9 @@ export const NewsFeed: React.FC = () => {
         const data = await getMarketNews();
         setNews(data);
       } catch (err: any) {
-        console.error('Failed to fetch news:', err);
+        if (!String(err).includes('quota') && !String(err).includes('Quota') && err.status !== "RESOURCE_EXHAUSTED") {
+            console.error('Failed to fetch news:', err);
+        }
         if (err.message?.includes("quota") || err.message?.includes("429") || err.status === "RESOURCE_EXHAUSTED") {
             setError("Quota exceeded. Please check your Gemini API plan.");
         } else {

@@ -4,6 +4,7 @@ import { auth as firebaseAuth } from './firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 import { dbService } from './services/dbService';
 import { BehavioralService } from './services/behavioralService';
+import { analyzeTradeReview } from './services/aiService';
 import { Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, EconomicEvent, PriceAlert, MasterStrategy, Tribe, Challenge, MarketplaceItem, MarketNews, UserProgress, UserProfile } from './types';
 import Auth from './components/Auth';
 import Sidebar from './components/Sidebar';
@@ -222,6 +223,43 @@ export default function App() {
         pair: trade.pair,
         reason
       });
+
+      // ---- AUTO GENERATE TRADE SUMMARY ----
+      analyzeTradeReview({
+        pair: trade.pair,
+        type: trade.type,
+        pnl: finalPnl,
+        entry_price: trade.entry_price,
+        exit_price: exitPrice,
+      }, "I want an honest review about how this trade went overall.").then(async (insight) => {
+        const fullNotes = (trade.notes ? trade.notes + '\n\n' : '') + `Omni Intel: ${insight.trade_summary}`;
+        const derivedEmotion = insight.emotional_state?.toLowerCase().includes('anxi') ? 'anxious' : 
+                               insight.emotional_state?.toLowerCase().includes('excit') ? 'excited' :
+                               insight.emotional_state?.toLowerCase().includes('greed') ? 'greedy' :
+                               insight.emotional_state?.toLowerCase().includes('fear') ? 'fearful' : 'calm';
+
+        await dbService.update('trades', trade.id, {
+            notes: fullNotes,
+            emotion: derivedEmotion
+        });
+
+        if (isSupabaseConfigured) {
+            await supabase.from('journal').insert([{
+              uid: userProfile.uid,
+              pair: trade.pair,
+              type: trade.type,
+              pnl: finalPnl,
+              entry_price: trade.entry_price,
+              exit_price: exitPrice,
+              notes: fullNotes,
+              emotion: derivedEmotion,
+              mistakes: [`Zion Rating: ${insight.overall_rating}/10`],
+              tags: [reason],
+              created_at: new Date().toISOString()
+            }]);
+        }
+      }).catch(console.error);
+      // -------------------------------------
       
       // Update User Stats & Loss Control System
       const isWin = finalPnl > 0;
@@ -479,8 +517,6 @@ export default function App() {
         return <Analytics {...props} />;
       case 'closed-trades':
         return <PerformanceReports userProfile={userProfile} />;
-      case 'vision':
-        return <AdvancedChart />;
       case 'portfolio':
         return <Portfolio {...props} />;
       case 'arena':
@@ -512,139 +548,146 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <div className="min-h-screen bg-cosmic-black flex flex-col relative overflow-x-hidden">
+      <div className="min-h-screen bg-cosmic-black flex flex-col relative overflow-hidden">
         <TickerTape />
-        <div className="flex flex-1 overflow-hidden relative">
-        <GlobalSearch 
-          isOpen={isSearchOpen} 
-          onClose={() => setIsSearchOpen(false)} 
-          setActivePage={setActivePage} 
-        />
-        <Sidebar 
-          activePage={activePage} 
-          setActivePage={setActivePage} 
-          userProfile={userProfile}
-        />
-
-        {/* Mobile Nav */}
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 glass-card rounded-none border-x-0 border-b-0 z-[100] flex items-center justify-around px-2 pb-safe">
-          <button onClick={() => setActivePage('dashboard')} className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${activePage === 'dashboard' ? 'text-gold' : 'text-white/40'}`}>
-            <LayoutDashboard size={20} />
-            <span className="text-[10px] font-bold">Home</span>
-          </button>
-          <button onClick={() => setActivePage('feed')} className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${activePage === 'feed' ? 'text-gold' : 'text-white/40'}`}>
-            <Globe size={20} />
-            <span className="text-[10px] font-bold">Feed</span>
-          </button>
-          <button onClick={() => setActivePage('chat')} className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${activePage === 'chat' ? 'text-gold' : 'text-white/40'}`}>
-            <MessageSquare size={20} />
-            <span className="text-[10px] font-bold">Oracle</span>
-          </button>
-          <button onClick={() => setActivePage('analytics')} className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${activePage === 'analytics' ? 'text-gold' : 'text-white/40'}`}>
-            <BarChart3 size={20} />
-            <span className="text-[10px] font-bold">Stats</span>
-          </button>
-          <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 rounded-xl flex flex-col items-center gap-1 text-white/40">
-            <Menu size={20} />
-            <span className="text-[10px] font-bold">More</span>
-          </button>
-        </div>
-
-        {/* Mobile Menu Drawer */}
-        <AnimatePresence>
-          {isMobileMenuOpen && (
-            <>
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] lg:hidden"
-              />
-              <motion.div
-                initial={{ x: '100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className="fixed inset-y-0 right-0 w-80 bg-cosmic-black border-l border-white/10 z-[120] lg:hidden flex flex-col"
-              >
-                <div className="p-6 border-b border-white/10 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-gold rounded-lg flex items-center justify-center">
-                      <Bot className="text-black" size={18} />
-                    </div>
-                    <span className="font-display font-bold gold-gradient text-lg">Menu</span>
-                  </div>
-                  <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-white/40 hover:text-white">
-                    <CloseIcon size={24} />
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-1">
-                  {[
-                    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                    { id: 'closed-trades', label: 'Closed Trades', icon: HistoryIcon },
-                    { id: 'feed', label: 'Cosmic Feed', icon: Globe },
-                    { id: 'zion', label: 'Zion AI', icon: Bot },
-                    { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
-                    { id: 'nexus', label: 'The Nexus', icon: Globe },
-                    { id: 'portfolio', label: 'Portfolio', icon: Wallet },
-                    { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-                    { id: 'eye', label: 'Oracle Eye', icon: Eye },
-                    { id: 'sessions', label: 'Sessions', icon: Clock },
-                    { id: 'arena', label: 'The Arena', icon: Trophy },
-                    { id: 'archive', label: 'The Archive', icon: Book },
-                    { id: 'signal-stream', label: 'Signal Stream', icon: Zap },
-                    { id: 'signal-oracle', label: 'Signal Oracle', icon: Target },
-                    { id: 'gallery', label: 'The Gallery', icon: ShoppingBag },
-                    { id: 'simulator', label: 'Trading Simulator', icon: Activity },
-                    { id: 'alchemist', label: 'The Alchemist', icon: Settings2 },
-                    { id: 'marketplace', label: 'Marketplace', icon: Search },
-                    { id: 'council', label: 'Council', icon: Users },
-                    { id: 'abyss', label: 'The Abyss', icon: Ghost },
-                    { id: 'forge', label: 'The Forge', icon: Hammer },
-                    { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
-                    { id: 'academy', label: 'The Library', icon: GraduationCap },
-                    { id: 'vault', label: 'Zion Vault', icon: Shield },
-                    { id: 'settings', label: 'Settings', icon: SettingsIcon },
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      onClick={() => {
-                        setActivePage(item.id);
-                        setIsMobileMenuOpen(false);
-                      }}
-                      className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${
-                        activePage === item.id 
-                          ? 'bg-gold/10 text-gold border border-gold/20' 
-                          : 'text-white/60 hover:bg-white/5 hover:text-white'
-                      }`}
-                    >
-                      <item.icon size={20} />
-                      <span className="font-medium">{item.label}</span>
-                    </button>
-                  ))}
-                </div>
-                <div className="p-6 border-t border-white/10">
-                  <button 
-                    onClick={async () => {
-                      try {
-                        await firebaseAuth.signOut();
-                        window.location.reload();
-                      } catch (err) {
-                        console.error(err);
-                      }
-                    }}
-                    className="w-full py-3 bg-red-500/10 text-red-400 font-bold rounded-xl border border-red-500/20"
-                  >
-                    Logout
-                  </button>
-                </div>
-              </motion.div>
-            </>
-          )}
-        </AnimatePresence>
         
-        <main className="flex-1 lg:ml-64 p-4 lg:p-8 min-h-screen pb-24 lg:pb-8 overflow-x-hidden">
+        {activePage === 'vision' ? (
+          <div className="flex-1 w-full h-full p-0 m-0 z-50">
+            <AdvancedChart onBack={() => setActivePage('dashboard')} />
+          </div>
+        ) : (
+          <div className="flex flex-1 overflow-hidden relative">
+            <GlobalSearch 
+              isOpen={isSearchOpen} 
+              onClose={() => setIsSearchOpen(false)} 
+              setActivePage={setActivePage} 
+            />
+            <Sidebar 
+              activePage={activePage} 
+              setActivePage={setActivePage} 
+              userProfile={userProfile}
+            />
+
+            {/* Mobile Nav */}
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 h-16 glass-card rounded-none border-x-0 border-b-0 z-[100] flex items-center justify-around px-2 pb-safe">
+              <button onClick={() => setActivePage('dashboard')} className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${activePage === 'dashboard' ? 'text-gold' : 'text-white/40'}`}>
+                <LayoutDashboard size={20} />
+                <span className="text-[10px] font-bold">Home</span>
+              </button>
+              <button onClick={() => setActivePage('feed')} className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${activePage === 'feed' ? 'text-gold' : 'text-white/40'}`}>
+                <Globe size={20} />
+                <span className="text-[10px] font-bold">Feed</span>
+              </button>
+              <button onClick={() => setActivePage('chat')} className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${activePage === 'chat' ? 'text-gold' : 'text-white/40'}`}>
+                <MessageSquare size={20} />
+                <span className="text-[10px] font-bold">Oracle</span>
+              </button>
+              <button onClick={() => setActivePage('analytics')} className={`p-2 rounded-xl flex flex-col items-center gap-1 transition-all ${activePage === 'analytics' ? 'text-gold' : 'text-white/40'}`}>
+                <BarChart3 size={20} />
+                <span className="text-[10px] font-bold">Stats</span>
+              </button>
+              <button onClick={() => setIsMobileMenuOpen(true)} className="p-2 rounded-xl flex flex-col items-center gap-1 text-white/40">
+                <Menu size={20} />
+                <span className="text-[10px] font-bold">More</span>
+              </button>
+            </div>
+
+            {/* Mobile Menu Drawer */}
+            <AnimatePresence>
+              {isMobileMenuOpen && (
+                <>
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[110] lg:hidden"
+                  />
+                  <motion.div
+                    initial={{ x: '100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: '100%' }}
+                    transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                    className="fixed inset-y-0 right-0 w-80 bg-cosmic-black border-l border-white/10 z-[120] lg:hidden flex flex-col"
+                  >
+                    <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-gold rounded-lg flex items-center justify-center">
+                          <Bot className="text-black" size={18} />
+                        </div>
+                        <span className="font-display font-bold gold-gradient text-lg">Menu</span>
+                      </div>
+                      <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 text-white/40 hover:text-white">
+                        <CloseIcon size={24} />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                      {[
+                        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                        { id: 'vision', label: 'Advanced Chart', icon: BarChart3 },
+                        { id: 'closed-trades', label: 'Closed Trades', icon: HistoryIcon },
+                        { id: 'feed', label: 'Cosmic Feed', icon: Globe },
+                        { id: 'zion', label: 'Zion AI', icon: Bot },
+                        { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
+                        { id: 'nexus', label: 'The Nexus', icon: Globe },
+                        { id: 'portfolio', label: 'Portfolio', icon: Wallet },
+                        { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+                        { id: 'eye', label: 'Oracle Eye', icon: Eye },
+                        { id: 'sessions', label: 'Sessions', icon: Clock },
+                        { id: 'arena', label: 'The Arena', icon: Trophy },
+                        { id: 'archive', label: 'The Archive', icon: Book },
+                        { id: 'signal-stream', label: 'Signal Stream', icon: Zap },
+                        { id: 'signal-oracle', label: 'Signal Oracle', icon: Target },
+                        { id: 'gallery', label: 'The Gallery', icon: ShoppingBag },
+                        { id: 'simulator', label: 'Trading Simulator', icon: Activity },
+                        { id: 'alchemist', label: 'The Alchemist', icon: Settings2 },
+                        { id: 'marketplace', label: 'Marketplace', icon: Search },
+                        { id: 'council', label: 'Council', icon: Users },
+                        { id: 'abyss', label: 'The Abyss', icon: Ghost },
+                        { id: 'forge', label: 'The Forge', icon: Hammer },
+                        { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
+                        { id: 'academy', label: 'The Library', icon: GraduationCap },
+                        { id: 'vault', label: 'Zion Vault', icon: Shield },
+                        { id: 'settings', label: 'Settings', icon: SettingsIcon },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          onClick={() => {
+                            setActivePage(item.id);
+                            setIsMobileMenuOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-4 px-4 py-3 rounded-xl transition-all ${
+                            activePage === item.id 
+                              ? 'bg-gold/10 text-gold border border-gold/20' 
+                              : 'text-white/60 hover:bg-white/5 hover:text-white'
+                          }`}
+                        >
+                          <item.icon size={20} />
+                          <span className="font-medium">{item.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="p-6 border-t border-white/10">
+                      <button 
+                        onClick={async () => {
+                          try {
+                            await firebaseAuth.signOut();
+                            window.location.reload();
+                          } catch (err) {
+                            console.error(err);
+                          }
+                        }}
+                        className="w-full py-3 bg-red-500/10 text-red-400 font-bold rounded-xl border border-red-500/20"
+                      >
+                        Logout
+                      </button>
+                    </div>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+            
+            <main className="flex-1 lg:ml-64 p-4 lg:p-8 min-h-screen pb-24 lg:pb-8 overflow-x-hidden">
           {userProfile ? (
             <>
               <header className="flex items-center justify-between mb-8 gap-4">
@@ -739,6 +782,8 @@ export default function App() {
             </div>
           )}
         </main>
+        </div>
+        )}
 
         {/* Toasts */}
         <div className="fixed bottom-8 right-8 z-[100] space-y-4">
@@ -767,7 +812,6 @@ export default function App() {
         {/* Cosmic Background Accents */}
         <div className="fixed top-0 right-0 w-[500px] h-[500px] bg-gold/5 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
         <div className="fixed bottom-0 left-64 w-[300px] h-[300px] bg-cosmic-accent/20 rounded-full blur-[100px] -z-10 pointer-events-none"></div>
-        </div>
       </div>
     </ErrorBoundary>
   );

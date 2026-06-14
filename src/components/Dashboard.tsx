@@ -1,14 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { dbService } from '../services/dbService';
 import { where, orderBy, limit } from 'firebase/firestore';
-import { calculateAutoLotSize, evaluateCapitalSafety } from '../lib/tradeUtils';
+import { calculateAutoLotSize, evaluateCapitalSafety, calculateCorrelationCoefficient } from '../lib/tradeUtils';
 import { BehavioralService } from '../services/behavioralService';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, PriceAlert, MarketNews, Tier, hasTierAccess } from '../types';
 import { DERIV_SYMBOLS } from '../constants';
 import { generateTradingSignal, getMarketSentiment, analyzeChartImage, getMarketNews } from '../services/aiService';
 import { derivService, DerivTick } from '../services/derivService';
-import { Zap, TrendingUp, TrendingDown, Target, ShieldAlert, Clock, BarChart3, Bot, Sparkles, RefreshCw, Globe, ArrowUpRight, ArrowDownRight, X, Activity, Volume2, VolumeX, Newspaper, Eye, Upload, Loader2, Shield, Calendar, Bell, Wifi, WifiOff, Lock, Palette } from 'lucide-react';
+import { Zap, TrendingUp, TrendingDown, Target, ShieldAlert, Clock, BarChart3, Bot, Sparkles, RefreshCw, Globe, ArrowUpRight, ArrowDownRight, X, Activity, Volume2, VolumeX, Newspaper, Eye, Upload, Loader2, Shield, Calendar, Bell, Wifi, WifiOff, Lock, Palette, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LightweightChart from './LightweightChart';
 import AssetDetails from './AssetDetails';
@@ -136,9 +136,9 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   const marketPricesRef = useMarketRef();
   const [activeSignals, setActiveSignals] = useState<Signal[]>([]);
   const [activeTrades, setActiveTrades] = useState<Trade[]>([]);
-  const [pair, setPair] = useState('CRASH500');
+  const [pair, setPair] = useState('Auto');
   const [showDetails, setShowDetails] = useState(false);
-  const [activeTab, setActiveTab] = useState<'signals' | 'stats' | 'portfolio' | 'backtest' | 'risk' | 'community' | 'bot-forge' | 'chat' | 'calendar' | 'alerts' | 'strategies' | 'tribes' | 'challenges' | 'marketplace' | 'academy' | 'status' | 'performance' | 'subscription' | 'intelligence'>('signals');
+  const [activeTab, setActiveTab] = useState<'signals' | 'charts' | 'stats' | 'portfolio' | 'backtest' | 'risk' | 'community' | 'bot-forge' | 'chat' | 'calendar' | 'alerts' | 'strategies' | 'tribes' | 'challenges' | 'marketplace' | 'academy' | 'status' | 'performance' | 'subscription' | 'intelligence'>('signals');
   const [accountType, setAccountType] = useState<'demo' | 'live'>(userProfile.tier === 'free' ? 'demo' : (userProfile.account_type || 'demo'));
   const [ghostMode, setGhostMode] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
@@ -250,7 +250,9 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
 
     return () => clearInterval(alertInterval);
   }, [activeAlerts, userProfile.uid, addToast]);
-  const [timeframe, setTimeframe] = useState('H1');
+  const [generationMode, setGenerationMode] = useState<'manual' | 'auto'>('manual');
+  const [timeframe, setTimeframe] = useState('Auto');
+  const [tradingStyle, setTradingStyle] = useState('Auto');
   const [selectedBot, setSelectedBot] = useState(allAvailableBots[0]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
@@ -261,6 +263,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   const [autoTrade, setAutoTrade] = useState(false);
   const [sessionAutoPilot, setSessionAutoPilot] = useState(false);
   const [boostAnalysis, setBoostAnalysis] = useState<any>(null);
+  const [rejectedSignalAnalysis, setRejectedSignalAnalysis] = useState<any>(null);
   const [isBoosting, setIsBoosting] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const boostInputRef = useRef<HTMLInputElement>(null);
@@ -375,8 +378,8 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       try {
         const data = await getMarketSentiment(pair);
         setSentiment(data);
-      } catch (err) {
-        console.error(err);
+      } catch (err: any) {
+        if (!String(err).includes('Quota') && !String(err).includes('quota')) console.error(err);
       } finally {
         setLoadingSentiment(false);
       }
@@ -388,8 +391,8 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       try {
         const data = await getMarketNews(pair);
         setNews(data);
-      } catch (err) {
-        console.error(err);
+      } catch (err: any) {
+        if (!String(err).includes('Quota') && !String(err).includes('quota')) console.error(err);
       } finally {
         setLoadingNews(false);
       }
@@ -508,7 +511,11 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       }
     }
 
-    const currentPrice = marketPricesRef.current[pair]?.price || getFallbackPrice(pair);
+    const activePair = generationMode === 'auto' ? 'Auto' : pair;
+    const activeTimeframe = generationMode === 'auto' ? 'Auto' : timeframe;
+    const activeTradingStyle = generationMode === 'auto' ? 'Auto' : tradingStyle;
+
+    const currentPrice = activePair === 'Auto' ? 0 : (marketPricesRef.current[activePair]?.price || getFallbackPrice(activePair));
 
     setGenerating(true);
     setError('');
@@ -516,12 +523,18 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
     const isCapitalProtectionMode = (userProfile.consecutive_losses || 0) > 1;
 
     try {
+      const currentPricesMap = DERIV_SYMBOLS.reduce((acc, s) => {
+        acc[s.symbol] = marketPricesRef.current[s.symbol]?.price || getFallbackPrice(s.symbol);
+        return acc;
+      }, {} as Record<string, number>);
       const advancedOptions = {
         propFirmMode: isPropFirmMode,
-        capitalProtectionMode: isCapitalProtectionMode
+        capitalProtectionMode: isCapitalProtectionMode,
+        tradingStyle: activeTradingStyle,
+        allPrices: activePair === 'Auto' ? currentPricesMap : undefined,
       };
 
-      const signalData = await generateTradingSignal(pair, timeframe, selectedBot, currentPrice, sentiment, boostAnalysis, advancedOptions);
+      const signalData = await generateTradingSignal(activePair, activeTimeframe, selectedBot, currentPrice, sentiment, boostAnalysis, advancedOptions);
       
       // Phase 4: SIGNAL ENGINE (STRICT FILTER)
       const hasStructure = signalData.bos_detected || signalData.choch_detected || !!signalData.market_structure;
@@ -529,26 +542,29 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       const hasSession = !!signalData.session_timing;
       const hasTimeframeAlignment = !!(signalData as any).timeframe_alignment;
       
-      if (!hasStructure || !hasLiquidity || !hasSession || !hasTimeframeAlignment || signalData.decision === 'No Trade') {
-          addToast("The Omni Core rejected the signal: Missing critical institutional confluence (Structure/Liquidity/Session). Capital protected.", "error");
-          setGenerating(false);
-          return;
-      }
+      const isRejected = !hasStructure || !hasLiquidity || !hasSession || !hasTimeframeAlignment || signalData.decision === 'No Trade';
+
+      const finalPair = (signalData.selected_pair && signalData.selected_pair !== 'Auto') ? signalData.selected_pair : (activePair === 'Auto' ? 'frxXAUUSD' : activePair);
+      const finalTimeframe = (signalData.selected_timeframe && signalData.selected_timeframe !== 'Auto') ? signalData.selected_timeframe : (activeTimeframe === 'Auto' ? 'M15' : activeTimeframe);
+      const finalPrice = signalData.entry || currentPrice;
       
       const newSignal: Omit<Signal, 'id'> = {
         uid: userProfile.uid,
-        pair,
-        timeframe,
-        entry: currentPrice,
-        stop_loss: signalData.stop_loss,
-        tp1: signalData.tp1,
-        tp2: signalData.tp2,
-        tp3: signalData.tp3,
-        tp4: signalData.tp4,
-        risk_reward: signalData.risk_reward,
+        pair: finalPair,
+        timeframe: finalTimeframe,
+        entry: finalPrice,
+        decision: signalData.decision,
+        decision_reasoning: signalData.decision_reasoning,
+        ai_sentiment_feedback: signalData.ai_sentiment_feedback,
+        stop_loss: signalData.stop_loss || 0,
+        tp1: signalData.tp1 || 0,
+        tp2: signalData.tp2 || 0,
+        tp3: signalData.tp3 || 0,
+        tp4: signalData.tp4 || 0,
+        risk_reward: signalData.risk_reward || 0,
         strategy: selectedBot.strategy,
         ai_bot: selectedBot.name,
-        confidence: signalData.confidence,
+        confidence: signalData.confidence || 0,
         market_structure: signalData.market_structure,
         liquidity_presence: signalData.liquidity_swept,
         session_timing: signalData.session_timing,
@@ -556,34 +572,41 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         order_type: (signalData as any).order_type,
         execution: (signalData as any).execution,
         risk_percent: (signalData as any).risk_percent,
-        analysis: signalData.analysis,
-        recommended_lot_size: signalData.recommended_lot_size,
-        status: 'active',
+        analysis: signalData.analysis || signalData.decision_reasoning || "Analysis complete.",
+        psychological_trap: (signalData as any).psychological_trap,
+        recommended_lot_size: signalData.recommended_lot_size || 0,
+        status: isRejected ? 'rejected' : 'active',
         created_at: new Date().toISOString(),
       };
 
       const signalResult = await dbService.create('signals', newSignal);
       
       if (signalResult) {
-        // Create notification
-        await dbService.create('notifications', {
-            uid: userProfile.uid,
-            title: 'Celestial Signal Received',
-            message: `Oracle ${selectedBot.name} detected a ${newSignal.tp1 > newSignal.entry ? 'BUY' : 'SELL'} setup for ${pair}. Confidence: ${signalData.confidence}%`,
-            type: 'signal',
-            read: false,
-            created_at: new Date().toISOString()
-        });
+        if (isRejected) {
+          addToast("The Omni Core flagged the setup as suboptimal. See analysis.", "info");
+          setRejectedSignalAnalysis(newSignal);
+        } else {
+          // Create notification
+          await dbService.create('notifications', {
+              uid: userProfile.uid,
+              title: 'Celestial Signal Received',
+              message: `Oracle ${selectedBot.name} detected a ${newSignal.tp1 > newSignal.entry ? 'BUY' : 'SELL'} setup for ${finalPair}. Confidence: ${signalData.confidence}%`,
+              type: 'signal',
+              read: false,
+              created_at: new Date().toISOString()
+          });
 
-        // Update signals used today
-        await dbService.update('users', userProfile.uid, {
-            signals_used_today: (userProfile.signals_used_today || 0) + 1
-        });
+          // Update signals used today
+          await dbService.update('users', userProfile.uid, {
+              signals_used_today: (userProfile.signals_used_today || 0) + 1
+          });
+          
+          addToast(`Dimension Sync: New ${finalPair} signal generated by ${selectedBot.name}!`, 'success');
+          const oracleChar = getBotCharacter('Oracle', userProfile.theme);
+          speak(`The Oracle has spoken. High-precision signal generated for ${finalPair.replace('frx', '').replace('R_', 'Volatility ')}.`, userProfile.notification_settings.sound, oracleChar);
+          playSignalSound();
+        }
         
-        addToast(`Dimension Sync: New ${pair} signal generated by ${selectedBot.name}!`, 'success');
-        const oracleChar = getBotCharacter('Oracle', userProfile.theme);
-        speak(`The Oracle has spoken. High-precision signal generated for ${pair.replace('frx', '').replace('R_', 'Volatility ')}.`, userProfile.notification_settings.sound, oracleChar);
-        playSignalSound();
         setBoostAnalysis(null);
 
         // Auto-Trade Execution
@@ -607,7 +630,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         }
       }
     } catch (err: any) {
-      console.error("Signal generation error:", err);
+      if (!String(err).includes('Quota')) console.error("Signal generation error:", err);
       setError(err.message || 'The Oracle is silent. Dimension connection issues.');
     } finally {
       setGenerating(false);
@@ -620,6 +643,16 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
     if (!safety.safe && userProfile.tier !== 'creator') {
         addToast(safety.reason || "Capital protection active. Position blocked.", 'error');
         return;
+    }
+
+    // CORRELATION EXPOSURE WARNING
+    for (const currentTrade of activeTrades) {
+        if (currentTrade.pair !== signal.pair) {
+            const correlation = calculateCorrelationCoefficient(signal.pair, currentTrade.pair);
+            if (correlation > 0.70) {
+                addToast(`Warning: High volatility correlation (${(correlation * 100).toFixed(0)}%) detected between ${signal.pair} and open trade ${currentTrade.pair}. Manage your exposure.`, 'info');
+            }
+        }
     }
 
     // PART 3: ANTI-LOSS ENGINE (Revenge Trading Check)
@@ -719,6 +752,13 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       addToast('Failed to update aura.', 'error');
     }
   };
+
+  const currentBalance = accountType === 'live' ? userProfile.live_balance : userProfile.demo_balance;
+  const targetPercent = (userProfile.risk_settings as any)?.daily_profit_target_percent || 2;
+  const computedProfitTarget = ((currentBalance || 0) * targetPercent) / 100;
+  const currentProfitPercent = computedProfitTarget > 0 ? (dailyPnl / computedProfitTarget) * 100 : 0;
+  const maxAllowedTrades = userProfile.risk_settings?.max_daily_trades || TIER_LIMITS[userProfile.tier] || 10;
+  const remainingDailyTrades = Math.max(0, maxAllowedTrades - (userProfile.signals_used_today || 0));
 
   if (showDetails) {
     return <AssetDetails pair={pair} onBack={() => setShowDetails(false)} userProfile={userProfile} />;
@@ -878,6 +918,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       <div className="flex overflow-x-auto no-scrollbar lg:flex-wrap gap-2 p-1 bg-white/5 rounded-xl border border-white/5 w-full lg:w-fit">
         {[
           { id: 'signals', label: 'Signals' },
+          { id: 'charts', label: 'Charts' },
           { id: 'stats', label: 'Stats' },
           { id: 'portfolio', label: 'Portfolio' },
           { id: 'risk', label: 'Risk' },
@@ -967,7 +1008,133 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         </div>
       </div>
 
-      {activeTab === 'stats' ? (
+      {activeTab === 'charts' ? (
+        <div className="flex flex-col gap-6 w-full lg:max-w-[1600px] mx-auto">
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap gap-2 items-center glass-card p-3 rounded-xl border-white/5">
+                <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest pl-2">Select Market Pair:</span>
+                {DERIV_SYMBOLS.map(s => (
+                  <button 
+                    key={s.symbol} 
+                    onClick={() => setPair(s.symbol)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${pair === s.symbol ? 'bg-gold/10 border border-gold/40 text-gold' : 'bg-white/5 border border-white/10 hover:border-white/30 text-white/50 hover:text-white/80'}`}
+                  >
+                    {s.symbol.replace('frx', '').replace('cry', '').replace('_', ' ')}
+                  </button>
+                ))}
+            </div>
+
+            <div className="h-[600px] lg:h-[800px] glass-card overflow-hidden relative">
+            {(() => {
+              const currentSignal = activeSignals.find(s => s.pair === pair && s.status === 'active');
+              const currentTrade = activeTrades.find(t => t.pair === pair && t.status === 'open');
+              
+              const entry = currentTrade?.entry_price || currentSignal?.entry;
+              const sl = currentTrade?.stop_loss || currentSignal?.stop_loss;
+              const tps = currentTrade ? [currentTrade.tp1, currentTrade.tp2, currentTrade.tp3, currentTrade.tp4].filter((v): v is number => !!v)
+                                       : [currentSignal?.tp1, currentSignal?.tp2, currentSignal?.tp3, currentSignal?.tp4].filter((v): v is number => !!v);
+              const signalType = currentTrade?.type || (currentSignal?.analysis.toLowerCase().includes('sell') ? 'sell' : 'buy');
+              const displaySymbol = pair === 'Auto' ? 'R_100' : pair;
+
+              return (
+                <LightweightChart 
+                  symbol={displaySymbol} 
+                  entry={entry}
+                  sl={sl}
+                  tps={tps}
+                  signalType={signalType as 'buy' | 'sell'}
+                  alerts={activeAlerts.filter(a => a.pair === displaySymbol && a.active).map(a => ({ price: a.price, id: a.id! }))}
+                  height={typeof window !== 'undefined' && window.innerWidth < 1024 ? 600 : 800}
+                  timeframeStr={timeframe}
+                />
+              );
+            })()}
+            </div>
+          </div>
+
+          {(() => {
+            const currentSignal = activeSignals.find(s => s.pair === pair && s.status === 'active');
+            if (currentSignal) {
+              return (
+                <div className="glass-card p-6 space-y-4">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-gold flex items-center gap-2">
+                    <Eye className="text-gold" size={16} /> Oracle Blueprint & Full Analysis ({currentSignal.pair})
+                  </h3>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-4">
+                      {currentSignal.decision_reasoning && (
+                        <div className="bg-white/5 p-4 rounded-xl border-l-2 border-gold">
+                          <span className="block text-[10px] text-white/40 uppercase tracking-widest mb-1">Oracle Reasoning</span>
+                          <p className="text-sm text-white/80 italic font-mono whitespace-pre-wrap">{currentSignal.decision_reasoning}</p>
+                        </div>
+                      )}
+                      
+                      {currentSignal.market_structure && (
+                        <div className="bg-white/5 p-4 rounded-xl border border-white/5">
+                          <span className="block text-[10px] text-white/40 uppercase tracking-widest mb-1">Market Structure</span>
+                          <p className="text-sm text-gold font-bold">{currentSignal.market_structure}</p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {currentSignal.analysis && currentSignal.analysis !== currentSignal.decision_reasoning && (
+                        <div className="bg-white/5 p-4 rounded-xl border border-white/5 h-full">
+                          <span className="block text-[10px] text-white/40 uppercase tracking-widest mb-1">Deep Technical Analysis</span>
+                          <div className="text-sm text-white/70 whitespace-pre-wrap font-sans leading-relaxed">{currentSignal.analysis}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {currentSignal.psychological_trap && (
+                    <div className="mt-4 bg-red-400/10 p-4 rounded-xl border border-red-400/20">
+                      <span className="block text-[10px] text-red-400 uppercase tracking-widest mb-1 flex items-center gap-2">
+                        <ShieldAlert size={12} /> Psychological Trap Warning
+                      </span>
+                      <p className="text-sm text-red-200 whitespace-pre-wrap">{currentSignal.psychological_trap}</p>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            return null;
+          })()}
+
+          <div className="glass-card p-6 space-y-4">
+            <h3 className="text-sm font-bold uppercase tracking-widest text-white flex items-center gap-2">
+              <Sparkles className="text-gold" size={16} /> Submit Analysis for AI Peer Review
+            </h3>
+            <p className="text-xs text-white/40">Write down your technical or fundamental analysis for {pair}. Our AI will instantly dissect your logic and provide an Oracle assessment.</p>
+            <div className="flex gap-2">
+                <textarea 
+                    id="userAnalysisInput"
+                    placeholder={`My bias on ${pair} is...`}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-gold/50 transition-all min-h-[60px] resize-none"
+                />
+                <button 
+                  onClick={() => {
+                    const input = document.getElementById('userAnalysisInput') as HTMLTextAreaElement;
+                    if(input.value.trim().length > 10) {
+                      addToast("AI Oracle is reviewing your setup...", "info");
+                      setTimeout(() => {
+                        addToast(`Zion Review: Your logic on ${pair} shows strength, but watch out for hidden liquidity sweeps near your assumed entry point.`, "success");
+                        input.value = '';
+                      }, 2500);
+                    } else {
+                      addToast("Please provide a more detailed structural analysis before submitting.", "error");
+                    }
+                  }}
+                  className="px-6 bg-gold/10 hover:bg-gold/20 border border-gold/30 rounded-xl text-xs font-bold uppercase text-gold transition-all flex flex-col items-center justify-center gap-1 shrink-0"
+                >
+                  <Bot size={16} />
+                  Submit
+                </button>
+            </div>
+          </div>
+        </div>
+      ) : activeTab === 'stats' ? (
         <PerformanceStats userProfile={userProfile} />
       ) : activeTab === 'portfolio' ? (
         <Portfolio userProfile={userProfile} addToast={addToast} handleCloseTrade={handleCloseTrade} />
@@ -1034,6 +1201,58 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
+          {/* Daily Goals Progress Component */}
+          <div className="glass-card p-6 flex flex-col gap-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-display font-bold gold-gradient flex items-center gap-2">
+                <Target size={20} className="text-gold" /> Daily Ascension Goals
+              </h3>
+              <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Stay Disciplined</span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Profit Target */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Profit Target ({targetPercent}%)</p>
+                    <p className={`text-lg font-bold font-mono ${dailyPnl >= computedProfitTarget ? 'text-emerald-400' : 'text-gold'}`}>
+                      ${dailyPnl.toFixed(2)} <span className="text-[10px] text-white/40">/ ${computedProfitTarget.toFixed(2)}</span>
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-white/60">{currentProfitPercent.toFixed(1)}%</span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(100, Math.max(0, currentProfitPercent))}%` }}
+                    className={`h-full ${dailyPnl >= computedProfitTarget ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)]' : 'bg-gradient-to-r from-gold/50 to-gold shadow-[0_0_10px_rgba(251,191,36,0.3)]'}`}
+                  />
+                </div>
+              </div>
+
+              {/* Trade Horizon */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Trades Remaining</p>
+                    <p className={`text-lg font-bold font-mono ${remainingDailyTrades <= 0 ? 'text-red-400' : 'text-blue-400'}`}>
+                      {remainingDailyTrades} <span className="text-[10px] text-white/40">/ {maxAllowedTrades}</span>
+                    </p>
+                  </div>
+                  <span className="text-xs font-bold text-white/60">{Math.max(0, maxAllowedTrades - remainingDailyTrades)} Executed</span>
+                </div>
+                <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(100, Math.max(0, ((userProfile.signals_used_today || 0) / maxAllowedTrades) * 100))}%` }}
+                    className={`h-full ${remainingDailyTrades <= 0 ? 'bg-red-400' : 'bg-blue-400'}`}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="glass-card p-4 overflow-hidden relative">
             <div className="flex items-center gap-4 animate-marquee whitespace-nowrap">
               <div className="flex items-center gap-2 text-gold font-bold uppercase tracking-widest text-[10px]">
@@ -1101,79 +1320,6 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           </div>
 
           <TradingSessions userProfile={userProfile} addToast={addToast} />
-
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-wrap gap-2 items-center glass-card p-3 rounded-xl border-white/5">
-                <span className="text-white/40 text-[10px] font-bold uppercase tracking-widest pl-2">Select Market Pair:</span>
-                {DERIV_SYMBOLS.map(s => (
-                  <button 
-                    key={s.symbol} 
-                    onClick={() => setPair(s.symbol)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${pair === s.symbol ? 'bg-gold/10 border border-gold/40 text-gold' : 'bg-white/5 border border-white/10 hover:border-white/30 text-white/50 hover:text-white/80'}`}
-                  >
-                    {s.symbol.replace('frx', '').replace('cry', '').replace('_', ' ')}
-                  </button>
-                ))}
-            </div>
-
-            <div className="h-[400px] lg:h-[600px] glass-card overflow-hidden relative">
-            {(() => {
-              const currentSignal = activeSignals.find(s => s.pair === pair && s.status === 'active');
-              const currentTrade = activeTrades.find(t => t.pair === pair && t.status === 'open');
-              
-              // Prioritize trade levels if they exist, otherwise show signal levels
-              const entry = currentTrade?.entry_price || currentSignal?.entry;
-              const sl = currentTrade?.stop_loss || currentSignal?.stop_loss;
-              const tps = currentTrade ? [currentTrade.tp1, currentTrade.tp2, currentTrade.tp3, currentTrade.tp4].filter((v): v is number => !!v)
-                                       : [currentSignal?.tp1, currentSignal?.tp2, currentSignal?.tp3, currentSignal?.tp4].filter((v): v is number => !!v);
-              const signalType = currentTrade?.type || (currentSignal?.analysis.toLowerCase().includes('sell') ? 'sell' : 'buy');
-
-              return (
-                <LightweightChart 
-                  symbol={pair} 
-                  entry={entry}
-                  sl={sl}
-                  tps={tps}
-                  signalType={signalType as 'buy' | 'sell'}
-                  alerts={activeAlerts.filter(a => a.pair === pair && a.active).map(a => ({ price: a.price, id: a.id! }))}
-                  height={typeof window !== 'undefined' && window.innerWidth < 1024 ? 400 : 600}
-                />
-              );
-            })()}
-          </div>
-          </div>
-
-          <div className="glass-card p-6 space-y-4">
-            <h3 className="text-sm font-bold uppercase tracking-widest text-white flex items-center gap-2">
-              <Sparkles className="text-gold" size={16} /> Submit Analysis for AI Peer Review
-            </h3>
-            <p className="text-xs text-white/40">Write down your technical or fundamental analysis for {pair}. Our AI will instantly dissect your logic and provide an Oracle assessment.</p>
-            <div className="flex gap-2">
-                <textarea 
-                    id="userAnalysisInput"
-                    placeholder={`My bias on ${pair} is...`}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-gold/50 transition-all min-h-[60px] resize-none"
-                />
-                <button 
-                  onClick={() => {
-                    const input = document.getElementById('userAnalysisInput') as HTMLTextAreaElement;
-                    if(input.value.trim().length > 10) {
-                      addToast("AI Oracle is reviewing your setup...", "info");
-                      setTimeout(() => {
-                        addToast(`Zion Review: Your logic on ${pair} shows strength, but watch out for hidden liquidity sweeps near your assumed entry point.`, "success");
-                        input.value = '';
-                      }, 2500);
-                    } else {
-                      addToast("Please provide a more detailed structural analysis before submitting.", "error");
-                    }
-                  }}
-                  className="px-6 bg-gold/10 hover:bg-gold/20 border border-gold/30 rounded-xl text-xs font-bold uppercase text-gold transition-all flex flex-col items-center justify-center gap-1 shrink-0"
-                >
-                  <Bot size={16} />
-                  Submit
-                </button>
-            </div>
-          </div>
 
           <div className="glass-card p-6 space-y-6">
             <div className="flex items-center justify-between">
@@ -1293,6 +1439,27 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                             Take Trade
                           </button>
                         </div>
+                      </div>
+
+                      {/* Analysis Expansion */}
+                      <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
+                        {signal.decision_reasoning && (
+                          <div className="text-sm text-white/70 italic font-mono p-3 bg-white/5 rounded-lg border-l-2 border-gold whitespace-pre-wrap">
+                            "{signal.decision_reasoning}"
+                          </div>
+                        )}
+                        {signal.analysis && signal.analysis !== signal.decision_reasoning && (
+                          <div className="text-sm text-white/60 p-3 bg-white/5 rounded-lg border border-white/5 whitespace-pre-wrap">
+                            <span className="text-gold font-bold mb-1 block uppercase text-[10px] tracking-widest">Full Oracle Analysis</span>
+                            {signal.analysis}
+                          </div>
+                        )}
+                        {signal.psychological_trap && (
+                          <div className="text-sm text-red-300 p-3 bg-red-400/10 rounded-lg border border-red-400/20 whitespace-pre-wrap">
+                            <span className="text-red-400 font-bold mb-1 block uppercase text-[10px] tracking-widest">Oracle Trap Warning</span>
+                            {signal.psychological_trap}
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   ))
@@ -1456,35 +1623,79 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
             </div>
 
             <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs text-white/40 uppercase tracking-widest">Trading Pair</label>
-                <select 
-                  value={pair} 
-                  onChange={(e) => setPair(e.target.value)}
-                  className="w-full cosmic-input bg-cosmic-black"
+              <div className="flex gap-2 p-1 bg-black/40 rounded-xl border border-white/5 mb-4">
+                <button
+                  onClick={() => setGenerationMode('manual')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex justify-center items-center gap-2 ${generationMode === 'manual' ? 'bg-white/10 text-white' : 'text-white/40 hover:text-white/80 hover:bg-white/5'}`}
                 >
-                  {DERIV_SYMBOLS.map(s => (
-                    <option key={s.symbol} value={s.symbol}>{s.name}</option>
-                  ))}
-                </select>
+                  <Filter size={14} /> Manual Setup
+                </button>
+                <button
+                  onClick={() => setGenerationMode('auto')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex justify-center items-center gap-2 ${generationMode === 'auto' ? 'bg-gold/20 text-gold border border-gold/30 shadow-[0_0_15px_rgba(251,191,36,0.1)]' : 'text-white/40 hover:text-gold/80 hover:bg-gold/5'}`}
+                >
+                  <Sparkles size={14} /> Auto AI Scan
+                </button>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-xs text-white/40 uppercase tracking-widest">Timeframe</label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {['M15', 'M30', 'H1', 'H4'].map((tf) => (
-                    <button
-                      key={tf}
-                      onClick={() => setTimeframe(tf)}
-                      className={`py-2 rounded-lg text-xs font-bold transition-all ${
-                        timeframe === tf ? 'bg-gold text-black' : 'bg-white/5 text-white/60 hover:bg-white/10'
-                      }`}
-                    >
-                      {tf}
-                    </button>
-                  ))}
+              {generationMode === 'auto' && (
+                <div className="p-4 rounded-xl bg-gold/5 border border-gold/20 text-center animate-pulse">
+                  <p className="text-gold font-bold text-sm">Omniscient AI Scan Active</p>
+                  <p className="text-white/60 text-xs mt-1">The AI will scan all pairs, timeframes, and styles to find the best signal.</p>
                 </div>
-              </div>
+              )}
+
+              {generationMode === 'manual' && (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-xs text-white/40 uppercase tracking-widest">Trading Pair</label>
+                    <select 
+                      value={pair} 
+                      onChange={(e) => setPair(e.target.value)}
+                      className="w-full cosmic-input bg-cosmic-black"
+                    >
+                      <option value="Auto">Auto (AI Decides Pair)</option>
+                      {DERIV_SYMBOLS.map(s => (
+                        <option key={s.symbol} value={s.symbol}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-white/40 uppercase tracking-widest">Timeframe</label>
+                    <div className="flex flex-wrap gap-2">
+                      {['Auto', 'M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1'].map((tf) => (
+                        <button
+                          key={tf}
+                          onClick={() => setTimeframe(tf)}
+                          className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex-1 min-w-[50px] ${
+                            timeframe === tf ? 'bg-gold text-black' : 'bg-white/5 text-white/60 hover:bg-white/10'
+                          }`}
+                        >
+                          {tf === 'Auto' ? 'AI Decides' : tf}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-white/40 uppercase tracking-widest">Trading Style</label>
+                    <div className="flex flex-wrap gap-2">
+                      {['Auto', 'Scalping', 'Day Trading', 'Swing'].map((style) => (
+                        <button
+                          key={style}
+                          onClick={() => setTradingStyle(style)}
+                          className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex-1 min-w-[50px] ${
+                            tradingStyle === style ? 'bg-gold text-black' : 'bg-white/5 text-white/60 hover:bg-white/10'
+                          }`}
+                        >
+                          {style === 'Auto' ? 'AI Decides' : style}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="space-y-2">
                 <label className="text-xs text-white/40 uppercase tracking-widest">AI Oracle Bot</label>
@@ -1768,6 +1979,103 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         </motion.div>
       </div>
     )}
+
+      <AnimatePresence>
+        {rejectedSignalAnalysis && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.95, y: 20 }}
+              className="glass-card w-full max-w-2xl max-h-[85vh] overflow-y-auto"
+            >
+              <div className="sticky top-0 bg-cosmic-black/90 backdrop-blur-md p-6 border-b border-white/5 flex justify-between items-center z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                    <ShieldAlert className="text-red-400" size={20} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-display font-bold text-red-400">Oracle Rejected Plan</h2>
+                    <p className="text-xs text-white/40">{rejectedSignalAnalysis.pair} • {rejectedSignalAnalysis.timeframe}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setRejectedSignalAnalysis(null)}
+                  className="p-2 hover:bg-white/5 rounded-full transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-6">
+                <div className="p-4 rounded-xl bg-red-500/5 border border-red-500/10">
+                  <h3 className="text-red-400 font-bold mb-2 flex items-center gap-2">
+                    <ShieldAlert size={16} /> Capital Preservation Triggered
+                  </h3>
+                  <p className="text-sm text-white/80 leading-relaxed font-mono whitespace-pre-wrap">
+                    {rejectedSignalAnalysis.decision_reasoning || rejectedSignalAnalysis.analysis}
+                  </p>
+                </div>
+
+                {rejectedSignalAnalysis.ai_sentiment_feedback && (
+                  <div className="p-4 rounded-xl bg-white/5 italic text-white/60 text-sm border-l-2 border-gold flex items-center gap-4">
+                    <div className="w-8 h-8 rounded-full bg-gold/10 flex items-center justify-center shrink-0">
+                      <Bot size={14} className="text-gold" />
+                    </div>
+                    <p>"{rejectedSignalAnalysis.ai_sentiment_feedback}"</p>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 rounded-xl bg-white/5 space-y-2">
+                        <span className="text-[10px] uppercase text-white/40 tracking-widest block font-bold">Structure Analysis</span>
+                        <p className="text-sm text-white/80">{rejectedSignalAnalysis.market_structure || 'Unclear structure'}</p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-white/5 space-y-2">
+                        <span className="text-[10px] uppercase text-white/40 tracking-widest block font-bold">Liquidity Status</span>
+                        <p className="text-sm text-white/80">{rejectedSignalAnalysis.liquidity_presence ? 'Swept' : 'Building (Trap)'}</p>
+                    </div>
+                </div>
+
+                {rejectedSignalAnalysis.decision !== 'No Trade' && (
+                    <div className="border border-white/10 rounded-xl p-4 space-y-4">
+                        <h4 className="text-xs font-bold text-white/40 uppercase tracking-widest text-center">Suboptimal Plan Projected</h4>
+                        <div className="flex items-center justify-between font-mono text-sm">
+                            <span className="text-white/60">Entry:</span>
+                            <span className="text-white font-bold">{rejectedSignalAnalysis.entry}</span>
+                        </div>
+                        <div className="flex items-center justify-between font-mono text-sm">
+                            <span className="text-white/60">TP1:</span>
+                            <span className="text-emerald-400 font-bold">{rejectedSignalAnalysis.tp1}</span>
+                        </div>
+                        <div className="flex items-center justify-between font-mono text-sm">
+                            <span className="text-white/60">Stop Loss:</span>
+                            <span className="text-red-400 font-bold">{rejectedSignalAnalysis.stop_loss}</span>
+                        </div>
+                        
+                        {/* Option to force trade */}
+                        <div className="pt-4 border-t border-white/5">
+                            <p className="text-[10px] text-white/40 text-center mb-3">You can manually copy these parameters to your broker if you choose to override the Oracle.</p>
+                            <button
+                              onClick={() => setRejectedSignalAnalysis(null)}
+                              className="w-full py-3 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-bold transition-all"
+                            >
+                                Acknowledge & Dismiss
+                            </button>
+                        </div>
+                    </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     {showTutorial && <Tutorial onClose={() => setShowTutorial(false)} />}
   </div>
 );

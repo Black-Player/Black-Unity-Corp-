@@ -104,11 +104,19 @@ export function useTradeMonitor(
                 const newTpHits = [...(trade.tp_hits || []), tp.level];
                 const updateData: any = { tp_hits: newTpHits };
 
-                // PART 2: AT TP1 -> MOVE SL TO BREAKEVEN
+                // PART 2: AT TP HIT -> MOVE SL ACCORDINGLY
                 if (tp.level === 'TP1') {
                   updateData.stop_loss = trade.entry_price;
                   addToast(`Celestial Shield Activated: ${trade.pair} SL moved to breakeven!`, 'info');
                   speak(`Guardian protection active. Stop loss for ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has been moved to entry.`, userProfile.notification_settings.sound, sentinelChar);
+                } else if (tp.level === 'TP2') {
+                  updateData.stop_loss = trade.tp1;
+                  addToast(`Profit Secured: ${trade.pair} SL moved to TP1!`, 'success');
+                  speak(`Profit secured. Stop loss for ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has been moved to TP1.`, userProfile.notification_settings.sound, oracleChar);
+                } else if (tp.level === 'TP3') {
+                  updateData.stop_loss = trade.tp2;
+                  addToast(`Profit Secured: ${trade.pair} SL moved to TP2!`, 'success');
+                  speak(`Profit secured. Stop loss for ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has been moved to TP2.`, userProfile.notification_settings.sound, oracleChar);
                 }
 
                 await dbService.update('trades', trade.id, updateData);
@@ -121,29 +129,7 @@ export function useTradeMonitor(
             }
           }
 
-          // PART 4: TRAILING PROFIT SYSTEM
-          // If in profit > TP1, trail SL behind price by a structural distance (e.g., half distance to TP1)
-          const profitPips = trade.type === 'buy' ? currentPrice - trade.entry_price : trade.entry_price - currentPrice;
-          const distToTp1 = Math.abs(trade.tp1 - trade.entry_price);
-          
-          if (profitPips > distToTp1) {
-            const trailBuffer = distToTp1 * 0.5;
-            const newSl = trade.type === 'buy' ? currentPrice - trailBuffer : currentPrice + trailBuffer;
-            
-            // Only move SL if it's an improvement (trailing)
-            const isImprovement = trade.type === 'buy' ? newSl > trade.stop_loss : newSl < trade.stop_loss;
-            
-            if (isImprovement) {
-               try {
-                 await dbService.update('trades', trade.id, { stop_loss: newSl });
-                 if (Math.abs(newSl - trade.stop_loss) > (distToTp1 * 0.1)) { // Only notify for significant moves
-                    addToast(`Profit Locked: Trailing ${trade.pair} SL to ${newSl.toFixed(4)}`, 'info');
-                 }
-               } catch (err) {
-                 console.error("Trailing stop update failed", err);
-               }
-            }
-          }
+          // Dynamic trailing disabled as per explicit TP trailing rules.
         }
 
         if (shouldClose) {

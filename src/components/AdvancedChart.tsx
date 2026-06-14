@@ -43,7 +43,7 @@ const SYMBOLS = [
   { id: 'cryLTCUSD', name: 'Litecoin/USD', category: 'Crypto' },
 ];
 
-export default function AdvancedChart() {
+export default function AdvancedChart({ onBack }: { onBack?: () => void }) {
   const { marketPrices } = useMarketContext();
   const [selectedSymbol, setSelectedSymbol] = useState('R_100');
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,7 +59,7 @@ export default function AdvancedChart() {
   const change = marketPrices[selectedSymbol]?.change || 0;
 
   return (
-    <div className="h-[calc(100vh-120px)] flex gap-6 overflow-hidden">
+    <div className="h-screen flex gap-6 overflow-hidden bg-cosmic-black p-4">
       {/* Sidebar */}
       <AnimatePresence mode="wait">
         {showSidebar && (
@@ -70,6 +70,13 @@ export default function AdvancedChart() {
             className="glass-card border-white/5 flex flex-col overflow-hidden"
           >
             <div className="p-6 border-b border-white/5 space-y-4">
+              <div className="flex justify-between items-center mb-2">
+                {onBack && (
+                   <button onClick={onBack} className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white transition-all flex items-center gap-2">
+                     <span className="text-[10px] font-bold uppercase tracking-widest">Back to Dashboard</span>
+                   </button>
+                )}
+              </div>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-white/20" size={16} />
                 <input 

@@ -53,50 +53,47 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
   const openTrades = trades.filter(t => t.status === 'open' && t.account_type === currentAccountType);
   const closedTrades = trades.filter(t => t.status === 'closed' && t.account_type === currentAccountType);
 
-  const totalValue = filteredPortfolio.reduce((acc, item) => {
-    const currentPrice = marketPrices[item.symbol]?.price || item.avg_price;
-    return acc + (item.amount * currentPrice);
-  }, 0);
-
-  const totalCost = filteredPortfolio.reduce((acc, item) => {
-    return acc + (item.amount * item.avg_price);
-  }, 0);
+  const initialBalance = currentAccountType === 'live' ? userProfile.live_balance : userProfile.demo_balance;
 
   const tradesPnl = openTrades.reduce((acc, trade) => {
     const currentPrice = marketPrices[trade.pair]?.price || trade.entry_price;
-    const pnl = trade.type === 'buy' 
-      ? (currentPrice - trade.entry_price) 
-      : (trade.entry_price - currentPrice);
+    const diff = trade.type === 'buy' ? currentPrice - trade.entry_price : trade.entry_price - currentPrice;
+    const lotMultiplier = trade.lot_size || 1;
+    const pnl = diff * lotMultiplier * 10;
     return acc + pnl;
   }, 0);
 
-  const totalPnl = (totalValue - totalCost) + tradesPnl;
-  const pnlPercentage = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
+  const closedPnl = closedTrades.reduce((acc, trade) => acc + (trade.pnl || 0), 0);
+
+  const currentEquity = initialBalance + tradesPnl;
+  const totalPnl = closedPnl + tradesPnl;
+  const pnlPercentage = initialBalance > 0 ? (totalPnl / (initialBalance - closedPnl)) * 100 : 0;
 
   const chartData = useMemo(() => {
-    const data = filteredPortfolio.map(item => {
-      const currentPrice = marketPrices[item.symbol]?.price || item.avg_price;
-      return {
-        name: item.symbol.replace('_', ' ').toUpperCase(),
-        value: item.amount * currentPrice
-      };
-    });
+    const data: {name: string, value: number}[] = [];
     
     openTrades.forEach(trade => {
       const currentPrice = marketPrices[trade.pair]?.price || trade.entry_price;
       const existing = data.find(d => d.name === trade.pair.replace('_', ' ').toUpperCase());
+      const lotMultiplier = trade.lot_size || 1;
+      const marginUsed = trade.entry_price * lotMultiplier;
+      
       if (existing) {
-        existing.value += trade.entry_price; // Simplified value for trades
+        existing.value += marginUsed;
       } else {
         data.push({
           name: trade.pair.replace('_', ' ').toUpperCase(),
-          value: trade.entry_price
+          value: marginUsed
         });
       }
     });
+    
+    if (data.length === 0) {
+       data.push({ name: 'USD/CASH', value: initialBalance });
+    }
 
     return data.sort((a, b) => b.value - a.value);
-  }, [filteredPortfolio, openTrades, marketPrices]);
+  }, [openTrades, marketPrices, initialBalance]);
 
   return (
     <div className="space-y-8">
@@ -110,7 +107,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
             <Wallet size={18} />
             <span className="text-xs uppercase tracking-widest">Portfolio Value</span>
           </div>
-          <p className="text-3xl font-bold font-display text-gold">${(totalValue + openTrades.length * 10).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          <p className="text-3xl font-bold font-display text-gold">${(currentEquity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </motion.div>
 
         <motion.div 

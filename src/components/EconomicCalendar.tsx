@@ -23,7 +23,9 @@ export const EconomicCalendar: React.FC<EconomicCalendarProps> = ({ compact = fa
           : data;
         setEvents(filteredData.length > 0 ? filteredData : data.slice(0, 2));
       } catch (err: any) {
-        console.error("Failed to fetch economic events", err);
+        if (!String(err).includes('quota') && !String(err).includes('Quota') && err.status !== "RESOURCE_EXHAUSTED") {
+            console.error("Failed to fetch economic events", err);
+        }
         if (err.message?.includes("quota") || err.message?.includes("429") || err.status === "RESOURCE_EXHAUSTED") {
             setError("Quota exceeded. Please check your Gemini API plan.");
         } else {

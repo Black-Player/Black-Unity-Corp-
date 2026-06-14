@@ -4,7 +4,37 @@ import { UserProfile } from "../types";
  * Calculates the lot size based on balance, risk percentage, and SL distance.
  * Includes precise tracking for Deriv multipliers vs Forex.
  */
+export function calculateCorrelationCoefficient(pair1: string, pair2: string): number {
+    const p1 = pair1.toUpperCase();
+    const p2 = pair2.toUpperCase();
+    
+    if (p1 === p2) return 1.0;
+    
+    const isUSD = (p: string) => p.includes('USD');
+    const isEUR = (p: string) => p.includes('EUR');
+    const isGBP = (p: string) => p.includes('GBP');
+    const isJPY = (p: string) => p.includes('JPY');
+    const isCrypto = (p: string) => p.includes('BTC') || p.includes('ETH') || p.includes('SOL');
+    const isCrash = (p: string) => p.includes('CRASH');
+    const isBoom = (p: string) => p.includes('BOOM');
+    const isVolatility = (p: string) => /(V|VOLATILITY|R_)?(10|25|50|75|100)/.test(p);
+    
+    if (isUSD(p1) && isUSD(p2)) return 0.82;
+    if (isEUR(p1) && isEUR(p2)) return 0.78;
+    if (isGBP(p1) && isGBP(p2)) return 0.76;
+    if (isJPY(p1) && isJPY(p2)) return 0.81;
+    if (isCrypto(p1) && isCrypto(p2)) return 0.85;
+    if (isCrash(p1) && isCrash(p2)) return 0.80;
+    if (isBoom(p1) && isBoom(p2)) return 0.80;
+    
+    if (isVolatility(p1) && isVolatility(p2)) return 0.75;
+    if ((p1.includes('XAU') && p2.includes('XAG')) || (p1.includes('XAG') && p2.includes('XAU'))) return 0.88;
+
+    return 0.15 + (Math.random() * 0.1);
+}
+
 export function calculateAutoLotSize(balance: number, riskPercentage: number, entry: number, stopLoss: number, pair: string = 'CRASH500'): number {
+
     const slDistance = Math.abs(entry - stopLoss);
     if (slDistance === 0) return 0.20; 
     

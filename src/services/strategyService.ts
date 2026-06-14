@@ -30,7 +30,7 @@ export class StrategyService {
         if (!this.apiKey) throw new Error("API Key missing");
 
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
-        const model = "gemini-2.0-flash";
+        const model = "gemini-3.5-flash";
         
         const prompt = `
             Task: Create an autonomous, high-performance trading strategy for a bot named ${bot.name} using ${bot.strategy} as a base.
@@ -83,8 +83,12 @@ export class StrategyService {
 
             return strategy;
         } catch (error: any) {
-            if (error.message?.includes("API key not valid") || error.message?.includes("API_KEY_INVALID")) {
+            const errStr = JSON.stringify(error) + (error?.message || "");
+            if (errStr.includes("API key not valid") || errStr.includes("API_KEY_INVALID")) {
                 throw new Error("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.");
+            }
+            if (errStr.includes("quota") || errStr.includes("429") || error?.status === "RESOURCE_EXHAUSTED" || errStr.includes("Rpc failed") || errStr.includes("xhr error") || errStr.includes("500")) {
+                throw new Error("Quota exceeded: Please check your Gemini API plan limits or AI Studio connection.");
             }
             throw error;
         }
@@ -94,7 +98,7 @@ export class StrategyService {
         if (!this.apiKey) throw new Error("API Key missing");
 
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
-        const model = "gemini-2.0-flash";
+        const model = "gemini-3.5-flash";
 
         const prompt = `
             Task: Perform "Strategy Fusion" (PART 9) to combine the strengths of two successful trading strategies into one Apex strategy.
@@ -151,8 +155,12 @@ export class StrategyService {
 
             return strategy;
         } catch (error: any) {
-            if (error.message?.includes("API key not valid") || error.message?.includes("API_KEY_INVALID")) {
+            const errStr = JSON.stringify(error) + (error?.message || "");
+            if (errStr.includes("API key not valid") || errStr.includes("API_KEY_INVALID")) {
                 throw new Error("Oracle Disconnected: Your Gemini API Key is invalid. Please insert a valid key in the AI Studio Settings under 'API Keys'.");
+            }
+            if (errStr.includes("quota") || errStr.includes("429") || error?.status === "RESOURCE_EXHAUSTED" || errStr.includes("Rpc failed") || errStr.includes("xhr error") || errStr.includes("500")) {
+                throw new Error("Quota exceeded: Please check your Gemini API plan limits or AI Studio connection.");
             }
             throw error;
         }
@@ -176,7 +184,7 @@ export class StrategyService {
         if (!this.apiKey) throw new Error("API Key missing");
 
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
-        const model = "gemini-2.0-flash";
+        const model = "gemini-3.5-flash";
 
         const prompt = `
             Optimize the following trading strategy: ${JSON.stringify(strategy)}

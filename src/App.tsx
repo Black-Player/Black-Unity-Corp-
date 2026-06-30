@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase, handleSupabaseError, OperationType, isSupabaseConfigured, supabaseConfigStatus, pingSupabase } from './supabase';
 import { auth as firebaseAuth } from './firebase';
-import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
+import { onAuthStateChanged, User as FirebaseUser } from './firebase';
 import { dbService } from './services/dbService';
 import { BehavioralService } from './services/behavioralService';
 import { analyzeTradeReview } from './services/aiService';
@@ -46,10 +46,12 @@ import Nexus from './components/Nexus';
 import Vault from './components/Vault';
 import Chat from './components/Chat';
 import Settings from './components/Settings';
+import { runFridayAutomatedSummary } from './services/communicationService';
 import Subscription from './components/Subscription';
 import Diagnostics from './components/Diagnostics';
 import ErrorBoundary from './components/ErrorBoundary';
 import TradingGame from './components/TradingGame';
+import TelegramCenter from './components/TelegramCenter';
 import TickerTape from './components/TickerTape';
 import { motion, AnimatePresence } from 'motion/react';
 import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, Hammer, Book, Zap, Video, Layers, Layout, Settings2, Target, ShoppingBag, Ghost, History as HistoryIcon, Activity } from 'lucide-react';
@@ -70,19 +72,6 @@ export default function App() {
 
   useEffect(() => {
     derivService.connect();
-    
-    // Connection test
-    const testConnection = async () => {
-      try {
-        const { error } = await supabase.from('users').select('uid').limit(1).single();
-        if (error && error.message.includes('failed to fetch')) {
-          console.error("Supabase connection failed. Please check your configuration.");
-        }
-      } catch (err) {
-        console.error("Supabase connection error:", err);
-      }
-    };
-    if (isSupabaseConfigured) testConnection();
   }, []);
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -98,6 +87,25 @@ export default function App() {
   useEffect(() => {
     (window as any).openSearch = () => setIsSearchOpen(true);
   }, []);
+
+  // Automated Friday 18:00 SAST report check
+  useEffect(() => {
+    if (!userProfile || userProfile.role !== 'creator') return;
+    
+    // Check immediately on load
+    runFridayAutomatedSummary(userProfile.integrations, userProfile.uid).catch(err => {
+      console.error("Friday check failed:", err);
+    });
+
+    // Recheck every 5 minutes
+    const interval = setInterval(() => {
+      runFridayAutomatedSummary(userProfile.integrations, userProfile.uid).catch(err => {
+        console.error("Friday check failed:", err);
+      });
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [userProfile]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const lastResetRef = useRef<string | null>(null);
 
@@ -109,11 +117,7 @@ export default function App() {
     }, 5000);
   }, []);
 
-  useEffect(() => {
-    if (isSupabaseConfigured) {
-      pingSupabase().then(setPingStatus);
-    }
-  }, []);
+  // ping removed
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(firebaseAuth, (firebaseUser) => {
@@ -134,17 +138,84 @@ export default function App() {
       // Initial fetch
       const fetchProfile = async () => {
         try {
-          const profile = await dbService.get('users', user.uid);
+          // Add a small delay to ensure auth token is fully synced to Firestore
+          await new Promise(resolve => setTimeout(resolve, 500));
+          let profile = await dbService.get('users', user.uid);
+          
+          const creatorEmails = ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'];
+          const isCreatorEmail = creatorEmails.includes((user.email || '').toLowerCase());
           
           if (!profile) {
-              console.warn('User profile not found in database');
-              setError('User profile not found. Please ensure you are registered correctly.');
+              console.warn('User profile not found in database, auto-provisioning default user profile...');
+              const finalRole = isCreatorEmail ? 'creator' : 'subscriber';
+              
+              const defaultProfile: UserProfile = {
+                uid: user.uid,
+                email: user.email || '',
+                role: finalRole,
+                tier: finalRole === 'creator' ? 'creator' : 'free',
+                ap: 0,
+                penalties: 0,
+                xp: 0,
+                level: 1,
+                consecutive_losses: 0,
+                signals_used_today: 0,
+                last_reset_date: new Date().toISOString(),
+                created_at: new Date().toISOString(),
+                total_pnl: 0,
+                win_rate: 0,
+                credits: 0,
+                referral_code: user.uid.slice(0, 8).toUpperCase(),
+                notification_settings: {
+                  new_signals: true,
+                  signal_updates: true,
+                  sound: true,
+                  email_digest: false,
+                },
+                account_type: 'demo',
+                demo_balance: 10,
+                live_balance: 0,
+                daily_pnl: 0,
+                custom_bots: [],
+                risk_settings: {
+                  max_daily_loss: 50,
+                  max_open_positions: 3,
+                  risk_per_trade: 1,
+                  stop_loss_buffer: 5,
+                },
+                auto_trade_settings: {
+                  enabled: false,
+                  min_confidence: 90,
+                  max_trades_per_day: 5,
+                  pairs: ['CRASH500', 'BOOM1000', 'R_75'],
+                },
+                stats: {
+                  total_trades: 0,
+                  wins: 0,
+                  losses: 0,
+                  profit_factor: 0,
+                  max_drawdown: 0,
+                },
+              };
+              
+              await dbService.create('users', defaultProfile, user.uid);
+              profile = defaultProfile;
           } else {
-            setUserProfile(profile as UserProfile);
+              // Automatically upgrade existing user profile to Creator if their email is in the list
+              const typedProfile = profile as UserProfile;
+              if (isCreatorEmail && (typedProfile.role !== 'creator' || typedProfile.tier !== 'creator')) {
+                console.warn('Creator email detected, upgrading existing user profile...');
+                await dbService.update('users', user.uid, { role: 'creator', tier: 'creator' });
+                typedProfile.role = 'creator';
+                typedProfile.tier = 'creator';
+              }
           }
+          
+          setUserProfile(profile as UserProfile);
           setLoading(false);
-        } catch (err) {
-          setError('Could not reach the database. Please check your connection or configuration.');
+        } catch (err: any) {
+          console.error("fetchProfile error:", err);
+          setError(`Could not reach the database. ${err.message || String(err)}`);
           setLoading(false);
         }
       };
@@ -233,10 +304,10 @@ export default function App() {
         exit_price: exitPrice,
       }, "I want an honest review about how this trade went overall.").then(async (insight) => {
         const fullNotes = (trade.notes ? trade.notes + '\n\n' : '') + `Omni Intel: ${insight.trade_summary}`;
-        const derivedEmotion = insight.emotional_state?.toLowerCase().includes('anxi') ? 'anxious' : 
-                               insight.emotional_state?.toLowerCase().includes('excit') ? 'excited' :
-                               insight.emotional_state?.toLowerCase().includes('greed') ? 'greedy' :
-                               insight.emotional_state?.toLowerCase().includes('fear') ? 'fearful' : 'calm';
+        const derivedEmotion = insight.emotional_state?.toLowerCase()?.includes('anxi') ? 'anxious' : 
+                               insight.emotional_state?.toLowerCase()?.includes('excit') ? 'excited' :
+                               insight.emotional_state?.toLowerCase()?.includes('greed') ? 'greedy' :
+                               insight.emotional_state?.toLowerCase()?.includes('fear') ? 'fearful' : 'calm';
 
         await dbService.update('trades', trade.id, {
             notes: fullNotes,
@@ -340,80 +411,6 @@ export default function App() {
   }, [userProfile, addToast]);
 
   useTradeMonitor(userProfile || {} as UserProfile, addToast, handleCloseTrade);
-
-  if (!isSupabaseConfigured) {
-    return (
-      <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6">
-        <div className="max-w-md w-full glass-card p-8 space-y-6 text-center">
-          <div className="w-16 h-16 bg-gold/10 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Settings2 className="w-8 h-8 text-gold animate-spin-slow" />
-          </div>
-          <h1 className="text-2xl font-bold text-gold tracking-tight">Supabase Setup Required</h1>
-          <p className="text-white/60 leading-relaxed">
-            To activate the Zion Trading System, you must connect your Supabase instance.
-          </p>
-          <div className="bg-black/40 rounded-xl p-4 text-left space-y-4 border border-white/5">
-            <p className="text-xs font-bold uppercase tracking-widest text-white/40">Diagnostic Status:</p>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-white/60">VITE_SUPABASE_URL</span>
-                {supabaseConfigStatus.url ? (
-                  <span className="flex items-center gap-1 text-green-400">
-                    <CheckCircle2 size={12} /> Detected
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-red-400">
-                    <XCircle size={12} /> Missing
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-white/60">VITE_SUPABASE_ANON_KEY</span>
-                {supabaseConfigStatus.key ? (
-                  <span className="flex items-center gap-1 text-green-400">
-                    <CheckCircle2 size={12} /> Detected
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-red-400">
-                    <XCircle size={12} /> Missing
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-white/60">NETWORK PING</span>
-                {pingStatus ? (
-                  <span className={`flex items-center gap-1 ${pingStatus.success ? 'text-green-400' : 'text-orange-400'}`}>
-                    {pingStatus.success ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
-                    {pingStatus.message}
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-white/20">
-                    <Loader2 size={12} className="animate-spin" /> testing...
-                  </span>
-                )}
-              </div>
-              {supabaseConfigStatus.url && !supabaseConfigStatus.urlValid && (
-                <div className="mt-2 p-2 bg-red-500/10 border border-red-500/20 rounded text-[10px] text-red-400">
-                  <p>Invalid URL format. Ensure it starts with https://</p>
-                </div>
-              )}
-            </div>
-
-            <p className="text-xs font-bold uppercase tracking-widest text-white/40 pt-2 border-t border-white/5">Instructions:</p>
-            <ol className="text-sm space-y-3 text-white/80 list-decimal list-inside">
-              <li>Open the <span className="text-gold">Settings</span> menu (bottom left).</li>
-              <li>Go to the <span className="text-gold">Secrets</span> tab.</li>
-              <li>Add <code className="bg-white/10 px-1 rounded text-gold">VITE_SUPABASE_URL</code></li>
-              <li>Add <code className="bg-white/10 px-1 rounded text-gold">VITE_SUPABASE_ANON_KEY</code></li>
-            </ol>
-          </div>
-          <p className="text-[10px] text-white/20 uppercase tracking-widest font-bold">
-            The system will automatically restart once configured.
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   if (loading || error) {
     return (
@@ -525,6 +522,8 @@ export default function App() {
         return <Subscription {...props} />;
       case 'diagnostics':
         return <Diagnostics {...props} />;
+      case 'telegram':
+        return <TelegramCenter {...props} />;
       case 'archive':
         return <Archive {...props} />;
       case 'signal-stream':
@@ -622,34 +621,45 @@ export default function App() {
                       </button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 space-y-1">
-                      {[
-                        { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-                        { id: 'vision', label: 'Advanced Chart', icon: BarChart3 },
-                        { id: 'closed-trades', label: 'Closed Trades', icon: HistoryIcon },
-                        { id: 'feed', label: 'Cosmic Feed', icon: Globe },
-                        { id: 'zion', label: 'Zion AI', icon: Bot },
-                        { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
-                        { id: 'nexus', label: 'The Nexus', icon: Globe },
-                        { id: 'portfolio', label: 'Portfolio', icon: Wallet },
-                        { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-                        { id: 'eye', label: 'Oracle Eye', icon: Eye },
-                        { id: 'sessions', label: 'Sessions', icon: Clock },
-                        { id: 'arena', label: 'The Arena', icon: Trophy },
-                        { id: 'archive', label: 'The Archive', icon: Book },
-                        { id: 'signal-stream', label: 'Signal Stream', icon: Zap },
-                        { id: 'signal-oracle', label: 'Signal Oracle', icon: Target },
-                        { id: 'gallery', label: 'The Gallery', icon: ShoppingBag },
-                        { id: 'simulator', label: 'Trading Simulator', icon: Activity },
-                        { id: 'alchemist', label: 'The Alchemist', icon: Settings2 },
-                        { id: 'marketplace', label: 'Marketplace', icon: Search },
-                        { id: 'council', label: 'Council', icon: Users },
-                        { id: 'abyss', label: 'The Abyss', icon: Ghost },
-                        { id: 'forge', label: 'The Forge', icon: Hammer },
-                        { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
-                        { id: 'academy', label: 'The Library', icon: GraduationCap },
-                        { id: 'vault', label: 'Zion Vault', icon: Shield },
-                        { id: 'settings', label: 'Settings', icon: SettingsIcon },
-                      ].map((item) => (
+                      {(() => {
+                        const itemsList = [
+                          { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                          { id: 'vision', label: 'Advanced Chart', icon: BarChart3 },
+                          { id: 'closed-trades', label: 'Closed Trades', icon: HistoryIcon },
+                          { id: 'feed', label: 'Cosmic Feed', icon: Globe },
+                          { id: 'zion', label: 'Zion AI', icon: Bot },
+                          { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
+                          { id: 'nexus', label: 'The Nexus', icon: Globe },
+                          { id: 'portfolio', label: 'Portfolio', icon: Wallet },
+                          { id: 'analytics', label: 'Analytics', icon: BarChart3 },
+                          { id: 'eye', label: 'Oracle Eye', icon: Eye },
+                          { id: 'sessions', label: 'Sessions', icon: Clock },
+                          { id: 'arena', label: 'The Arena', icon: Trophy },
+                          { id: 'archive', label: 'The Archive', icon: Book },
+                          { id: 'signal-stream', label: 'Signal Stream', icon: Zap },
+                          { id: 'signal-oracle', label: 'Signal Oracle', icon: Target },
+                          { id: 'gallery', label: 'The Gallery', icon: ShoppingBag },
+                          { id: 'simulator', label: 'Trading Simulator', icon: Activity },
+                          { id: 'alchemist', label: 'The Alchemist', icon: Settings2 },
+                          { id: 'marketplace', label: 'Marketplace', icon: Search },
+                          { id: 'council', label: 'Council', icon: Users },
+                          { id: 'abyss', label: 'The Abyss', icon: Ghost },
+                          { id: 'forge', label: 'The Forge', icon: Hammer },
+                          { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
+                          { id: 'academy', label: 'The Library', icon: GraduationCap },
+                          { id: 'vault', label: 'Zion Vault', icon: Shield },
+                          { id: 'settings', label: 'Settings', icon: SettingsIcon },
+                        ];
+
+                        if (userProfile?.role === 'creator' || userProfile?.tier === 'creator' || localStorage.getItem('dev_mode_enabled') === 'true') {
+                          itemsList.push(
+                            { id: 'diagnostics', label: 'Diagnostics (Admin)', icon: Shield },
+                            { id: 'telegram', label: 'Telegram Center (Admin)', icon: Bot }
+                          );
+                        }
+
+                        return itemsList;
+                      })().map((item) => (
                         <button
                           key={item.id}
                           onClick={() => {

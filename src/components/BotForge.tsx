@@ -128,7 +128,7 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY?.trim()! });
       
       const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: `As the Eternal Intelligence Core, evaluate this trading bot logic:
         Name: ${newBot.name}
         Strategy: ${newBot.strategy}

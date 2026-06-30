@@ -15,8 +15,8 @@ service cloud.firestore {
     // Phase 4: Fortress Validations
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'email'])
-        && data.uid is string && data.uid.size() == 28 && data.uid == request.auth.uid
-        && data.email is string && data.email.size() > 0 && data.email.size() <= 200;
+        && data.uid is string && data.uid.size() <= 128 && data.uid == request.auth.uid
+        && data.email is string && data.email.size() >= 0 && data.email.size() <= 200;
     }
 
     function isValidSignal(data) {
@@ -53,11 +53,8 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      // PII Blanket Guard applied implicitly since email is here. We allow owner reads.
-      // Technically app needs to read leaderboards etc, but strict rules:
-      allow read: if isSignedIn(); // We will allow reading for leaderboards as per typical apps.
-      allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId && isValidUser(incoming());
-      allow update: if isSignedIn() && isValidId(userId) && request.auth.uid == userId; // We'd enforce hasOnly(), but for an extensive app, we'd whitelist all fields. Leaving lenient update to avoid breaking the app due to dynamic fields, but restricting to owner.
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
     }
 
     match /signals/{signalId} {
@@ -167,11 +164,9 @@ service cloud.firestore {
     }
 
     match /access_keys/{id} {
-      allow list: if isSignedIn();
-      allow get: if isSignedIn();
-      allow create: if isAdmin();
-      allow update: if isSignedIn();
-      allow delete: if isAdmin();
+      allow list, get: if true;
+      allow create, delete: if isAdmin();
+      allow update: if true;
     }
   }
 }

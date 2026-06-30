@@ -59,7 +59,7 @@ export const CoreEngines = {
       // 1. Clear structure (BOS/CHOCH)
       const hasStructure = signalRaw.analysis?.includes('BOS') || signalRaw.analysis?.includes('CHOCH');
       // 2. Liquidity context
-      const hasLiquidity = signalRaw.analysis?.toLowerCase().includes('liquidity');
+      const hasLiquidity = signalRaw.analysis?.toLowerCase()?.includes('liquidity');
       // 3. Valid entry (OB/FVG)
       const hasEntryValid = signalRaw.analysis?.includes('OB') || signalRaw.analysis?.includes('FVG');
       

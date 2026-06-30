@@ -4,9 +4,10 @@ import { where, orderBy, limit } from 'firebase/firestore';
 import { BOTS, UserProfile, TIER_BOT_LIMITS } from '../types';
 import { chatWithBot } from '../services/aiService';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
-import { Bot, Send, User, Sparkles, MessageSquare, Zap, Globe, Users, Copy, CheckCircle2 } from 'lucide-react';
+import { Bot, Send, User, Sparkles, MessageSquare, Zap, Globe, Users, Copy, CheckCircle2, Share2, Mic, MicOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactMarkdown from 'react-markdown';
+import { sendArbitraryMessageToTelegram } from '../services/communicationService';
 
 interface ChatProps {
   userProfile: UserProfile;
@@ -294,15 +295,41 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
                     <p className={`text-[8px] uppercase tracking-widest font-bold ${msg.role !== 'user' ? 'text-white/20' : 'text-gold/40'}`}>
                       {new Date(msg.created_at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
-                    <button 
-                      onClick={() => handleCopy(msg.text, msg.id || i.toString())}
-                      className={`opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest
-                        ${msg.role !== 'user' ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-gold/60 hover:text-gold hover:bg-gold/10'}`}
-                      title="Copy message for educational purposes"
-                    >
-                      {copiedId === (msg.id || i.toString()) ? <CheckCircle2 size={12} className={msg.role !== 'user' ? 'text-emerald-400' : 'text-emerald-500'} /> : <Copy size={12} />}
-                      {copiedId === (msg.id || i.toString()) ? 'Copied' : 'Copy'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleCopy(msg.text, msg.id || i.toString())}
+                        className={`opacity-60 hover:opacity-100 transition-opacity p-1.5 rounded-lg flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest
+                          ${msg.role !== 'user' ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-gold/60 hover:text-gold hover:bg-gold/10'} cursor-pointer`}
+                        title="Copy message for educational purposes"
+                      >
+                        {copiedId === (msg.id || i.toString()) ? <CheckCircle2 size={12} className={msg.role !== 'user' ? 'text-emerald-400' : 'text-emerald-500'} /> : <Copy size={12} />}
+                        {copiedId === (msg.id || i.toString()) ? 'Copied' : 'Copy'}
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
+                            addToast("Please configure your Telegram credentials in Settings first.", "error");
+                            return;
+                          }
+                          const fromWho = msg.role === 'user' ? (msg.username || 'Creator') : (selectedBot.name);
+                          const success = await sendArbitraryMessageToTelegram(
+                            `*From: ${fromWho}*\n\n${msg.text}`,
+                            userProfile.integrations
+                          );
+                          if (success) {
+                            addToast("Message successfully sent to Telegram!", "success");
+                          } else {
+                            addToast("Failed to send message. Please verify your bot configuration.", "error");
+                          }
+                        }}
+                        className={`opacity-60 hover:opacity-100 transition-opacity p-1.5 rounded-lg flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest
+                          ${msg.role !== 'user' ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-gold/60 hover:text-gold hover:bg-gold/10'} cursor-pointer`}
+                        title="Send this message to Telegram"
+                      >
+                        <Share2 size={12} />
+                        Share
+                      </button>
+                    </div>
                   </div>
                 </div>
               </motion.div>
@@ -334,16 +361,43 @@ export default function Chat({ userProfile, addToast }: ChatProps) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={chatMode === 'ai' ? `Message ${selectedBot.name}...` : "Broadcast to the cosmos..."}
-              className="w-full cosmic-input pr-12 py-4"
+              className="w-full cosmic-input pr-32 py-4"
               disabled={loading}
             />
-            <button 
-              type="submit"
-              disabled={loading || !input.trim()}
-              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-lg bg-gold text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
-            >
-              <Send size={18} />
-            </button>
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              <button 
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  if (!input.trim()) {
+                    addToast("Please type a message first.", "info");
+                    return;
+                  }
+                  if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
+                    addToast("Please configure your Telegram credentials in Settings first.", "error");
+                    return;
+                  }
+                  const success = await sendArbitraryMessageToTelegram(input, userProfile.integrations);
+                  if (success) {
+                    addToast("Input sent directly to Telegram!", "success");
+                    setInput('');
+                  } else {
+                    addToast("Failed to send message to Telegram.", "error");
+                  }
+                }}
+                className="px-3 h-10 rounded-lg bg-white/10 text-gold hover:bg-gold/10 flex items-center justify-center font-mono font-bold text-xs hover:scale-105 active:scale-95 transition-all border border-gold/20 cursor-pointer"
+                title="STT: Send current input directly to Telegram"
+              >
+                STT
+              </button>
+              <button 
+                type="submit"
+                disabled={loading || !input.trim()}
+                className="w-10 h-10 rounded-lg bg-gold text-black flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
+              >
+                <Send size={18} />
+              </button>
+            </div>
           </div>
         </form>
       </div>

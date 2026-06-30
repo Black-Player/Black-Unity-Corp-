@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { dbService } from '../services/dbService';
 import { UserProfile, Signal } from '../types';
-import { History as HistoryIcon, Search, Filter, CheckCircle2, XCircle, Clock, BarChart3, Bot, Zap } from 'lucide-react';
+import { exportToGoogleSheets, exportToGoogleDrive } from '../services/workspaceService';
+import { History as HistoryIcon, Search, Filter, CheckCircle2, XCircle, Clock, BarChart3, Bot, Zap, XOctagon, Download, FileSpreadsheet, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { sendSignalToTelegram } from '../services/communicationService';
 
 interface HistoryProps {
   userProfile: UserProfile;
@@ -13,6 +16,8 @@ export default function History({ userProfile, addToast }: HistoryProps) {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [filter, setFilter] = useState<'all' | 'tp_hit' | 'sl_hit' | 'active'>('all');
   const [search, setSearch] = useState('');
+  const [isClosing, setIsClosing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const fetchSignals = async () => {
@@ -46,6 +51,53 @@ export default function History({ userProfile, addToast }: HistoryProps) {
       supabase.removeChannel(channel);
     };
   }, [userProfile.uid]);
+
+  const handleCloseAllActive = async () => {
+    setIsClosing(true);
+    try {
+      const activeSigs = signals.filter(s => s.status === 'active');
+      for (const sig of activeSigs) {
+        await dbService.update('signals', sig.id, { status: 'rejected' });
+      }
+      addToast(`Cleared ${activeSigs.length} stuck active signals.`, 'success');
+      // Trigger update manually or wait for subscription
+      setSignals(prev => prev.map(s => s.status === 'active' ? { ...s, status: 'rejected' } : s));
+    } catch (e) {
+      console.error(e);
+      addToast('Failed to close active signals', 'error');
+    } finally {
+      setIsClosing(false);
+    }
+  };
+
+  const handleExportSheets = async () => {
+    if (!window.confirm("Export your trading history to a new Google Sheet?")) return;
+    setIsExporting(true);
+    try {
+      const url = await exportToGoogleSheets(signals);
+      addToast(`Exported to Google Sheets successfully!`, 'success');
+      window.open(url, '_blank');
+    } catch (e: any) {
+      console.error(e);
+      addToast(`Failed to export to Sheets: ${e.message}`, 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportDrive = async () => {
+    if (!window.confirm("Backup your trading history as a CSV file to Google Drive?")) return;
+    setIsExporting(true);
+    try {
+      const fileId = await exportToGoogleDrive(signals);
+      addToast(`Exported to Google Drive successfully! File ID: ${fileId}`, 'success');
+    } catch (e: any) {
+      console.error(e);
+      addToast(`Failed to export to Drive: ${e.message}`, 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const filteredSignals = signals.filter(s => {
     const matchesFilter = filter === 'all' || s.status === filter;
@@ -116,6 +168,36 @@ export default function History({ userProfile, addToast }: HistoryProps) {
               {f.replace('_', ' ')}
             </button>
           ))}
+          {stats.active > 0 && (
+            <button
+              onClick={handleCloseAllActive}
+              disabled={isClosing}
+              className="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20 active:bg-red-500/30 flex items-center gap-2 ml-auto"
+            >
+              <XOctagon size={14} />
+              {isClosing ? 'Closing...' : 'Close All Active'}
+            </button>
+          )}
+          <div className="flex gap-2 ml-auto">
+            <button
+              onClick={handleExportDrive}
+              disabled={isExporting}
+              className="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all border bg-blue-500/10 text-blue-400 border-blue-500/20 hover:bg-blue-500/20 active:bg-blue-500/30 flex items-center gap-2"
+              title="Export to Google Drive"
+            >
+              <Download size={14} />
+              Drive
+            </button>
+            <button
+              onClick={handleExportSheets}
+              disabled={isExporting}
+              className="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all border bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20 active:bg-emerald-500/30 flex items-center gap-2"
+              title="Export to Google Sheets"
+            >
+              <FileSpreadsheet size={14} />
+              Sheets
+            </button>
+          </div>
         </div>
       </div>
 
@@ -131,13 +213,14 @@ export default function History({ userProfile, addToast }: HistoryProps) {
                 <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest">Confidence</th>
                 <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest">Status</th>
                 <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest">Date</th>
+                <th className="px-6 py-4 text-[10px] text-white/40 uppercase tracking-widest text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               <AnimatePresence mode="popLayout">
                 {filteredSignals.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-white/20 italic">No signals found matching your criteria.</td>
+                    <td colSpan={7} className="px-6 py-12 text-center text-white/20 italic">No signals found matching your criteria.</td>
                   </tr>
                 ) : (
                   filteredSignals.map((signal) => (
@@ -170,10 +253,10 @@ export default function History({ userProfile, addToast }: HistoryProps) {
                       </td>
                       <td className="px-6 py-4">
                         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] font-mono whitespace-nowrap">
-                          <div className="text-gold">E: {signal.entry}</div>
-                          <div className="text-red-400">SL: {signal.stop_loss}</div>
-                          <div className="text-emerald-400">TP1: {signal.tp1}</div>
-                          <div className="text-emerald-400">TP4: {signal.tp4}</div>
+                          <div className="text-gold">E: {Number(signal.entry).toLocaleString(undefined, { maximumFractionDigits: 5 })}</div>
+                          <div className="text-red-400">SL: {Number(signal.stop_loss).toLocaleString(undefined, { maximumFractionDigits: 5 })}</div>
+                          <div className="text-emerald-400">TP1: {Number(signal.tp1).toLocaleString(undefined, { maximumFractionDigits: 5 })}</div>
+                          <div className="text-emerald-400">TP4: {Number(signal.tp4).toLocaleString(undefined, { maximumFractionDigits: 5 })}</div>
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -188,17 +271,47 @@ export default function History({ userProfile, addToast }: HistoryProps) {
                         <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest inline-flex items-center gap-1 ${
                           signal.status.includes('tp') ? 'bg-emerald-400/10 text-emerald-400' :
                           signal.status === 'sl_hit' ? 'bg-red-400/10 text-red-400' :
-                          'bg-gold/10 text-gold'
+                          signal.status === 'active' ? 'bg-blue-400/10 text-blue-400' :
+                          'bg-white/10 text-white/50'
                         }`}>
                           {signal.status.includes('tp') ? <CheckCircle2 size={10} /> :
                            signal.status === 'sl_hit' ? <XCircle size={10} /> :
+                           signal.status === 'active' ? <Zap size={10} className="animate-pulse" /> :
                            <Clock size={10} />}
-                          {signal.status.replace('_', ' ')}
+                          {signal.status === 'active' ? '🟢 LIVE' : signal.status === 'rejected' ? '⚪ REJECTED' : signal.status.replace('_', ' ')}
                         </span>
                       </td>
                       <td className="px-6 py-4">
                         <p className="text-xs text-white/40">{new Date(signal.created_at).toLocaleDateString()}</p>
                         <p className="text-[10px] text-white/20">{new Date(signal.created_at).toLocaleTimeString()}</p>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          onClick={async () => {
+                            if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
+                              addToast("Please configure your Telegram credentials in Settings first.", "error");
+                              return;
+                            }
+                            addToast(`Broadcasting signal for ${signal.pair} to Telegram...`, "info");
+                            const msgId = await sendSignalToTelegram(signal, userProfile.integrations, true);
+                            if (msgId) {
+                              try {
+                                await dbService.update('signals', signal.id, { telegram_message_id: msgId });
+                                addToast(`🚀 Signal for ${signal.pair} successfully broadcast to Telegram!`, "success");
+                              } catch (err) {
+                                console.error("Telegram ID update failed", err);
+                                addToast(`🚀 Signal successfully broadcast to Telegram!`, "success");
+                              }
+                            } else {
+                              addToast("Failed to send signal to Telegram. Verify your credentials in Settings.", "error");
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-400 uppercase hover:bg-emerald-500 hover:text-black hover:border-emerald-500/40 transition-all inline-flex items-center gap-1 cursor-pointer"
+                          title="Broadcast Signal to Telegram"
+                        >
+                          <Send size={10} />
+                          <span>Broadcast</span>
+                        </button>
                       </td>
                     </motion.tr>
                   ))
@@ -235,33 +348,35 @@ export default function History({ userProfile, addToast }: HistoryProps) {
                     <span className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest inline-flex items-center gap-1 ${
                       signal.status.includes('tp') ? 'bg-emerald-400/10 text-emerald-400' :
                       signal.status === 'sl_hit' ? 'bg-red-400/10 text-red-400' :
-                      'bg-gold/10 text-gold'
+                      signal.status === 'active' ? 'bg-blue-400/10 text-blue-400' :
+                      'bg-white/10 text-white/50'
                     }`}>
                       {signal.status.includes('tp') ? <CheckCircle2 size={10} /> :
                        signal.status === 'sl_hit' ? <XCircle size={10} /> :
+                       signal.status === 'active' ? <Zap size={10} className="animate-pulse" /> :
                        <Clock size={10} />}
-                      {signal.status.replace('_', ' ')}
+                      {signal.status === 'active' ? '🟢 LIVE' : signal.status === 'rejected' ? '⚪ REJECTED' : signal.status.replace('_', ' ')}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-[10px] text-white/20 uppercase tracking-widest">Entry & SL</p>
-                      <div className="flex items-center gap-2 text-xs font-mono">
-                        <span className="text-gold">{signal.entry}</span>
-                        <span className="text-white/20">/</span>
-                        <span className="text-red-400">{signal.stop_loss}</span>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-white/20 uppercase tracking-widest">Entry & SL</p>
+                        <div className="flex items-center gap-2 text-xs font-mono">
+                          <span className="text-gold">{Number(signal.entry).toLocaleString(undefined, { maximumFractionDigits: 5 })}</span>
+                          <span className="text-white/20">/</span>
+                          <span className="text-red-400">{Number(signal.stop_loss).toLocaleString(undefined, { maximumFractionDigits: 5 })}</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-white/20 uppercase tracking-widest">Targets</p>
+                        <div className="flex items-center gap-2 text-xs font-mono">
+                          <span className="text-emerald-400">{Number(signal.tp1).toLocaleString(undefined, { maximumFractionDigits: 5 })}</span>
+                          <span className="text-white/20">-</span>
+                          <span className="text-emerald-400">{Number(signal.tp4).toLocaleString(undefined, { maximumFractionDigits: 5 })}</span>
+                        </div>
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <p className="text-[10px] text-white/20 uppercase tracking-widest">Targets</p>
-                      <div className="flex items-center gap-2 text-xs font-mono">
-                        <span className="text-emerald-400">{signal.tp1}</span>
-                        <span className="text-white/20">-</span>
-                        <span className="text-emerald-400">{signal.tp4}</span>
-                      </div>
-                    </div>
-                  </div>
 
                   <div className="flex items-center justify-between pt-2 border-t border-white/5">
                     <div className="flex items-center gap-2">
@@ -273,6 +388,35 @@ export default function History({ userProfile, addToast }: HistoryProps) {
                     <p className="text-[10px] text-white/20 uppercase tracking-widest">
                       {new Date(signal.created_at).toLocaleDateString()} {new Date(signal.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      onClick={async () => {
+                        if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
+                          addToast("Please configure your Telegram credentials in Settings first.", "error");
+                          return;
+                        }
+                        addToast(`Broadcasting signal for ${signal.pair} to Telegram...`, "info");
+                        const msgId = await sendSignalToTelegram(signal, userProfile.integrations, true);
+                        if (msgId) {
+                          try {
+                            await dbService.update('signals', signal.id, { telegram_message_id: msgId });
+                            addToast(`🚀 Signal for ${signal.pair} successfully broadcast to Telegram!`, "success");
+                          } catch (err) {
+                            console.error("Telegram ID update failed", err);
+                            addToast(`🚀 Signal successfully broadcast to Telegram!`, "success");
+                          }
+                        } else {
+                          addToast("Failed to send signal to Telegram. Verify your credentials in Settings.", "error");
+                        }
+                      }}
+                      className="w-full py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-400 uppercase hover:bg-emerald-600 hover:text-white hover:border-emerald-500/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                      title="Broadcast Signal to Telegram"
+                    >
+                      <Send size={12} />
+                      <span>Broadcast Signal</span>
+                    </button>
                   </div>
                 </motion.div>
               ))

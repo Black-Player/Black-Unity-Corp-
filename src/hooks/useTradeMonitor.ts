@@ -5,6 +5,7 @@ import { Trade, UserProfile } from '../types';
 import { useMarketContext } from '../MarketContext';
 import { speak } from '../lib/voice';
 import { getBotCharacter } from '../lib/themeUtils';
+import { sendSignalUpdateToTelegram } from '../services/communicationService';
 
 export function useTradeMonitor(
   userProfile: UserProfile, 
@@ -109,14 +110,25 @@ export function useTradeMonitor(
                   updateData.stop_loss = trade.entry_price;
                   addToast(`Celestial Shield Activated: ${trade.pair} SL moved to breakeven!`, 'info');
                   speak(`Guardian protection active. Stop loss for ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has been moved to entry.`, userProfile.notification_settings.sound, sentinelChar);
+                  
+                  // Auto-broadcast TP1 hit to Telegram with BE level explanation
+                  sendSignalUpdateToTelegram(trade, 'TP1_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram BE Update failed:", e));
+                  
                 } else if (tp.level === 'TP2') {
                   updateData.stop_loss = trade.tp1;
                   addToast(`Profit Secured: ${trade.pair} SL moved to TP1!`, 'success');
                   speak(`Profit secured. Stop loss for ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has been moved to TP1.`, userProfile.notification_settings.sound, oracleChar);
+                  
+                  // Auto-broadcast TP2 hit to Telegram
+                  sendSignalUpdateToTelegram(trade, 'TP2_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram TP2 Update failed:", e));
+                  
                 } else if (tp.level === 'TP3') {
                   updateData.stop_loss = trade.tp2;
                   addToast(`Profit Secured: ${trade.pair} SL moved to TP2!`, 'success');
                   speak(`Profit secured. Stop loss for ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has been moved to TP2.`, userProfile.notification_settings.sound, oracleChar);
+                  
+                  // Auto-broadcast TP3 hit to Telegram
+                  sendSignalUpdateToTelegram(trade, 'TP3_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram TP3 Update failed:", e));
                 }
 
                 await dbService.update('trades', trade.id, updateData);
@@ -163,6 +175,13 @@ export function useTradeMonitor(
               }
             } catch (e) {
               console.error("Failed to update signal status", e);
+            }
+
+            // Auto-broadcast final close status to Telegram with SMC educational explanation
+            if (reason.toLowerCase().includes('take profit')) {
+              sendSignalUpdateToTelegram(trade, 'TP_FINAL_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram TP final update failed:", e));
+            } else if (reason.toLowerCase().includes('stop loss')) {
+              sendSignalUpdateToTelegram(trade, 'SL_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram SL update failed:", e));
             }
 
             speak(`Ritual complete. ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} closed due to ${reason}.`, userProfile.notification_settings.sound, oracleChar);

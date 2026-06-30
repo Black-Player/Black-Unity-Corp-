@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Globe, Clock, Sun, Moon, Zap, Bell, BellOff } from 'lucide-react';
+import { Globe, Clock, Sun, Moon, Zap, Bell, BellOff, CalendarPlus } from 'lucide-react';
 import { UserProfile } from '../types';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { addSessionToGoogleCalendar } from '../services/workspaceService';
 
 interface Session {
   name: string;
@@ -101,6 +102,18 @@ export default function TradingSessions({ userProfile, addToast }: TradingSessio
     }
   };
 
+  const handleAddToCalendar = async (session: Session) => {
+    if (!window.confirm(`Schedule ${session.name} trading session to Google Calendar?`)) return;
+    try {
+      const url = await addSessionToGoogleCalendar(session.name, session.start, session.end);
+      window.open(url, '_blank');
+      addToast('Session scheduled in Google Calendar.', 'success');
+    } catch (e: any) {
+      console.error(e);
+      addToast(`Failed to add to calendar: ${e.message}`, 'error');
+    }
+  };
+
   return (
     <div className="space-y-8 pb-12">
       <header>
@@ -141,6 +154,13 @@ export default function TradingSessions({ userProfile, addToast }: TradingSessio
                         <Zap size={10} /> Active
                       </span>
                     )}
+                    <button 
+                      onClick={() => handleAddToCalendar(session)}
+                      className="p-1.5 rounded-lg transition-all bg-white/5 text-white/40 hover:text-blue-400"
+                      title="Add to Google Calendar"
+                    >
+                      <CalendarPlus size={14} />
+                    </button>
                     <button 
                       onClick={() => toggleSubscription(session.name)}
                       className={`p-1.5 rounded-lg transition-all ${isSubscribed ? 'bg-gold text-black' : 'bg-white/5 text-white/40 hover:text-gold'}`}

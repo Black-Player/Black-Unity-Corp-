@@ -121,7 +121,7 @@ export const BehavioralService = {
             limit(50)
         ]);
 
-        const stats = history.reduce((acc: any, trade: any) => {
+        const stats: any = (history as any[]).reduce((acc: any, trade: any) => {
             acc.total += 1;
             if (trade.pnl > 0) acc.wins += 1;
             else {

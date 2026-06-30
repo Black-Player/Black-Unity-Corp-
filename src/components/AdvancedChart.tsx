@@ -178,7 +178,7 @@ export default function AdvancedChart({ onBack }: { onBack?: () => void }) {
         </header>
 
         <div className="flex-1 glass-card border-white/5 overflow-hidden relative">
-          <TradingViewWidget />
+          <TradingViewWidget symbol={selectedSymbol} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

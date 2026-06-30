@@ -99,8 +99,8 @@ Asian low volatility (unless scalping setup is strong)
 
 🧠 STEP 6 — MULTI-TIMEFRAME ALIGNMENT
 
-HTF (H1 / H4) → Bias
-LTF (M5 / M15) → Entry
+HTF (1M / W1) → Bias
+LTF (D1) → Entry
 
 RULE: ❌ Conflict = NO TRADE
 

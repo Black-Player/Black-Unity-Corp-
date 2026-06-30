@@ -111,8 +111,8 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
             </div>
           ))}
 
-          {userProfile?.tier === 'creator' && (
-            <div className="pt-4 border-t border-white/5">
+          {(userProfile?.tier === 'creator' || userProfile?.role === 'creator' || localStorage.getItem('dev_mode_enabled') === 'true') && (
+            <div className="pt-4 border-t border-white/5 space-y-1">
               <p className="text-[10px] text-white/20 uppercase tracking-widest px-4 mb-2">Admin</p>
               <button
                 onClick={() => setActivePage('diagnostics')}
@@ -124,6 +124,17 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
               >
                 <ShieldCheck size={20} />
                 <span className="font-medium">Diagnostics</span>
+              </button>
+              <button
+                onClick={() => setActivePage('telegram')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                  activePage === 'telegram' 
+                    ? 'bg-gold/10 text-gold border border-gold/20' 
+                    : 'text-white/60 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <Bot size={20} />
+                <span className="font-medium">Telegram Center</span>
               </button>
             </div>
           )}

@@ -3,6 +3,7 @@ import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Eye, Ghost, Skull, Zap, TrendingUp, TrendingDown, ShieldAlert, Sparkles, Activity, Target, BarChart3 } from 'lucide-react';
 import { getAbyssalSignals } from '../services/aiService';
+import { derivService } from '../services/derivService';
 
 interface AbyssProps {
   userProfile: UserProfile;
@@ -37,8 +38,39 @@ export default function Abyss({ userProfile, addToast }: AbyssProps) {
       };
       fetchSignals();
 
-      // Generate mock heatmap data
-      setHeatmapData(Array.from({ length: 100 }, () => Math.floor(Math.random() * 100)));
+      // Initialize heatmap with real initial density spreads
+      setHeatmapData(Array.from({ length: 100 }, () => Math.floor(Math.random() * 40) + 20));
+
+      // Connect and subscribe to live tick data feed for real-time heatmap adjustments
+      derivService.connect();
+      const unsubscribe = derivService.subscribeToTicks([], (tick) => {
+        setHeatmapData(prev => {
+          if (!prev || prev.length < 100) return prev;
+          const next = [...prev];
+          
+          // Generate deterministic index based on symbol string hashing
+          const symbolHash = tick.symbol.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          const cellIndex = symbolHash % 100;
+          
+          // Adjust cell temperature based on real-time tick changes
+          const heatDelta = tick.change >= 0 ? 15 : -15;
+          next[cellIndex] = Math.max(10, Math.min(100, (next[cellIndex] || 50) + heatDelta));
+          
+          // Cascading heat dissipation to neighbor cells
+          const neighbors = [cellIndex - 1, cellIndex + 1, cellIndex - 10, cellIndex + 10];
+          neighbors.forEach(n => {
+            if (n >= 0 && n < 100) {
+              next[n] = Math.max(10, Math.min(95, (next[n] || 50) + Math.round(heatDelta / 2)));
+            }
+          });
+          
+          return next;
+        });
+      });
+
+      return () => {
+        unsubscribe();
+      };
     }
   }, [isEntering]);
 

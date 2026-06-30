@@ -68,7 +68,7 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
       const pnl = Math.floor(Math.random() * 500) + 100;
       const tradesCount = Math.floor(Math.random() * 50) + 20;
       
-      const mockResult: Omit<BacktestResult, 'id'> = {
+      const runResult: Omit<BacktestResult, 'id'> = {
         uid: userProfile.uid,
         strategy_id: selectedBot,
         pnl,
@@ -89,7 +89,7 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY?.trim()! });
         
         const response = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
+          model: "gemini-2.5-flash",
           contents: `As the Eternal Intelligence Core, provide a "Prophet's Vision" for this backtest result:
           Bot: ${selectedBot}
           Symbol: ${selectedSymbol}
@@ -109,7 +109,7 @@ export default function Backtester({ userProfile, addToast }: { userProfile: Use
       try {
         const { error } = await supabase
           .from('backtests')
-          .insert([mockResult]);
+          .insert([runResult]);
         
         if (error) throw error;
         addToast('The Prophet has spoken. Backtest complete.', 'success');

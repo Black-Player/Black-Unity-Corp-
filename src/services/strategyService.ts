@@ -30,7 +30,7 @@ export class StrategyService {
         if (!this.apiKey) throw new Error("API Key missing");
 
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
-        const model = "gemini-3.5-flash";
+        const model = "gemini-2.5-flash";
         
         const prompt = `
             Task: Create an autonomous, high-performance trading strategy for a bot named ${bot.name} using ${bot.strategy} as a base.
@@ -98,7 +98,7 @@ export class StrategyService {
         if (!this.apiKey) throw new Error("API Key missing");
 
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
-        const model = "gemini-3.5-flash";
+        const model = "gemini-2.5-flash";
 
         const prompt = `
             Task: Perform "Strategy Fusion" (PART 9) to combine the strengths of two successful trading strategies into one Apex strategy.
@@ -184,7 +184,7 @@ export class StrategyService {
         if (!this.apiKey) throw new Error("API Key missing");
 
         const ai = new GoogleGenAI({ apiKey: this.apiKey });
-        const model = "gemini-3.5-flash";
+        const model = "gemini-2.5-flash";
 
         const prompt = `
             Optimize the following trading strategy: ${JSON.stringify(strategy)}

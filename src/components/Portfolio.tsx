@@ -1,10 +1,11 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Wallet, TrendingUp, TrendingDown, PieChart, ArrowUpRight, ArrowDownRight, Briefcase, Activity, Target, Shield, Clock, XCircle, Zap } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, PieChart, ArrowUpRight, ArrowDownRight, Briefcase, Activity, Target, Shield, Clock, XCircle, Zap, Share2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { dbService } from '../services/dbService';
 import { where, orderBy } from 'firebase/firestore';
 import { UserProfile, Trade } from '../types';
 import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { sendTradeReviewToTelegram } from '../services/communicationService';
 
 import { useMarketContext } from '../MarketContext';
 
@@ -250,7 +251,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between md:justify-end gap-8">
+                <div className="flex items-center justify-between md:justify-end gap-4 sm:gap-6">
                   <div className="text-right">
                     <div className={`text-lg font-bold ${pnl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(2)}
@@ -259,13 +260,37 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
                       {pnl >= 0 ? '+' : ''}{pnlPerc.toFixed(2)}%
                     </div>
                   </div>
-                  <button 
-                    onClick={() => handleCloseTrade(trade)}
-                    className="p-2 rounded-lg bg-white/5 text-white/40 hover:bg-red-400/10 hover:text-red-400 transition-all"
-                    title="Conclude Ritual"
-                  >
-                    <XCircle size={20} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={async () => {
+                        if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
+                          addToast("Please configure your Telegram credentials in Settings first.", "error");
+                          return;
+                        }
+                        const success = await sendTradeReviewToTelegram({
+                          ...trade,
+                          pnl: pnl,
+                          pnl_percentage: pnlPerc
+                        }, userProfile.integrations);
+                        if (success) {
+                          addToast("Active trade status sent to Telegram!", "success");
+                        } else {
+                          addToast("Failed to send trade status. Please check your bot configuration.", "error");
+                        }
+                      }}
+                      className="p-2 rounded-lg bg-white/5 text-white/40 hover:bg-gold/10 hover:text-gold transition-all cursor-pointer"
+                      title="Send Active Trade Status to Telegram"
+                    >
+                      <Share2 size={18} />
+                    </button>
+                    <button 
+                      onClick={() => handleCloseTrade(trade)}
+                      className="p-2 rounded-lg bg-white/5 text-white/40 hover:bg-red-400/10 hover:text-red-400 transition-all cursor-pointer"
+                      title="Conclude Ritual"
+                    >
+                      <XCircle size={20} />
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             );
@@ -293,6 +318,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
                 <th className="pb-4">Entry</th>
                 <th className="pb-4">Exit</th>
                 <th className="pb-4 text-right">Result</th>
+                <th className="pb-4 text-right pr-2">STT</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -315,6 +341,26 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
                         <span className="font-bold">{pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(2)}</span>
                         <span className="text-[10px] opacity-60">({pnl >= 0 ? '+' : ''}{pnlPerc.toFixed(2)}%)</span>
                       </div>
+                    </td>
+                    <td className="py-4 text-right pr-2">
+                      <button 
+                        onClick={async () => {
+                          if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
+                            addToast("Please configure your Telegram credentials in Settings first.", "error");
+                            return;
+                          }
+                          const success = await sendTradeReviewToTelegram(trade, userProfile.integrations);
+                          if (success) {
+                            addToast("Closed trade review sent to Telegram!", "success");
+                          } else {
+                            addToast("Failed to send trade review. Please verify your bot settings.", "error");
+                          }
+                        }}
+                        className="p-1 px-2.5 rounded bg-gold/15 hover:bg-gold/25 text-gold text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-1"
+                        title="Send Closed Trade Report to Telegram"
+                      >
+                        <Share2 size={10} /> STT
+                      </button>
                     </td>
                   </tr>
                 );

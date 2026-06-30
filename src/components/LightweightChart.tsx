@@ -396,12 +396,19 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
           bbLowerRef.current.setData(bb.lower);
           bbMiddleRef.current.setData(bb.middle);
 
-          // Volume (mocking volume since Deriv history might not have it consistently)
-          const volumeData = history.map((h: any) => ({
-            time: h.time,
-            value: Math.random() * 100,
-            color: h.close >= h.open ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'
-          }));
+          // Volume (derived as high-fidelity range/tick volume proxy from high-low price volatility)
+          const maxRange = Math.max(...history.map((h: any) => Math.abs(h.high - h.low)), 0.00001);
+          const volumeData = history.map((h: any) => {
+            const candleRange = Math.abs(h.high - h.low);
+            const relativeRange = candleRange / maxRange;
+            // Scale to a nice readable indicator range from 10 to 100
+            const volumeProxy = Math.round(10 + relativeRange * 90);
+            return {
+              time: h.time,
+              value: volumeProxy,
+              color: h.close >= h.open ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'
+            };
+          });
           volumeRef.current.setData(volumeData);
 
           // MACD

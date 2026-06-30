@@ -32,7 +32,7 @@ export default function OracleEye({ userProfile, addToast }: { userProfile: User
       
       const base64Data = selectedImage.split(',')[1];
       const result = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: [
           "Analyze this trading chart. Identify key support and resistance levels, current trend, potential patterns (like head and shoulders, double top, etc.), and provide a high-probability trading recommendation (Buy/Sell/Wait) with Entry, SL, and TP. Use a professional, cosmic-themed tone.",
           {

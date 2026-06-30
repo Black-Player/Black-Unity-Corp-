@@ -129,11 +129,8 @@ export function detectSMC(data: Candle[]): SMCMarker[] {
   // Deduplicate markers by time, keeping highest priority
   const dedupedMap = new Map<number, SMCMarker>();
   markers.forEach(m => {
-    // If a marker already exists at this time, we can optionally skip or combine.
-    // For simple lightweight-charts, we can just let them all be present, though it might clutter.
-    // Actually, lightweight-charts supports multiple markers per timestamp, so we don't strictly need to dedupe, 
-    // but just to be safe:
-    dedupedMap.set(m.time + Math.random(), m); 
+    // Just use the timestamp directly to dedupe
+    dedupedMap.set(m.time, m); 
   });
 
   return Array.from(dedupedMap.values()).sort((a, b) => a.time - b.time);

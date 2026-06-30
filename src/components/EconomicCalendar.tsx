@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Calendar, AlertTriangle, Info, Clock, Globe, Shield, TrendingUp, TrendingDown, Target } from 'lucide-react';
+import { Calendar, AlertTriangle, Info, Clock, Globe, Shield, TrendingUp, TrendingDown, Target, CalendarPlus } from 'lucide-react';
 import { getEconomicEvents } from '../services/aiService';
 import { EconomicEvent } from '../types';
+import { addToGoogleCalendar } from '../services/workspaceService';
 
 interface EconomicCalendarProps {
   compact?: boolean;
@@ -45,6 +46,17 @@ export const EconomicCalendar: React.FC<EconomicCalendarProps> = ({ compact = fa
       case 'medium': return 'text-orange-400 bg-orange-400/10 border-orange-400/20';
       case 'low': return 'text-yellow-400 bg-yellow-400/10 border-yellow-400/20';
       default: return 'text-blue-400 bg-blue-400/10 border-blue-400/20';
+    }
+  };
+
+  const handleAddToCalendar = async (event: EconomicEvent) => {
+    if (!window.confirm(`Add ${event.title} to your Google Calendar?`)) return;
+    try {
+      const url = await addToGoogleCalendar(event);
+      window.open(url, '_blank');
+    } catch (e: any) {
+      console.error(e);
+      alert(`Failed to add to calendar: ${e.message}`);
     }
   };
 
@@ -116,6 +128,13 @@ export const EconomicCalendar: React.FC<EconomicCalendarProps> = ({ compact = fa
                       </span>
                     </div>
                   </div>
+                  <button
+                    onClick={() => handleAddToCalendar(event)}
+                    className="p-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/40 hover:text-white transition-all flex-shrink-0"
+                    title="Add to Google Calendar"
+                  >
+                    <CalendarPlus size={16} />
+                  </button>
                 </div>
 
                 <div className={`${compact ? 'p-3' : 'p-4'} bg-blue-500/5 rounded-xl border border-blue-500/10 space-y-2`}>

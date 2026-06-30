@@ -8,7 +8,7 @@ import { UserProfile, Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, PriceAl
 import { DERIV_SYMBOLS } from '../constants';
 import { generateTradingSignal, getMarketSentiment, analyzeChartImage, getMarketNews } from '../services/aiService';
 import { derivService, DerivTick } from '../services/derivService';
-import { Zap, TrendingUp, TrendingDown, Target, ShieldAlert, Clock, BarChart3, Bot, Sparkles, RefreshCw, Globe, ArrowUpRight, ArrowDownRight, X, Activity, Volume2, VolumeX, Newspaper, Eye, Upload, Loader2, Shield, Calendar, Bell, Wifi, WifiOff, Lock, Palette, Filter } from 'lucide-react';
+import { Zap, Send, TrendingUp, TrendingDown, Target, ShieldAlert, Clock, BarChart3, Bot, Sparkles, RefreshCw, Globe, ArrowUpRight, ArrowDownRight, X, Activity, Volume2, VolumeX, Newspaper, Eye, Upload, Loader2, Shield, Calendar, Bell, Wifi, WifiOff, Lock, Palette, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import LightweightChart from './LightweightChart';
 import AssetDetails from './AssetDetails';
@@ -23,6 +23,7 @@ import { BotForge } from './BotForge';
 import { IntelligenceCore } from './IntelligenceCore';
 import Chat from './Chat';
 import { EconomicCalendar } from './EconomicCalendar';
+import { sendSignalToTelegram } from '../services/communicationService';
 import { PriceAlerts } from './PriceAlerts';
 import { MasterStrategy } from './MasterStrategy';
 import { Tribes } from './Tribes';
@@ -466,27 +467,20 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   const [dailyPnl, setDailyPnl] = useState(0);
 
   useEffect(() => {
-    const fetchDailyPnl = async () => {
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      
-      const { data, error } = await supabase
-        .from('trades')
-        .select('pnl')
-        .eq('uid', userProfile.uid)
-        .eq('status', 'closed')
-        .gte('closed_at', startOfDay.toISOString());
-      
-      if (error) {
-        await handleSupabaseError(error, OperationType.GET, 'trades');
-      } else {
-        const pnl = (data || []).reduce((acc, trade) => acc + (trade.pnl || 0), 0);
-        setDailyPnl(pnl);
-      }
-    };
-    
-    fetchDailyPnl();
-  }, [activeTrades.length, userProfile.uid]);
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const unsubscribe = dbService.subscribeCollection('trades', [
+      where('uid', '==', userProfile.uid),
+      where('status', '==', 'closed'),
+      where('closed_at', '>=', startOfDay.toISOString())
+    ], (data) => {
+      const pnl = (data as Trade[]).reduce((acc, trade) => acc + (trade.pnl || 0), 0);
+      setDailyPnl(pnl);
+    });
+
+    return () => unsubscribe();
+  }, [userProfile.uid]);
 
   const handleGenerate = async () => {
     // PART 2: LOSS CONTROL SYSTEM
@@ -515,7 +509,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
     const activeTimeframe = generationMode === 'auto' ? 'Auto' : timeframe;
     const activeTradingStyle = generationMode === 'auto' ? 'Auto' : tradingStyle;
 
-    const currentPrice = activePair === 'Auto' ? 0 : (marketPricesRef.current[activePair]?.price || getFallbackPrice(activePair));
+    const currentPrice = activePair === 'Auto' ? (marketPricesRef.current['frxXAUUSD']?.price || getFallbackPrice('frxXAUUSD')) : (marketPricesRef.current[activePair]?.price || getFallbackPrice(activePair));
 
     setGenerating(true);
     setError('');
@@ -538,14 +532,14 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       
       // Phase 4: SIGNAL ENGINE (STRICT FILTER)
       const hasStructure = signalData.bos_detected || signalData.choch_detected || !!signalData.market_structure;
-      const hasLiquidity = signalData.liquidity_swept || signalData.analysis?.toLowerCase().includes('liquidity');
+      const hasLiquidity = signalData.liquidity_swept || signalData.analysis?.toLowerCase()?.includes('liquidity');
       const hasSession = !!signalData.session_timing;
       const hasTimeframeAlignment = !!(signalData as any).timeframe_alignment;
       
       const isRejected = !hasStructure || !hasLiquidity || !hasSession || !hasTimeframeAlignment || signalData.decision === 'No Trade';
 
       const finalPair = (signalData.selected_pair && signalData.selected_pair !== 'Auto') ? signalData.selected_pair : (activePair === 'Auto' ? 'frxXAUUSD' : activePair);
-      const finalTimeframe = (signalData.selected_timeframe && signalData.selected_timeframe !== 'Auto') ? signalData.selected_timeframe : (activeTimeframe === 'Auto' ? 'M15' : activeTimeframe);
+      const finalTimeframe = (signalData.selected_timeframe && signalData.selected_timeframe !== 'Auto') ? signalData.selected_timeframe : (activeTimeframe === 'Auto' ? 'D1' : activeTimeframe);
       const finalPrice = signalData.entry || currentPrice;
       
       const newSignal: Omit<Signal, 'id'> = {
@@ -602,6 +596,27 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           });
           
           addToast(`Dimension Sync: New ${finalPair} signal generated by ${selectedBot.name}!`, 'success');
+
+          // Broadcast to Telegram (The Chronicle)
+          if (userProfile.integrations?.telegram_automation_enabled !== false) {
+            addToast("Dispatching signal to Telegram...", "info");
+            const telegramMessageId = await sendSignalToTelegram({
+              ...newSignal,
+              id: signalResult
+            }, userProfile.integrations, true);
+            
+            if (telegramMessageId) {
+              try {
+                await dbService.update('signals', signalResult, { telegram_message_id: telegramMessageId });
+                addToast("🚀 Prophecy successfully broadcast to Telegram Channel!", "success");
+              } catch (err) {
+                console.error("Telegram ID update failed", err);
+              }
+            } else {
+              addToast("Failed to send signal to Telegram. Please check token/chat ID in Settings.", "error");
+            }
+          }
+
           const oracleChar = getBotCharacter('Oracle', userProfile.theme);
           speak(`The Oracle has spoken. High-precision signal generated for ${finalPair.replace('frx', '').replace('R_', 'Volatility ')}.`, userProfile.notification_settings.sound, oracleChar);
           playSignalSound();
@@ -609,24 +624,47 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         
         setBoostAnalysis(null);
 
-        // Auto-Trade Execution
-        const autoSettings = userProfile.auto_trade_settings || { enabled: false, min_confidence: 90, max_trades_per_day: 5, pairs: [] };
-        
-        if (autoTrade && signalData.confidence >= autoSettings.min_confidence) {
-          const startOfDay = new Date();
-          startOfDay.setHours(0, 0, 0, 0);
-          
-          const tradesToday = await dbService.list('trades', [
-              where('uid', '==', userProfile.uid),
-              where('created_at', '>=', startOfDay.toISOString())
-          ]);
-          
-          if (tradesToday.length < autoSettings.max_trades_per_day) {
-            handleTakeTrade({ id: signalResult as string, ...newSignal } as Signal);
-            addToast(`Singularity 2.0: Auto-executing high-confidence signal!`, 'info');
-          } else {
-            addToast(`Singularity 2.0: Daily auto-trade limit reached.`, 'info');
-          }
+        // Auto-Trade Execution On Demo
+        if (!isRejected && newSignal.decision !== 'No Trade') {
+            try {
+               const trades = await dbService.list('trades', [
+                   where('uid', '==', userProfile.uid),
+                   where('status', '==', 'open')
+               ]);
+               const count = trades.length;
+               
+               if (!userProfile.risk_settings?.max_open_positions || count < userProfile.risk_settings.max_open_positions) {
+                   const balanceToUse = userProfile.demo_balance > 0 ? userProfile.demo_balance : 10000;
+                   const calculatedLot = calculateAutoLotSize(balanceToUse, userProfile.risk_settings?.risk_per_trade || 1, newSignal.entry, newSignal.stop_loss, newSignal.pair);
+
+                   const tradeData: Omit<Trade, 'id'> = {
+                     uid: userProfile.uid,
+                     signal_id: signalResult as string,
+                     pair: newSignal.pair,
+                     entry_price: newSignal.entry,
+                     current_price: newSignal.entry,
+                     tp1: newSignal.tp1,
+                     tp2: newSignal.tp2,
+                     tp3: newSignal.tp3,
+                     tp4: newSignal.tp4,
+                     active_tp: 3, 
+                     stop_loss: newSignal.stop_loss,
+                     pnl: 0,
+                     pnl_percentage: 0,
+                     lot_size: calculatedLot,
+                     status: 'open',
+                     type: newSignal.decision === 'Buy' ? 'buy' : 'sell',
+                     account_type: 'demo', // Always Demo
+                     created_at: new Date().toISOString()
+                   };
+                   await dbService.create('trades', tradeData);
+                   addToast(`Automated Trade Executed on Demo for ${finalPair} with lot ${calculatedLot}.`, 'success');
+               } else {
+                  addToast(`Max open positions reached. Did not auto-execute.`, 'info');
+               }
+            } catch(e) {
+               console.error("Dashboard Auto execute error", e);
+            }
         }
       }
     } catch (err: any) {
@@ -1033,7 +1071,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
               const sl = currentTrade?.stop_loss || currentSignal?.stop_loss;
               const tps = currentTrade ? [currentTrade.tp1, currentTrade.tp2, currentTrade.tp3, currentTrade.tp4].filter((v): v is number => !!v)
                                        : [currentSignal?.tp1, currentSignal?.tp2, currentSignal?.tp3, currentSignal?.tp4].filter((v): v is number => !!v);
-              const signalType = currentTrade?.type || (currentSignal?.analysis.toLowerCase().includes('sell') ? 'sell' : 'buy');
+              const signalType = currentTrade?.type || (currentSignal?.analysis?.toLowerCase()?.includes('sell') ? 'sell' : 'buy');
               const displaySymbol = pair === 'Auto' ? 'R_100' : pair;
 
               return (
@@ -1441,6 +1479,36 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                         </div>
                       </div>
 
+                      {/* Broadcast Signal button */}
+                      <div className="mt-3 pt-3 border-t border-white/5">
+                        <button
+                          onClick={async () => {
+                            if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
+                              addToast("Please configure your Telegram credentials in Settings first.", "error");
+                              return;
+                            }
+                            addToast(`Broadcasting signal for ${signal.pair} to Telegram...`, "info");
+                            const msgId = await sendSignalToTelegram(signal, userProfile.integrations, true);
+                            if (msgId) {
+                              try {
+                                await dbService.update('signals', signal.id, { telegram_message_id: msgId });
+                                addToast(`🚀 Signal for ${signal.pair} successfully broadcast to Telegram!`, "success");
+                              } catch (err) {
+                                console.error("Telegram ID update failed", err);
+                                addToast(`🚀 Signal successfully broadcast to Telegram!`, "success");
+                              }
+                            } else {
+                              addToast("Failed to send signal to Telegram. Verify your credentials in Settings.", "error");
+                            }
+                          }}
+                          className="w-full py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-400 uppercase hover:bg-emerald-600 hover:text-white hover:border-emerald-500/40 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                          title="Broadcast Signal to Telegram: Sends this generated signal immediately to your Telegram channel"
+                        >
+                          <Send size={12} />
+                          <span>Broadcast Signal</span>
+                        </button>
+                      </div>
+
                       {/* Analysis Expansion */}
                       <div className="mt-4 pt-4 border-t border-white/5 space-y-3">
                         {signal.decision_reasoning && (
@@ -1664,7 +1732,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                   <div className="space-y-2">
                     <label className="text-xs text-white/40 uppercase tracking-widest">Timeframe</label>
                     <div className="flex flex-wrap gap-2">
-                      {['Auto', 'M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1'].map((tf) => (
+                      {['Auto', 'D1', 'W1', '1M'].map((tf) => (
                         <button
                           key={tf}
                           onClick={() => setTimeframe(tf)}

@@ -1,0 +1,6 @@
+{
+  "firestore": {
+    "database": "ai-studio-blckunitycorprsa-5c1b4c69-0e36-469d-a46e-62418e81283d",
+    "rules": "firestore.rules"
+  }
+}

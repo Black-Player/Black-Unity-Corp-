@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { UserProfile } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { MessageSquare, Send, Bot, User, Sparkles, Loader2, Zap, Brain, Shield, Globe, TrendingUp, History, Info, FileText, Upload, CheckCircle2, Copy } from 'lucide-react';
+import { MessageSquare, Send, Bot, User, Sparkles, Loader2, Zap, Brain, Shield, Globe, TrendingUp, History, Info, FileText, Upload, CheckCircle2, Copy, Share2 } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { SYSTEM_ROLE } from '../constants/systemRole';
+import { sendArbitraryMessageToTelegram } from '../services/communicationService';
 
 interface Message {
   id: string;
@@ -88,7 +89,7 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
         throw new Error("GEMINI_API_KEY is missing from environment.");
       }
       const ai = new GoogleGenAI({ apiKey });
-      const modelName = "gemini-3.5-flash";
+      const modelName = "gemini-2.5-flash";
       
       const contents: any[] = [
         {
@@ -202,15 +203,41 @@ export default function ZionAI({ userProfile, addToast }: { userProfile: UserPro
                     <p className={`text-[8px] uppercase tracking-widest font-bold ${msg.role === 'assistant' ? 'text-white/20' : 'text-black/40'}`}>
                       {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </p>
-                    <button 
-                      onClick={() => handleCopy(msg.content, msg.id)}
-                      className={`opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest
-                        ${msg.role === 'assistant' ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-black/40 hover:text-black hover:bg-black/10'}`}
-                      title="Copy message for educational purposes"
-                    >
-                      {copiedId === msg.id ? <CheckCircle2 size={12} className={msg.role === 'assistant' ? 'text-emerald-400' : 'text-emerald-700'} /> : <Copy size={12} />}
-                      {copiedId === msg.id ? 'Copied' : 'Copy'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleCopy(msg.content, msg.id)}
+                        className={`opacity-60 hover:opacity-100 transition-opacity p-1.5 rounded-lg flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest
+                          ${msg.role === 'assistant' ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-black/40 hover:text-black hover:bg-black/10'} cursor-pointer`}
+                        title="Copy message for educational purposes"
+                      >
+                        {copiedId === msg.id ? <CheckCircle2 size={12} className={msg.role === 'assistant' ? 'text-emerald-400' : 'text-emerald-700'} /> : <Copy size={12} />}
+                        {copiedId === msg.id ? 'Copied' : 'Copy'}
+                      </button>
+                      <button 
+                        onClick={async () => {
+                          if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
+                            addToast("Please configure your Telegram credentials in Settings first.", "error");
+                            return;
+                          }
+                          const fromWho = msg.role === 'user' ? 'Creator' : 'Zion AI';
+                          const success = await sendArbitraryMessageToTelegram(
+                            `*From: ${fromWho}*\n\n${msg.content}`,
+                            userProfile.integrations
+                          );
+                          if (success) {
+                            addToast("Message successfully sent to Telegram!", "success");
+                          } else {
+                            addToast("Failed to send message. Please verify your bot configuration.", "error");
+                          }
+                        }}
+                        className={`opacity-60 hover:opacity-100 transition-opacity p-1.5 rounded-lg flex items-center gap-1 text-[10px] uppercase font-bold tracking-widest
+                          ${msg.role === 'assistant' ? 'text-white/40 hover:text-white hover:bg-white/10' : 'text-black/40 hover:text-black hover:bg-black/10'} cursor-pointer`}
+                        title="Send this message to Telegram"
+                      >
+                        <Share2 size={12} />
+                        STT
+                      </button>
+                    </div>
                   </div>
                 </div>
                 {msg.role === 'user' && (

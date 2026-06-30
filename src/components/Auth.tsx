@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { auth as firebaseAuth, googleProvider } from '../firebase';
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { auth as firebaseAuth, googleProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup } from '../firebase';
 import { dbService } from '../services/dbService';
 import { UserProfile, AccessKey, UserRole } from '../types';
 import { LogIn, UserPlus, Chrome, Key } from 'lucide-react';
@@ -45,7 +44,7 @@ export default function Auth() {
 
       const role: UserRole = keyResult?.role || 'subscriber';
       const creatorEmails = ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'];
-      const finalRole: UserRole = creatorEmails.includes(user.email) ? 'creator' : role;
+      const finalRole: UserRole = creatorEmails.includes((user.email || '').toLowerCase()) ? 'creator' : role;
 
       const profile: UserProfile = {
         uid: user.uid,
@@ -225,35 +224,6 @@ export default function Auth() {
           className="w-full py-3 px-4 rounded-xl border border-white/10 flex items-center justify-center gap-2 hover:bg-white/5 transition-all"
         >
           <Chrome size={20} /> Google
-        </button>
-
-        <button 
-          onClick={async (e) => {
-            e.preventDefault();
-            setLoading(true);
-            setError('');
-            try {
-              // Try logging in with demo account
-              const demoEmail = 'demo_user_12345@zion.com';
-              const demoPass = 'demopassword123';
-              try {
-                const result = await signInWithEmailAndPassword(firebaseAuth, demoEmail, demoPass);
-                if (result.user) await createUserProfile(result.user, '');
-              } catch (err: any) {
-                // If it doesn't exist, create it
-                const result = await createUserWithEmailAndPassword(firebaseAuth, demoEmail, demoPass);
-                if (result.user) await createUserProfile(result.user, '');
-              }
-            } catch (err: any) {
-              setError(err.message);
-            } finally {
-              setLoading(false);
-            }
-          }}
-          disabled={loading}
-          className="w-full py-3 px-4 rounded-xl border border-gold/40 text-gold flex items-center justify-center gap-2 hover:bg-gold hover:text-black transition-all font-bold tracking-widest uppercase text-xs mt-4"
-        >
-          Demo Login (Instant Access)
         </button>
 
         <p className="text-center text-sm text-white/60">

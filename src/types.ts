@@ -58,6 +58,15 @@ export interface UserProfile {
     max_trades_per_day: number;
     pairs: string[];
   };
+  integrations?: {
+    telegram_bot_token?: string;
+    telegram_chat_id?: string;
+    telegram_automation_enabled?: boolean;
+    telegram_cmd_status?: string;
+    notification_email?: string;
+    meta_api_token?: string;
+    meta_api_account_id?: string;
+  };
   stats: {
     total_trades: number;
     wins: number;

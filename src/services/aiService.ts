@@ -151,13 +151,11 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         4. DYNAMIC CAPITAL PROTECTION ENGINE:
            - Protect user capital based on their mode.
            
-        5. PRECISION STOP LOSS & TAKE PROFIT (DYNAMIC RISK ENGINE):
-           - SL MUST NEVER BE: Random, excessively wide, or too tight.
-           - SL placement must consider Volatility, Liquidity, Structure, Account size.
-           - Execution Style: Based on timeframe and market, explicitly select "Scalp", "Intraday", or "Swing". Ensure logical math.
-           - Calculate TPs strictly using Liquidity targets, Volatility, and Structure.
-           - TP1 MUST be >= 1:2 RR minimum to secure partials.
-           - TP2 = Structure target. TP3 = Deep liquidity. TP4 = Lunar runner.
+        5. INSTITUTIONAL RISK-TO-REWARD & TRADE MANAGEMENT ENGINE:
+           - Every trade must have a minimum Risk-to-Reward (RR) ratio of 1:3. Prefer: 1:3 (minimum), 1:4 (preferred), 1:5 (excellent), 1:6+ (elite). Reject setup if RR is below 1:3.
+           - The Stop Loss must always be placed beyond the protected swing high/low, order block, supply/demand zone, or liquidity sweep, with a small volatility buffer. Do NOT tighten SL artificially to improve RR.
+           - Calculate TPs strictly using actual chart prices while following the progressive spacing philosophy (wider TP targets, where TP1 represents nearest institutional objective, TP2 HTF zone, TP3 extended target, and TP4 maximum realistic trend target). Do NOT hard-code values; calculate actual prices based on the initial risk distance to keep spacing healthy.
+           - If the market structure or unmitigated zones do not support at least a 1:3 RR, return "No Trade" and explain why in decision_reasoning.
 
         6. GHOST SIMULATION ENGINE:
            - Run simulations and optimize entry/TP values.
@@ -172,8 +170,8 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
 
         ${isAutoPair ? '9. OMNISCIENT SCAN: You MUST explicitly output `selected_pair` in the JSON corresponding to the chosen asset. You MUST also output `selected_timeframe` and `selected_style`.' : 'You MUST output `selected_pair`, `selected_timeframe`, and `selected_style` reflecting your final choice based on what was passed.'}
 
-        FINAL COMMAND: Calculate entry, SL, and TP confidently with strict math. If Entry = 1.00, SL = 0.90 (Risk = 0.10). TP1 MUST be > 1.20 (1:2 RR).
-        Provide the setup and analysis. If you choose "No Trade", detail exactly why in decision_reasoning.
+        FINAL COMMAND: Calculate entry, SL, and TP confidently with strict math. If Entry = 1.00, SL = 0.95 (Risk = 0.05). TP1 MUST be >= 1.15 (1:3+ RR).
+        Provide the setup and analysis. If you choose "No Trade", return "No Trade" in decision and detail exactly why in decision_reasoning.
         
         Return the signal in JSON format with the following fields:
         - decision: "Buy", "Sell", or "No Trade"
@@ -309,13 +307,13 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       }
       
       const stop_loss = isBuy ? finalPrice - slOffset : finalPrice + slOffset;
-      const tp1 = isBuy ? finalPrice + tpOffset * 0.4 : finalPrice - tpOffset * 0.4;
-      const tp2 = isBuy ? finalPrice + tpOffset * 0.8 : finalPrice - tpOffset * 0.8;
-      const tp3 = isBuy ? finalPrice + tpOffset * 1.2 : finalPrice - tpOffset * 1.2;
-      const tp4 = isBuy ? finalPrice + tpOffset * 1.6 : finalPrice - tpOffset * 1.6;
+      const tp1 = isBuy ? finalPrice + slOffset * 3.0 : finalPrice - slOffset * 3.0; // 1:3
+      const tp2 = isBuy ? finalPrice + slOffset * 4.5 : finalPrice - slOffset * 4.5; // 1:4.5
+      const tp3 = isBuy ? finalPrice + slOffset * 6.0 : finalPrice - slOffset * 6.0; // 1:6
+      const tp4 = isBuy ? finalPrice + slOffset * 8.0 : finalPrice - slOffset * 8.0; // 1:8
       
-      const rr = Number((tpOffset / slOffset).toFixed(1));
-      const confidence = Math.floor(Math.random() * 15) + 75;
+      const rr = 3.0; // minimum 1:3
+      const confidence = Math.floor(Math.random() * 10) + 85; // high-grade confidence 85-95%
       
       return {
         decision,

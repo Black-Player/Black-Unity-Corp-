@@ -125,42 +125,76 @@ Stop Entry (for breakout continuation)
 
 ---
 
-🛑 STOP LOSS LOGIC (CRITICAL FIX)
+🛑 9. INSTITUTIONAL RISK-TO-REWARD & TRADE MANAGEMENT ENGINE
 
-SL must be:
-✔ Below/above liquidity
-✔ Not too wide
-✔ Not too tight
+Core Objective:
+- The Blāck-Plāyer RSA AI must prioritize low-risk, high-reward institutional setups.
+- Quality is always preferred over quantity.
+- The AI must never generate trades simply to increase signal frequency.
+- Every trade must have clear institutional confluence and satisfy strict risk management rules.
 
-Dynamic SL Rule:
-Max Risk: 1%–2% per trade
-SL distance must match account size
+Minimum Risk-to-Reward Rule:
+- Every trade must have a minimum Risk-to-Reward ratio of 1:3.
+- Preferred targets:
+  ⭐ Minimum: 1:3
+  ⭐⭐ Preferred: 1:4
+  ⭐⭐⭐ Excellent: 1:5
+  ⭐⭐⭐⭐ Elite: 1:6+
+- Trades below 1:3 are automatically rejected unless manually approved by the Creator.
 
-👉 Prevent small accounts from being wiped
+Stop Loss Rules:
+- The Stop Loss must always be placed:
+  • Beyond the protected swing high/low.
+  • Beyond the Order Block.
+  • Beyond the Supply/Demand zone.
+  • Beyond the Liquidity Sweep.
+  • With a small volatility buffer.
+- The AI must never tighten the Stop Loss artificially just to improve the Risk-to-Reward ratio.
+- If the Stop Loss required by the market is too large to maintain at least a 1:3 RR, the AI must reject the trade and wait for a better setup.
 
----
+Progressive Take Profit Engine:
+- Instead of placing Take Profits too close together, the AI must create meaningful, progressively spaced targets.
+- Each TP must represent a significant market objective.
+- Do NOT hard-code exact values like "$3.50, $6.00" - use those only as spacing guides. Keep the spacing philosophy (wider TP targets) while adapting the actual prices to each setup depending on the market's initial risk.
 
-💰 TAKE PROFIT SYSTEM
+Example progression philosophy (for spacing guidance only):
+- If Risk = $1.50 -> TP1 = $3.50, TP2 = $6.00, TP3 = $9.00, TP4 = $12.00
+- If Risk = $2.00 -> TP1 = $5.00, TP2 = $8.00, TP3 = $12.00, TP4 = $16.00
+- If Risk = $2.50 -> TP1 = $6.50, TP2 = $10.00, TP3 = $15.00, TP4 = $20.00
+- If Risk = $3.00 -> TP1 = $8.00, TP2 = $12.00, TP3 = $18.00, TP4 = $24.00
 
-Minimum:
-RR = 1:2
+Intelligent Take Profit Placement:
+- The AI must calculate TP levels using actual chart prices, while following the progressive spacing philosophy above.
+- Each TP must align with real market structure:
+  • TP1: First major liquidity target. Nearest valid institutional objective.
+  • TP2: Higher Timeframe Support/Resistance. Major liquidity pool. Significant Supply/Demand zone.
+  • TP3: Extended institutional target. Fibonacci extension. Elliott Wave projection. External liquidity.
+  • TP4: Maximum realistic trend objective before probable exhaustion. Long-term liquidity objective.
+- If the market cannot realistically support these targets, the AI must adjust the TP levels to technically valid objectives or reject the trade.
 
-Structure:
-TP1 → Internal liquidity
-TP2 → External liquidity
-TP3 → Major structure level
+Partial Profit Management:
+- Once a trade is active:
+  • TP1: Close 25% of the position. Move Stop Loss to Break Even.
+  • TP2: Close another 25%. Trail Stop Loss using market structure.
+  • TP3: Close another 25%. Continue trailing Stop Loss behind new swing highs/lows or volatility.
+  • TP4: Close the remaining 25%. Record the complete trade outcome for AI learning and performance analysis.
 
----
+Trade Rejection Rules:
+- The AI must not generate a signal if:
+  • Risk-to-Reward is below 1:3.
+  • Market structure is unclear.
+  • Confluence is insufficient.
+  • Stop Loss placement is technically invalid.
+  • Nearby support/resistance prevents realistic TP achievement.
+  • Liquidity conditions are unfavorable.
+- Instead, display:
+  > "No A-Grade institutional setup detected. Waiting for higher-probability market conditions. Capital preservation remains the highest priority."
 
-🔄 TRAILING STOP SYSTEM
+Educational Chart Overlay:
+- Every signal must include a chart showing: Entry Zone, Stop Loss, TP1, TP2, TP3, TP4, Risk-to-Reward, Order Blocks, Fair Value Gaps, Liquidity Sweeps, Break of Structure (BOS), Change of Character (CHoCH), Supply & Demand Zones, Trend Direction, Premium/Discount Zones, and AI reasoning explaining why the trade qualifies.
 
-After TP1:
-✔ Move SL → Break Even
-
-After TP2:
-✔ Trail below structure
-
----
+Memory & History Preservation:
+- The application must never delete or overwrite AI chat history, active signals, closed signals, signal charts, educational explanations, strategy notes, trade journals, or AI learning history. If optimization is required, archive older data instead of deleting it. No historical information should be erased without explicit user action.
 
 📊 SIGNAL OUTPUT FORMAT
 

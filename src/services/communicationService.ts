@@ -210,7 +210,8 @@ export async function sendSignalExplanationToTelegram(signal: any, customIntegra
 Price has completed a deep Liquidity Sweep of the preceding session highs/lows, picking up passive retail stop-loss orders. As retail traders got stopped out, institutional players filled heavy limit orders. A strong bullish/bearish displacement candle followed, creating a Fair Value Gap (imbalance). The price has now returned to mitigate this imbalance and tap into the unmitigated Order Block. This creates a high-probability springboard reaction toward our TP targets.
 
 🚫 <b>WHAT WOULD INVALIDATE/VIOLATE THIS SETUP:</b>
-If price action violates the unmitigated demand/supply base and candles close below/above <code>${slVal}</code>, it indicates that the institutional order flow has shifted. This structural break turns our order block into a breaker block, and we must respect the change in bias. Capital preservation is our highest priority—exiting at <code>${slVal}</code> prevents catastrophic drawdowns.
+If price action violates the unmitigated demand/supply base and candles close below/above <code>${slVal}</code>, it indicates that the institutional order flow has shifted. 
+${signal.dynamic_sl_logic ? `• <b>Oracle Stop Loss Invalidation Logic:</b> ${escapeHTML(signal.dynamic_sl_logic)}\n\n` : ''}This structural break turns our order block into a breaker block, and we must respect the change in bias. Capital preservation is our highest priority—exiting at <code>${slVal}</code> prevents catastrophic drawdowns.
 
 📚 <b>SMC EDUCATIONAL CONCEPT:</b>
 <b>Order Blocks & Fair Value Gaps (FVG)</b>

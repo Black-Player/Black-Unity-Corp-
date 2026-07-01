@@ -12,6 +12,7 @@ import { useMarketContext } from '../MarketContext';
 import { calculateAutoLotSize } from '../lib/tradeUtils';
 import { derivService } from '../services/derivService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
+import UltimateConfluenceChart from './UltimateConfluenceChart';
 
 interface SessionRecommendation {
   name: string;
@@ -151,12 +152,10 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
       }
     }
 
-    // Check credentials if forcing telegram
-    if (forceSendToTelegram) {
-      if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
-        addToast("Please configure your Telegram Bot Token & Chat ID in Settings first!", "error");
-        return;
-      }
+    // Check credentials if forcing telegram - do not block generation if credentials missing
+    const hasTelegramCreds = !!(userProfile.integrations?.telegram_bot_token && userProfile.integrations?.telegram_chat_id);
+    if (forceSendToTelegram && !hasTelegramCreds) {
+      addToast("Telegram credentials not configured in Settings. Signal will generate but broadcast is skipped.", "info");
     }
 
     // Check limits
@@ -988,7 +987,7 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
 
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <button
-                        onClick={() => generateSignal(pair, false, 'ai')}
+                        onClick={() => generateSignal(pair, true, 'ai')}
                         disabled={isGenerating || isLimitReached}
                         className="py-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-[10px] font-bold text-indigo-400 uppercase hover:bg-indigo-600 hover:text-white hover:border-indigo-500/40 transition-all flex items-center justify-center gap-1 cursor-pointer"
                         title="🧠 Deep AI Convergence: Performs deep structural & liquidity confluence analysis using advanced models (takes 5-10s)"
@@ -998,7 +997,7 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
                       </button>
                       
                       <button
-                        onClick={() => generateSignal(pair, false, 'algorithmic')}
+                        onClick={() => generateSignal(pair, true, 'algorithmic')}
                         disabled={isGenerating || isLimitReached}
                         className="py-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-bold text-emerald-400 uppercase hover:bg-emerald-500 hover:text-black hover:border-emerald-500/40 transition-all flex items-center justify-center gap-1 cursor-pointer"
                         title="⚡ Instant SMC Algorithmic: Performs direct, real-time mathematical indicator scan on live charts and dispatches straight to Telegram (<1 second!)"
@@ -1294,25 +1293,11 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
 
                   {signalTab === 'visual' && (
                     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                      <div className="p-6 rounded-xl bg-purple-500/5 border border-purple-500/20 flex flex-col items-center text-center relative overflow-hidden">
-                         <div className="absolute top-0 w-full h-1 bg-gradient-to-r from-transparent via-purple-500/50 to-transparent"></div>
-                         <Eye className="text-purple-400 mb-4 animate-pulse opacity-50" size={32} />
-                         <h4 className="text-[10px] font-bold uppercase tracking-widest text-purple-400 mb-2">Visual Generative Blueprint</h4>
-                         <p className="text-xs text-white/80 leading-relaxed max-w-lg mb-4">
-                           {activeSignal.visual_blueprint || "The Oracle did not generate a visual blueprint for this interaction."}
-                         </p>
-                         <button 
-                            disabled={!activeSignal.visual_blueprint}
-                            onClick={() => {
-                                addToast("Zion Image Matrix Rendering... (Mock processing delay)", "info");
-                                setTimeout(() => addToast("Image Rendered. Generating actual image not connected without an active agent. Check prompt log for generation.", "success"), 2500);
-                            }}
-                            className="px-6 py-2 rounded-full bg-purple-500/20 text-purple-300 text-[10px] font-bold uppercase tracking-widest hover:bg-purple-500/40 transition-all border border-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                           Render Blueprint Matrix
-                         </button>
-                         <p className="text-[8px] text-white/40 mt-3">*Rendering uses abstract procedural vectors generated by the AI reasoning core.</p>
-                      </div>
+                      <UltimateConfluenceChart 
+                        signal={activeSignal} 
+                        userProfile={userProfile} 
+                        addToast={addToast} 
+                      />
                     </motion.div>
                   )}
                 </div>

@@ -243,7 +243,7 @@ An Order Block is where smart money leaves their footprints in the form of massi
  */
 export async function sendSignalUpdateToTelegram(
   signalOrTrade: any, 
-  updateType: 'TP1_HIT' | 'TP2_HIT' | 'TP3_HIT' | 'TP_FINAL_HIT' | 'SL_HIT', 
+  updateType: 'TP1_HIT' | 'TP2_HIT' | 'TP3_HIT' | 'TP_FINAL_HIT' | 'SL_HIT' | 'BE_HIT', 
   currentPrice: number, 
   customIntegrations?: any
 ) {
@@ -301,6 +301,18 @@ We are witnessing strong impulsive expansion. By shifting our Stop Loss to TP2, 
 • <b>P/L Outcome:</b> Maximum Return Secured!`;
       educationalInsight = `🧠 <b>EDUCATIONAL REASONING (The Art of the Exit):</b>
 The market has fully mitigated the targeted higher-timeframe order block or swept the major liquidity pools. Impulsive moves are often followed by retracements. Leaving a trade at the predefined peak prevents emotional greed and locks in optimal gains. Consistency is the key to ascension!`;
+      break;
+
+    case 'BE_HIT':
+      header = `🛡️ <b>POSITION CLOSED AT BREAK-EVEN — NO CAPITAL LOSS!</b>`;
+      body = `• <b>Asset:</b> ${pairName}
+• <b>Milestone:</b> Price returned to entry and triggered Break-Even (BE) at <b>${entryVal}</b>.
+• <b>Trade Status:</b> CLOSED 🛡️
+• <b>Risk Outcome:</b> $0.00 (Zero Capital Loss!)`;
+      educationalInsight = `🧠 <b>EDUCATIONAL REASONING (The Power of Capital Preservation):</b>
+The market shifted structure and returned to our entry zone after sweeping TP1 liquidity. Because our <b>Celestial Shield</b> moved the Stop Loss to our entry point (Break-Even) immediately upon hitting TP1, we exited the trade with <b>absolute capital safety</b>. 
+
+In professional trading, the first rule is to protect your money. A break-even trade is a major victory because it means we collected data, read the market flow, secured partial gains at TP1, and lost absolutely nothing on the rest. We live to hunt another day.`;
       break;
 
     case 'SL_HIT':
@@ -782,6 +794,44 @@ Overtrading is born from fear of missing out (FOMO). Limit yourself to maximum 2
   } catch (error: any) {
     console.error("Simulated Command Response Error:", error);
     return { success: false, text: error.message };
+  }
+}
+
+/**
+ * Sends a binary image/photo to Telegram using multipart/form-data
+ */
+export async function sendPhotoToTelegram(
+  photoBlob: Blob, 
+  caption: string, 
+  customIntegrations?: any
+): Promise<boolean> {
+  const { botToken, chatId } = getTelegramCredentials(customIntegrations);
+  if (!botToken || !chatId) {
+    console.warn("Telegram credentials not configured. Skipping photo upload.");
+    return false;
+  }
+
+  const formData = new FormData();
+  formData.append('chat_id', chatId);
+  formData.append('photo', photoBlob, 'smc_chart_confluence.png');
+  formData.append('caption', caption);
+  formData.append('parse_mode', 'HTML');
+
+  try {
+    const response = await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/sendPhoto`, {
+      method: 'POST',
+      body: formData
+    }, 15000); // 15s timeout for media uploads
+
+    const data = await response.json();
+    if (!data.ok) {
+      console.error("Telegram photo upload API error:", data.description);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error("Telegram Photo Upload Error:", error);
+    return false;
   }
 }
 

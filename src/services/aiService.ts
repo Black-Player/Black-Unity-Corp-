@@ -151,11 +151,14 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         4. DYNAMIC CAPITAL PROTECTION ENGINE:
            - Protect user capital based on their mode.
            
-        5. INSTITUTIONAL RISK-TO-REWARD & TRADE MANAGEMENT ENGINE:
-           - Every trade must have a minimum Risk-to-Reward (RR) ratio of 1:3. Prefer: 1:3 (minimum), 1:4 (preferred), 1:5 (excellent), 1:6+ (elite). Reject setup if RR is below 1:3.
-           - The Stop Loss must always be placed beyond the protected swing high/low, order block, supply/demand zone, or liquidity sweep, with a small volatility buffer. Do NOT tighten SL artificially to improve RR.
-           - Calculate TPs strictly using actual chart prices while following the progressive spacing philosophy (wider TP targets, where TP1 represents nearest institutional objective, TP2 HTF zone, TP3 extended target, and TP4 maximum realistic trend target). Do NOT hard-code values; calculate actual prices based on the initial risk distance to keep spacing healthy.
-           - If the market structure or unmitigated zones do not support at least a 1:3 RR, return "No Trade" and explain why in decision_reasoning.
+        5. INSTITUTIONAL RISK-TO-REWARD & TRADE MANAGEMENT ENGINE (HIGH-PROBABILITY LAYOUT):
+           - We use a Multi-Target Progressive Securement strategy to maximize win-rate and protect capital.
+           - Take Profit 1 (TP1) MUST be a near, highly achievable institutional objective set at exactly 1:1.2 to 1:1.5 Risk-to-Reward (RR) ratio. This ensures TP1 is hit frequently, triggering the Celestial Shield to move Stop Loss to Break-Even (entry).
+           - Take Profit 2 (TP2) MUST be set at 1:2.5 to 1:3.0 RR.
+           - Take Profit 3 (TP3) MUST be set at 1:4.0 to 1:4.5 RR.
+           - Take Profit 4 (TP4) MUST be set at 1:5.5 to 1:6.0+ RR representing the ultimate trend exhaustion objective.
+           - The Stop Loss must always be placed beyond the protected swing high/low, order block, supply/demand zone, or liquidity sweep, with a small volatility buffer. Do NOT tighten SL artificially.
+           - If the overall market structure does not support at least a 1:3+ maximum potential RR up to TP3/TP4, return "No Trade" and explain why in decision_reasoning.
 
         6. GHOST SIMULATION ENGINE:
            - Run simulations and optimize entry/TP values.
@@ -281,7 +284,20 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       console.warn("Oracle Generation - Triggered Regional Preservation / Quota Fallback mode. Gracefully returning high-confluence simulated Smart Money setup.");
       const isBuy = Math.random() > 0.45;
       const decision = isBuy ? "Buy" : "Sell";
-      const finalPair = pair === 'Auto' ? 'frxXAUUSD' : pair;
+      
+      let finalPair = pair;
+      if (pair === 'Auto') {
+        const availablePairs = advancedOptions?.allPrices ? Object.keys(advancedOptions.allPrices) : [];
+        if (availablePairs.length > 0) {
+          // Select a random pair from the available ones
+          finalPair = availablePairs[Math.floor(Math.random() * availablePairs.length)];
+        } else {
+          // Fallback static list of high-liquidity diversified pairs
+          const diversifiedPairs = ['frxEURUSD', 'frxGBPUSD', 'cryBTCUSD', 'cryETHUSD', 'frxXAUUSD', 'R_100', 'BOOM1000', 'CRASH1000', 'frxUSDJPY'];
+          finalPair = diversifiedPairs[Math.floor(Math.random() * diversifiedPairs.length)];
+        }
+      }
+
       const finalTimeframe = timeframe === 'Auto' ? 'D1' : timeframe;
       const finalStyle = advancedOptions?.tradingStyle === 'Auto' ? 'Intraday' : (advancedOptions?.tradingStyle || 'Intraday');
       const finalPrice = currentPrice || (finalPair.includes('XAU') || finalPair.includes('GOLD') ? 2350.50 : finalPair.includes('JPY') ? 150.20 : finalPair.startsWith('R_100') ? 500000 : finalPair.startsWith('cry') ? 60000 : 1.0850);
@@ -298,7 +314,7 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       } else if (finalPair.startsWith('cry')) {
         slOffset = finalPrice * 0.015;
         tpOffset = finalPrice * 0.045;
-      } else if (finalPair.startsWith('R_') || finalPair.startsWith('V')) {
+      } else if (finalPair.startsWith('R_') || finalPair.startsWith('V') || finalPair.startsWith('1H') || finalPair.includes('BOOM') || finalPair.includes('CRASH')) {
         slOffset = finalPrice * 0.008;
         tpOffset = finalPrice * 0.024;
       } else if (finalPrice > 100) {
@@ -307,12 +323,13 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       }
       
       const stop_loss = isBuy ? finalPrice - slOffset : finalPrice + slOffset;
-      const tp1 = isBuy ? finalPrice + slOffset * 3.0 : finalPrice - slOffset * 3.0; // 1:3
-      const tp2 = isBuy ? finalPrice + slOffset * 4.5 : finalPrice - slOffset * 4.5; // 1:4.5
-      const tp3 = isBuy ? finalPrice + slOffset * 6.0 : finalPrice - slOffset * 6.0; // 1:6
-      const tp4 = isBuy ? finalPrice + slOffset * 8.0 : finalPrice - slOffset * 8.0; // 1:8
+      // High-Probability progressive TP targets: TP1 (1:1.2), TP2 (1:2.5), TP3 (1:4.0), TP4 (1:5.5)
+      const tp1 = isBuy ? finalPrice + slOffset * 1.2 : finalPrice - slOffset * 1.2; 
+      const tp2 = isBuy ? finalPrice + slOffset * 2.5 : finalPrice - slOffset * 2.5; 
+      const tp3 = isBuy ? finalPrice + slOffset * 4.0 : finalPrice - slOffset * 4.0; 
+      const tp4 = isBuy ? finalPrice + slOffset * 5.5 : finalPrice - slOffset * 5.5; 
       
-      const rr = 3.0; // minimum 1:3
+      const rr = 3.5; // Average target risk reward
       const confidence = Math.floor(Math.random() * 10) + 85; // high-grade confidence 85-95%
       
       return {

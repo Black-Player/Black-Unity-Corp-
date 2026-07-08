@@ -69,6 +69,7 @@ import { THEMES, MOTIVATIONAL_SCRIPTURES } from './constants/themes';
 import { derivService } from './services/derivService';
 
 export default function App() {
+  const marketPrices = useMarketPrices();
 
   useEffect(() => {
     derivService.connect();
@@ -274,9 +275,20 @@ export default function App() {
   const handleCloseTrade = useCallback(async (trade: Trade, reason: string = 'Manual Close') => {
     if (!userProfile) return;
     try {
-      const finalPnl = trade.pnl || 0;
-      const finalPnlPercentage = trade.pnl_percentage || 0;
-      const exitPrice = trade.exit_price || trade.entry_price;
+      let finalPnl = trade.pnl || 0;
+      let finalPnlPercentage = trade.pnl_percentage || 0;
+      let exitPrice = trade.exit_price || trade.entry_price;
+
+      if (trade.status === 'open' && !trade.exit_price) {
+        const currentPrice = marketPrices[trade.pair]?.price || trade.current_price || trade.entry_price;
+        if (currentPrice) {
+          exitPrice = currentPrice;
+          const diff = trade.type === 'buy' ? currentPrice - trade.entry_price : trade.entry_price - currentPrice;
+          const lot = trade.lot_size || 0.1;
+          finalPnl = diff * lot * 100;
+          finalPnlPercentage = (diff / trade.entry_price) * 100;
+        }
+      }
 
       await dbService.update('trades', trade.id, {
         status: 'closed',
@@ -338,13 +350,23 @@ export default function App() {
       
       const newConsecutiveLosses = isWin ? 0 : (userProfile.consecutive_losses || 0) + 1;
       
+      const updatedStats = {
+        total_trades: (userProfile.stats?.total_trades || 0) + 1,
+        wins: (userProfile.stats?.wins || 0) + (isWin ? 1 : 0),
+        losses: (userProfile.stats?.losses || 0) + (isWin ? 0 : 1),
+        profit_factor: userProfile.stats?.profit_factor || 0,
+        max_drawdown: userProfile.stats?.max_drawdown || 0,
+      };
+
+      const currentBalance = Number((userProfile as any)[balanceField] ?? 10000);
+      const newBalance = Number((currentBalance + finalPnl).toFixed(2));
+      const newTotalPnl = Number(((userProfile.total_pnl || 0) + finalPnl).toFixed(2));
+
       await dbService.update('users', userProfile.uid, {
-        [balanceField]: (userProfile as any)[balanceField] + finalPnl,
-        total_pnl: userProfile.total_pnl + finalPnl,
+        [balanceField]: newBalance,
+        total_pnl: newTotalPnl,
         consecutive_losses: newConsecutiveLosses,
-        'stats.total_trades': (userProfile.stats?.total_trades || 0) + 1,
-        'stats.wins': (userProfile.stats?.wins || 0) + (isWin ? 1 : 0),
-        'stats.losses': (userProfile.stats?.losses || 0) + (isWin ? 0 : 1)
+        stats: updatedStats
       });
 
       // PHASE 7: OMNI-TIER ASCENSION SYSTEM
@@ -397,18 +419,18 @@ export default function App() {
       await dbService.create('notifications', {
         uid: userProfile.uid,
         title: `Trade Closed: ${reason}`,
-        message: `${(trade.account_type || 'demo').toUpperCase()} trade for ${trade.pair} closed with ${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)} P/L. Reason: ${reason}.`,
+        message: `${(trade.account_type || 'demo').toUpperCase()} trade for ${trade.pair} closed with ${finalPnl >= 0 ? '+' : ''}${finalPnl.toFixed(2)} P/L. Reason: ${reason}.`,
         type: 'trade',
         read: false,
         created_at: new Date().toISOString()
       });
 
-      addToast(`Trade closed: ${trade.pair} (${trade.pnl >= 0 ? '+' : ''}${(trade.pnl || 0).toFixed(2)}) - ${reason}`, trade.pnl >= 0 ? 'success' : 'error');
+      addToast(`Trade closed: ${trade.pair} (${finalPnl >= 0 ? '+' : ''}${finalPnl.toFixed(2)}) - ${reason}`, finalPnl >= 0 ? 'success' : 'error');
     } catch (err) {
       console.error("Failed to close trade", err);
       addToast('Failed to close trade.', 'error');
     }
-  }, [userProfile, addToast]);
+  }, [userProfile, addToast, marketPrices]);
 
   useTradeMonitor(userProfile || {} as UserProfile, addToast, handleCloseTrade);
 

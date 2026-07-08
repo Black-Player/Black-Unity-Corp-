@@ -69,10 +69,10 @@ export function useTradeMonitor(
         // Check SL
         if (trade.type === 'buy' && currentPrice <= trade.stop_loss) {
           shouldClose = true;
-          reason = 'Stop Loss hit';
+          reason = trade.stop_loss === trade.entry_price ? 'Break Even hit' : 'Stop Loss hit';
         } else if (trade.type === 'sell' && currentPrice >= trade.stop_loss) {
           shouldClose = true;
-          reason = 'Stop Loss hit';
+          reason = trade.stop_loss === trade.entry_price ? 'Break Even hit' : 'Stop Loss hit';
         }
 
         // Check Active TP or TP4
@@ -147,9 +147,9 @@ export function useTradeMonitor(
         if (shouldClose) {
           // Calculate final P/L
           const finalPnl = trade.type === 'buy' 
-            ? (currentPrice - trade.entry_price) * 100 
-            : (trade.entry_price - currentPrice) * 100;
-          const finalPnlPercentage = (finalPnl / (trade.entry_price * 100)) * 100;
+            ? (currentPrice - trade.entry_price) * (trade.lot_size || 0.1) * 100 
+            : (trade.entry_price - currentPrice) * (trade.lot_size || 0.1) * 100;
+          const finalPnlPercentage = (finalPnl / (trade.entry_price * (trade.lot_size || 0.1) * 100)) * 100;
           
           const updatedTrade = { 
             ...trade, 
@@ -180,6 +180,8 @@ export function useTradeMonitor(
             // Auto-broadcast final close status to Telegram with SMC educational explanation
             if (reason.toLowerCase().includes('take profit')) {
               sendSignalUpdateToTelegram(trade, 'TP_FINAL_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram TP final update failed:", e));
+            } else if (reason.toLowerCase().includes('break even')) {
+              sendSignalUpdateToTelegram(trade, 'BE_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram BE hit update failed:", e));
             } else if (reason.toLowerCase().includes('stop loss')) {
               sendSignalUpdateToTelegram(trade, 'SL_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram SL update failed:", e));
             }
@@ -189,8 +191,8 @@ export function useTradeMonitor(
         } else {
           // Update current P/L and MAE/MFE while open
           const currentPnl = trade.type === 'buy' 
-            ? (currentPrice - trade.entry_price) * 100 
-            : (trade.entry_price - currentPrice) * 100;
+            ? (currentPrice - trade.entry_price) * (trade.lot_size || 0.1) * 100 
+            : (trade.entry_price - currentPrice) * (trade.lot_size || 0.1) * 100;
           
           const newMae = trade.mae !== undefined ? Math.min(trade.mae, currentPnl) : currentPnl;
           const newMfe = trade.mfe !== undefined ? Math.max(trade.mfe, currentPnl) : currentPnl;
@@ -202,7 +204,7 @@ export function useTradeMonitor(
                   mfe: newMfe,
                   current_price: currentPrice,
                   pnl: currentPnl,
-                  pnl_percentage: (currentPnl / (trade.entry_price * 100)) * 100
+                  pnl_percentage: (currentPnl / (trade.entry_price * (trade.lot_size || 0.1) * 100)) * 100
               });
             } catch (err) {
               console.error("Error updating trade metrics:", err);

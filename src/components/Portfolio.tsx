@@ -22,7 +22,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const portfolio = userProfile.portfolio || [];
-  const currentAccountType = userProfile.account_type;
+  const currentAccountType = userProfile.account_type || 'demo';
   
   useEffect(() => {
     const fetchTrades = async () => {
@@ -50,17 +50,16 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
     return () => unsubscribe();
   }, [userProfile.uid]);
 
-  const filteredPortfolio = portfolio.filter(p => p.account_type === currentAccountType);
-  const openTrades = trades.filter(t => t.status === 'open' && t.account_type === currentAccountType);
-  const closedTrades = trades.filter(t => t.status === 'closed' && t.account_type === currentAccountType);
+  const filteredPortfolio = portfolio.filter(p => (p.account_type || 'demo') === currentAccountType);
+  const openTrades = trades.filter(t => t.status === 'open' && (t.account_type || 'demo') === currentAccountType);
+  const closedTrades = trades.filter(t => t.status === 'closed' && (t.account_type || 'demo') === currentAccountType);
 
   const initialBalance = currentAccountType === 'live' ? userProfile.live_balance : userProfile.demo_balance;
 
   const tradesPnl = openTrades.reduce((acc, trade) => {
     const currentPrice = marketPrices[trade.pair]?.price || trade.entry_price;
     const diff = trade.type === 'buy' ? currentPrice - trade.entry_price : trade.entry_price - currentPrice;
-    const lotMultiplier = trade.lot_size || 1;
-    const pnl = diff * lotMultiplier * 10;
+    const pnl = diff * (trade.lot_size || 0.1) * 100;
     return acc + pnl;
   }, 0);
 
@@ -222,10 +221,11 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
         <div className="space-y-4">
           {openTrades.map((trade) => {
             const currentPrice = marketPrices[trade.pair]?.price || trade.entry_price;
-            const pnl = trade.type === 'buy' 
+            const diff = trade.type === 'buy' 
               ? (currentPrice - trade.entry_price) 
               : (trade.entry_price - currentPrice);
-            const pnlPerc = (pnl / trade.entry_price) * 100;
+            const pnl = diff * (trade.lot_size || 0.1) * 100;
+            const pnlPerc = (diff / trade.entry_price) * 100;
 
             return (
               <motion.div 

@@ -611,7 +611,7 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
     if (entry) {
       entryLineRef.current = seriesRef.current.createPriceLine({
         price: entry,
-        color: '#facc15', // Gold
+        color: '#10b981', // Green for Entry
         lineWidth: 2,
         lineStyle: LineStyle.Solid,
         axisLabelVisible: true,
@@ -622,7 +622,7 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
     if (sl) {
       slLineRef.current = seriesRef.current.createPriceLine({
         price: sl,
-        color: '#ef4444', // Red
+        color: '#ef4444', // Red for Stop Loss
         lineWidth: 2,
         lineStyle: LineStyle.Dashed,
         axisLabelVisible: true,
@@ -631,7 +631,7 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
     }
 
     if (tps && tps.length > 0) {
-      const tpColors = ['#059669', '#10b981', '#34d399', '#6ee7b7'];
+      const tpColors = ['#2563eb', '#2563eb', '#2563eb', '#2563eb']; // Royal Blue for Take Profits
       tps.forEach((tpValue, index) => {
         if (tpValue) {
           const color = tpColors[index % tpColors.length];

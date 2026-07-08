@@ -1,10 +1,75 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Compass, Eye, Play, Sparkles, AlertTriangle, ShieldCheck, 
-  HelpCircle, Copy, Check, RefreshCw, BarChart2, BookOpen, Layers, Info
+  HelpCircle, Copy, Check, RefreshCw, BarChart2, BookOpen, Layers, Info, TrendingUp, Award, Camera
 } from 'lucide-react';
 import { Signal, UserProfile } from '../types';
+import { sendPhotoToTelegram, sendSignalToTelegram } from '../services/communicationService';
+
+// Browser-native high-definition SVG to PNG Blob capture engine
+export async function captureSvgAsPngBlob(svgElement: SVGSVGElement): Promise<Blob> {
+  const serializer = new XMLSerializer();
+  
+  // Clone the SVG so we don't disrupt the live DOM state
+  const svgClone = svgElement.cloneNode(true) as SVGSVGElement;
+  
+  // High-Definition upscale dimensions for Telegram and local saving
+  svgClone.setAttribute('width', '1280');
+  svgClone.setAttribute('height', '800');
+  
+  const svgString = serializer.serializeToString(svgClone);
+  const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(svgBlob);
+  
+  return new Promise<Blob>((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 1280;
+      canvas.height = 800;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error("Could not construct 2D render context"));
+        return;
+      }
+      
+      // Draw professional dark theme backdrop
+      ctx.fillStyle = '#020617'; 
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw grid pattern over background manually for the exported image
+      ctx.strokeStyle = 'rgba(255,255,255,0.015)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 30) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 30) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+
+      ctx.drawImage(img, 0, 0, 1280, 800);
+      URL.revokeObjectURL(url);
+      
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("PNG Blob compilation failure"));
+      }, 'image/png');
+    };
+    img.onerror = (err) => {
+      URL.revokeObjectURL(url);
+      reject(err);
+    };
+    img.src = url;
+  });
+}
 
 interface UltimateConfluenceChartProps {
   signal: Partial<Signal>;
@@ -12,15 +77,11 @@ interface UltimateConfluenceChartProps {
   addToast: (message: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-type LayerType = 'all' | 'wyckoff' | 'ict' | 'smc' | 'supply_demand' | 'volume';
-
 export default function UltimateConfluenceChart({ signal, userProfile, addToast }: UltimateConfluenceChartProps) {
-  // Setup direction
   const isSignalBuy = signal.decision === 'Buy' || signal.stop_loss < signal.entry;
   const [direction, setDirection] = useState<'bullish' | 'bearish'>(isSignalBuy ? 'bullish' : 'bearish');
-  const [activeLayer, setActiveLayer] = useState<LayerType>('all');
   const [isPlayingAnimation, setIsPlayingAnimation] = useState(false);
-  const [animationStep, setAnimationStep] = useState(0); // 0: idle, 1: gathering retail stops, 2: stop hunt sweep, 3: displacement, 4: mitigation/re-entry
+  const [animationStep, setAnimationStep] = useState(0); // 0: idle, 1: inducement, 2: liquidity sweep, 3: choch/bos, 4: mitigation/entry, 5: take profit expansion
   const [copiedPrompt, setCopiedPrompt] = useState(false);
 
   // Sync state if signal changes
@@ -30,22 +91,22 @@ export default function UltimateConfluenceChart({ signal, userProfile, addToast 
     setIsPlayingAnimation(false);
   }, [signal.id, isSignalBuy]);
 
-  // Handle Liquidity Sweep animation sequence
+  // Dynamic animation sequence for Liquidity Sweep and Mitigation
   useEffect(() => {
     let timer: NodeJS.Timeout;
     if (isPlayingAnimation) {
       setAnimationStep(1);
       
       const sequence = [
-        { step: 1, delay: 1800 }, // Gathering stops
-        { step: 2, delay: 1500 }, // Stop hunt sweep (fast spike)
-        { step: 3, delay: 1800 }, // Displacement impulse
-        { step: 4, delay: 2000 }, // Mitigation & re-entry
-        { step: 0, delay: 1000 }  // Back to idle
+        { step: 1, delay: 1500 }, // Inducement build-up
+        { step: 2, delay: 1800 }, // Liquidity Sweep spike (Warning!)
+        { step: 3, delay: 1800 }, // CHoCH / BOS Breakout
+        { step: 4, delay: 1800 }, // Pullback & Mitigation (Entry Triggered!)
+        { step: 5, delay: 2000 }, // Take Profit Expansion (Target Hit!)
+        { step: 0, delay: 1000 }  // Back to normal
       ];
 
       let currentIdx = 0;
-      
       const runNext = () => {
         if (currentIdx >= sequence.length) {
           setIsPlayingAnimation(false);
@@ -56,11 +117,10 @@ export default function UltimateConfluenceChart({ signal, userProfile, addToast 
         const current = sequence[currentIdx];
         setAnimationStep(current.step);
         currentIdx++;
-        
         timer = setTimeout(runNext, current.delay);
       };
 
-      timer = setTimeout(runNext, 1000);
+      timer = setTimeout(runNext, 1200);
     } else {
       setAnimationStep(0);
     }
@@ -74,108 +134,202 @@ export default function UltimateConfluenceChart({ signal, userProfile, addToast 
   const tp1Price = signal.tp1 || 2360.00;
   const tp2Price = signal.tp2 || 2375.00;
   const tp3Price = signal.tp3 || 2390.00;
+  
+  // Calculate a proportional 4th Take Profit target
+  const tp4Price = signal.tp4 || (isSignalBuy ? entryPrice + Math.abs(entryPrice - slPrice) * 6.0 : entryPrice - Math.abs(entryPrice - slPrice) * 6.0);
 
-  // Render prices scaled dynamically
+  // Dynamic Y-scaling: maps prices cleanly to our 320px high SVG frame (margins 40px to 280px)
   const getPriceScaleY = (price: number) => {
-    const minPrice = Math.min(slPrice, entryPrice, tp1Price, tp2Price, tp3Price) * 0.995;
-    const maxPrice = Math.max(slPrice, entryPrice, tp1Price, tp2Price, tp3Price) * 1.005;
-    const range = maxPrice - minPrice;
+    const allPrices = [slPrice, entryPrice, tp1Price, tp2Price, tp3Price, tp4Price];
+    const minPrice = Math.min(...allPrices);
+    const maxPrice = Math.max(...allPrices);
+    const range = maxPrice - minPrice || 1;
     
-    // Normalize to SVG height (320px frame)
+    // Normalize percentage (0 = minPrice, 1 = maxPrice)
     const percentage = (price - minPrice) / range;
-    // For bullish: sl is low (bottom/higher Y), tp is high (top/lower Y)
-    return 300 - (percentage * 240);
+    
+    // In SVG, lower Y is at the top. So we subtract percentage from 270.
+    return 270 - (percentage * 210); // Spans from Y=270 (lowest price) to Y=60 (highest price)
   };
 
   const getFullPromptText = () => {
-    return `Create a professional trading chart of ${pairName} on 1H timeframe showing a complete institutional reversal setup during London/NY overlap session. Style: clean, educational, TradingView-style with white background, subtle grid, and volume bars. Direction is ${direction.toUpperCase()}.
-
-1. MARKET STRUCTURE & WYCKOFF PHASE:
-- SC, AR, ST, Spring (false breakdown below ST), Test, SOS (Sign of Strength), LPS, BU for BULLISH setup.
-- AR, BU, ST, Upthrust (false breakout above ST), Test, SOS↓, LPS↓, BC for BEARISH setup.
-- Overlay a smooth Parabolic Curve showing the direction transition.
-- Mark Stop Hunt → Compression → Expansion.
-
-2. INNER CIRCLE TRADER (ICT) CONFLUENCE:
-- HTF PD Array (${direction === 'bullish' ? 'Discount Zone at accumulation low in Yellow' : 'Premium Zone at distribution high in Yellow'})
-- MSS / CHOCH (dashed line at structural shift)
-- Fair Value Gap / Imbalance (Purple rectangle)
-- Optimal Trade Entry / OTE (62%-79% Fibonacci retracement shaded in Orange)
-- Liquidity Mapping: SSL below lows / BSL above highs (Label: Sell-Side/Buy-Side Liquidity - Stop Hunt Zone)
-
-3. SMART MONEY CONCEPTS (SMC):
-- Order Block: ${direction === 'bullish' ? 'Blue rectangle on last bearish candle before Spring' : 'Red rectangle on last bullish candle before Upthrust'}
-- Breaker Block: Failed OB that flips role.
-- Mitigation Zone / Entry at ${entryPrice}.
-- Stop Loss placed strictly at ${slPrice} representing the structural invalidation level.
-
-4. RISK MANAGEMENT & EDUCATIONAL DETAILS:
-- Entry Zone: ${entryPrice}
-- Stop Loss: ${slPrice} (Invalid if price closes beyond this level on 4H)
-- Take Profit Targets: TP1: ${tp1Price}, TP2: ${tp2Price}, TP3: ${tp3Price}
-- Setup aligns with institutional order flow footprint.`;
+    return `Create a high-fidelity institutional order flow chart of ${pairName} on 1H timeframe showing a perfect Smart Money Concepts (SMC) reversal setup.
+Style: Dark TradingView theme, absolute precision, clean modern design.
+- SL (Stop Loss) level in vibrant Red: ${slPrice}
+- Entry Zone in bright emerald Green: ${entryPrice}
+- Progress Take Profit levels (TP1, TP2, TP3, TP4) in glowing Royal Blue: ${tp1Price}, ${tp2Price}, ${tp3Price}, ${tp4Price}
+- A beautifully shaded Order Block (OB) box where the mitigation happened.
+- Clean unshaded boxes with dotted outlines representing Fair Value Gaps (FVGs).
+- Solid trendlines labeled BOS and CHoCH showing structural breakout levels.
+- Horizontal dotted lines showing Inducement levels and Liquidity Sweeps.
+- Direction of setup: ${direction.toUpperCase()}.`;
   };
 
   const copyPromptToClipboard = () => {
     navigator.clipboard.writeText(getFullPromptText());
     setCopiedPrompt(true);
-    addToast("Ultimate Confluence Chart Prompt copied to clipboard!", "success");
+    addToast("Ultimate SMC Chart Prompt exported to clipboard!", "success");
     setTimeout(() => setCopiedPrompt(false), 3000);
   };
 
-  // Generate mock candlesticks to render the classic Wyckoff pattern nicely in SVG
-  const generateCandles = () => {
-    // 16 points along the chart representing the narrative flow
-    if (direction === 'bullish') {
-      return [
-        { x: 30, open: 240, close: 260, high: 275, low: 235, type: 'bear', label: 'SC' },     // Selling Climax
-        { x: 60, open: 250, close: 180, high: 175, low: 255, type: 'bull', label: 'AR' },     // Automatic Rally
-        { x: 90, open: 185, close: 230, high: 245, low: 180, type: 'bear', label: 'ST' },     // Secondary Test
-        { x: 120, open: 220, close: 210, high: 225, low: 205, type: 'bear', label: 'CMP' },   // Compression
-        { x: 150, open: 210, close: 235, high: 240, low: 205, type: 'bear', label: 'CMP' },   // Compression
-        { x: 180, open: 230, close: 265, high: 275, low: 285, type: 'bear', label: 'SPRING', isSweep: true }, // SPRING Stop Hunt wick
-        { x: 210, open: 255, close: 220, high: 260, low: 215, type: 'bull', label: 'TEST' },   // Test
-        { x: 240, open: 220, close: 170, high: 165, low: 225, type: 'bull', label: 'BOS' },    // CHOCH / Break of Structure
-        { x: 270, open: 170, openS: 170, close: 140, high: 135, low: 175, type: 'bull', label: 'SOS' },    // Sign of Strength
-        { x: 300, open: 145, close: 185, high: 190, low: 180, type: 'bear', label: 'LPS', isMitigation: true }, // Pullback into OB (Mitigation / Entry Zone)
-        { x: 330, open: 180, close: 110, high: 105, low: 185, type: 'bull', label: 'BU' },     // Backup / Markup Launch
-        { x: 360, open: 110, close: 80, high: 75, low: 115, type: 'bull', label: 'MU' },      // Markup
-        { x: 390, open: 80, close: 50, high: 45, low: 85, type: 'bull', label: 'TP1' },      // TP1 Target
-        { x: 420, open: 55, close: 30, high: 25, low: 60, type: 'bull', label: 'TP2' }       // TP2 Target
-      ];
+  // Generate 15 dynamic candlesticks which tell the comprehensive story of the SMC setup
+  const generateSetupCandles = () => {
+    const R = Math.abs(entryPrice - slPrice) || 10;
+    const isBuy = direction === 'bullish';
+    
+    const makeCandle = (
+      index: number, 
+      openPrice: number, 
+      closePrice: number, 
+      highPrice: number, 
+      lowPrice: number,
+      label?: string
+    ) => {
+      const x = 30 + index * 27; // Clean horizontal alignment
+      return {
+        x,
+        open: getPriceScaleY(openPrice),
+        close: getPriceScaleY(closePrice),
+        high: getPriceScaleY(highPrice),
+        low: getPriceScaleY(lowPrice),
+        openPrice,
+        closePrice,
+        highPrice,
+        lowPrice,
+        type: isBuy 
+          ? (closePrice >= openPrice ? 'bull' : 'bear')
+          : (closePrice <= openPrice ? 'bull' : 'bear'),
+        label
+      };
+    };
+
+    const candlesList = [];
+
+    if (isBuy) {
+      // Bullish SMC Accumulation Setup
+      candlesList.push(makeCandle(0, entryPrice - 0.3 * R, entryPrice - 0.1 * R, entryPrice, entryPrice - 0.4 * R));
+      candlesList.push(makeCandle(1, entryPrice - 0.1 * R, entryPrice - 0.4 * R, entryPrice - 0.05 * R, entryPrice - 0.5 * R));
+      // Inducement point (IDM)
+      candlesList.push(makeCandle(2, entryPrice - 0.4 * R, entryPrice - 0.2 * R, entryPrice + 0.2 * R, entryPrice - 0.6 * R, 'IDM'));
+      candlesList.push(makeCandle(3, entryPrice - 0.2 * R, entryPrice - 0.5 * R, entryPrice - 0.1 * R, entryPrice - 0.6 * R));
+      // Liquidity Sweep (Sweeps below all consolidation lows)
+      candlesList.push(makeCandle(4, entryPrice - 0.5 * R, entryPrice - 0.8 * R, entryPrice - 0.3 * R, entryPrice - 0.94 * R, 'SWEEP'));
+      // Strong Displacement upwards (Leaves FVG)
+      candlesList.push(makeCandle(5, entryPrice - 0.78 * R, entryPrice + 0.3 * R, entryPrice + 0.4 * R, entryPrice - 0.8 * R));
+      // Breakout of character (CHoCH)
+      candlesList.push(makeCandle(6, entryPrice + 0.25 * R, entryPrice + 1.0 * R, entryPrice + 1.1 * R, entryPrice + 0.2 * R, 'CHOCH'));
+      // Break of Structure (BOS)
+      candlesList.push(makeCandle(7, entryPrice + 0.9 * R, entryPrice + 1.6 * R, entryPrice + 1.7 * R, entryPrice + 0.8 * R, 'BOS'));
+      candlesList.push(makeCandle(8, entryPrice + 1.6 * R, entryPrice + 1.3 * R, entryPrice + 1.8 * R, entryPrice + 1.2 * R));
+      // Deeper Pullback into FVG & Order Block
+      candlesList.push(makeCandle(9, entryPrice + 1.3 * R, entryPrice + 0.5 * R, entryPrice + 1.4 * R, entryPrice + 0.4 * R));
+      // Mitigation / Tap entry perfectly!
+      candlesList.push(makeCandle(10, entryPrice + 0.5 * R, entryPrice + 0.2 * R, entryPrice + 0.6 * R, entryPrice, 'ENTRY'));
+      // Strong bullish bounce
+      candlesList.push(makeCandle(11, entryPrice + 0.2 * R, tp1Price - 0.1 * R, tp1Price, entryPrice + 0.1 * R));
+      candlesList.push(makeCandle(12, tp1Price - 0.1 * R, tp1Price + 0.3 * R, tp1Price + 0.5 * R, tp1Price - 0.2 * R, 'TP1'));
+      candlesList.push(makeCandle(13, tp1Price + 0.3 * R, tp1Price + 0.1 * R, tp1Price + 0.4 * R, tp1Price));
+      // Full expansion past targets
+      candlesList.push(makeCandle(14, tp1Price + 0.1 * R, tp3Price + 0.5 * R, tp3Price + 0.8 * R, tp1Price, 'TARGET'));
     } else {
-      // Bearish Distribution candles
-      return [
-        { x: 30, open: 120, close: 90, high: 85, low: 125, type: 'bull', label: 'BC' },      // Buying Climax
-        { x: 60, open: 100, close: 170, high: 175, low: 95, type: 'bear', label: 'AR' },     // Automatic Rally
-        { x: 90, open: 165, close: 110, high: 100, low: 170, type: 'bull', label: 'ST' },     // Secondary Test of highs
-        { x: 120, open: 120, close: 130, high: 140, low: 115, type: 'bull', label: 'CMP' },   // Compression
-        { x: 150, open: 130, close: 115, high: 135, low: 110, type: 'bull', label: 'CMP' },   // Compression
-        { x: 180, open: 120, close: 75, high: 60, low: 125, type: 'bull', label: 'UTAD', isSweep: true }, // Upthrust (UTAD) Stop Hunt wick
-        { x: 210, open: 85, close: 130, high: 80, low: 135, type: 'bear', label: 'TEST' },    // Test
-        { x: 240, open: 130, close: 190, high: 195, low: 125, type: 'bear', label: 'BOS' },    // CHOCH / Break of Structure
-        { x: 270, open: 190, close: 220, high: 225, low: 185, type: 'bear', label: 'SOW' },    // Sign of Weakness (SOS↓)
-        { x: 300, open: 215, close: 175, high: 170, low: 220, type: 'bull', label: 'LPS', isMitigation: true }, // Pullback into Supply OB (Mitigation / Entry Zone)
-        { x: 330, open: 180, close: 250, high: 255, low: 175, type: 'bear', label: 'LPS↓' },   // Last Point of Supply Launch
-        { x: 360, open: 250, close: 275, high: 280, low: 245, type: 'bear', label: 'MD' },     // Markdown
-        { x: 390, open: 275, close: 295, high: 300, low: 270, type: 'bear', label: 'TP1' },    // TP1 Target
-        { x: 420, open: 290, close: 310, high: 315, low: 285, type: 'bear', label: 'TP2' }     // TP2 Target
-      ];
+      // Bearish SMC Distribution Setup
+      candlesList.push(makeCandle(0, entryPrice + 0.3 * R, entryPrice + 0.1 * R, entryPrice + 0.4 * R, entryPrice));
+      candlesList.push(makeCandle(1, entryPrice + 0.1 * R, entryPrice + 0.4 * R, entryPrice + 0.5 * R, entryPrice + 0.05 * R));
+      // Inducement point (IDM)
+      candlesList.push(makeCandle(2, entryPrice + 0.4 * R, entryPrice + 0.2 * R, entryPrice + 0.6 * R, entryPrice - 0.2 * R, 'IDM'));
+      candlesList.push(makeCandle(3, entryPrice + 0.2 * R, entryPrice + 0.5 * R, entryPrice + 0.6 * R, entryPrice + 0.1 * R));
+      // Liquidity Sweep (Sweeps above all consolidation highs)
+      candlesList.push(makeCandle(4, entryPrice + 0.5 * R, entryPrice + 0.8 * R, entryPrice + 0.94 * R, entryPrice + 0.3 * R, 'SWEEP'));
+      // Strong Displacement downwards (Leaves FVG)
+      candlesList.push(makeCandle(5, entryPrice + 0.78 * R, entryPrice - 0.3 * R, entryPrice + 0.8 * R, entryPrice - 0.4 * R));
+      // Breakout of character (CHoCH)
+      candlesList.push(makeCandle(6, entryPrice - 0.25 * R, entryPrice - 1.0 * R, entryPrice - 0.2 * R, entryPrice - 1.1 * R, 'CHOCH'));
+      // Break of Structure (BOS)
+      candlesList.push(makeCandle(7, entryPrice - 0.9 * R, entryPrice - 1.6 * R, entryPrice - 0.8 * R, entryPrice - 1.7 * R, 'BOS'));
+      candlesList.push(makeCandle(8, entryPrice - 1.6 * R, entryPrice - 1.3 * R, entryPrice - 1.2 * R, entryPrice - 1.8 * R));
+      // Deeper Pullback up into FVG & Order Block
+      candlesList.push(makeCandle(9, entryPrice - 1.3 * R, entryPrice - 0.5 * R, entryPrice - 0.4 * R, entryPrice - 1.4 * R));
+      // Mitigation / Tap entry perfectly!
+      candlesList.push(makeCandle(10, entryPrice - 0.5 * R, entryPrice - 0.2 * R, entryPrice, entryPrice - 0.6 * R, 'ENTRY'));
+      // Strong bearish bounce down
+      candlesList.push(makeCandle(11, entryPrice - 0.2 * R, tp1Price + 0.1 * R, entryPrice - 0.1 * R, tp1Price));
+      candlesList.push(makeCandle(12, tp1Price + 0.1 * R, tp1Price - 0.3 * R, tp1Price + 0.2 * R, tp1Price - 0.5 * R, 'TP1'));
+      candlesList.push(makeCandle(13, tp1Price - 0.3 * R, tp1Price - 0.1 * R, tp1Price, tp1Price - 0.4 * R));
+      // Full expansion down
+      candlesList.push(makeCandle(14, tp1Price - 0.1 * R, tp3Price - 0.5 * R, tp1Price, tp3Price - 0.8 * R, 'TARGET'));
+    }
+
+    return candlesList;
+  };
+
+  const candles = generateSetupCandles();
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [isCapturing, setIsCapturing] = useState(false);
+
+  const handleCaptureAndBroadcast = async () => {
+    if (!svgRef.current) {
+      addToast("Failed to capture: SVG element not found.", "error");
+      return;
+    }
+    
+    setIsCapturing(true);
+    addToast("Generating premium chart snapshot...", "info");
+    
+    try {
+      // 1. Capture SVG element as high-definition PNG Blob
+      const blob = await captureSvgAsPngBlob(svgRef.current);
+      
+      // 2. Prepare the beautiful SMC narrative caption
+      const caption = `📊 <b>BUC ORACLE PROPHECY UPDATE</b>
+━━━━━━━━━━━━━━━━━━━━
+📌 <b>Asset:</b> ${pairName} • 1H timeframe
+🔥 <b>Direction:</b> ${direction.toUpperCase() === 'BULLISH' ? '🟢 ACCUMULATION (MARKUP)' : '🔴 DISTRIBUTION (MARKDOWN)'}
+
+⚡ <b>INSTITUTIONAL LEVEL PROFILE:</b>
+• <b>Entry Trigger:</b> $${entryPrice.toFixed(2)}
+• <b>Stop Loss (SL):</b> $${slPrice.toFixed(2)}
+• <b>Target TP1:</b> $${tp1Price.toFixed(2)}
+• <b>Target TP2:</b> $${tp2Price.toFixed(2)}
+• <b>Target TP3:</b> $${tp3Price.toFixed(2)}
+• <b>Ultimate TP4:</b> $${tp4Price.toFixed(2)}
+
+━━━━━━━━━━━━━━━━━━━━
+💡 <b>SMC Confluence Details:</b>
+- Beautifully mitigated <b>Order Block (OB)</b> zone shaded on chart.
+- Algorithmic imbalances (<b>Fair Value Gaps</b>) remain unfilled.
+- Local structural shifts confirmed via <b>CHoCH</b> and <b>BOS</b> trendlines.
+- Trailing protection active: SL will shift to Breakeven at TP1 automatically.
+
+🔮 <i>Oracle Engine • Powered by Blāck-Plāyer SMC Core</i>`;
+
+      // 3. Broadcast the photo to Telegram
+      const success = await sendPhotoToTelegram(blob, caption, userProfile.integrations);
+      
+      if (success) {
+        addToast("SMC Chart Snapshot & Analysis broadcasted to Telegram successfully!", "success");
+      } else {
+        addToast("Broadcast failed. Please check your Telegram API Key configuration.", "warning");
+      }
+    } catch (error: any) {
+      console.error("Capture and broadcast error:", error);
+      addToast(`Error generating snapshot: ${error.message || error}`, "error");
+    } finally {
+      setIsCapturing(false);
     }
   };
 
-  const candles = generateCandles();
-
   return (
     <div className="space-y-6">
-      {/* Upper header action controls */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-white/5 border border-white/10">
+      {/* Premium Chart Controls Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-slate-900 border border-white/5 shadow-xl">
         <div>
           <div className="flex items-center gap-2">
-            <Sparkles className="text-emerald-400 animate-pulse" size={16} />
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">Ultimate Institutional Confluence Dashboard</h3>
+            <TrendingUp className="text-emerald-400" size={16} />
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider">TradingView Smart Money Concepts Chart</h3>
           </div>
-          <p className="text-xs text-white/40 mt-1">Multi-layered educational framework visualizing live algorithmic setups.</p>
+          <p className="text-xs text-white/40 mt-1">
+            Dynamic SVG plotting with institutional Order Flow levels & structural transitions.
+          </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -195,402 +349,468 @@ export default function UltimateConfluenceChart({ signal, userProfile, addToast 
             </button>
           </div>
 
-          {/* Animation trigger */}
+          {/* Animation Trigger */}
           <button
             onClick={() => setIsPlayingAnimation(!isPlayingAnimation)}
-            className={`px-4 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${isPlayingAnimation ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300 animate-pulse' : 'bg-black/40 border-white/10 text-white/80 hover:bg-white/5'}`}
+            className={`px-4 py-1.5 rounded-lg border text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer ${isPlayingAnimation ? 'bg-indigo-500/20 border-indigo-500 text-indigo-300' : 'bg-black/40 border-white/10 text-white/80 hover:bg-white/5'}`}
           >
             {isPlayingAnimation ? <RefreshCw className="animate-spin" size={12} /> : <Play size={12} />}
-            <span>{isPlayingAnimation ? 'Animating Sweep...' : 'Play Liquidity Sweep'}</span>
+            <span>{isPlayingAnimation ? 'Tracking flow...' : 'Play SMC Sequence'}</span>
           </button>
 
           {/* Copy Prompt option */}
           <button
             onClick={copyPromptToClipboard}
-            className="px-4 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-500 hover:text-black hover:border-emerald-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
-            title="Export full bidirectional text prompt to generate this exact setup in any image generator"
+            className="px-4 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-bold uppercase tracking-wider hover:bg-indigo-500 hover:text-white hover:border-indigo-500 transition-all flex items-center gap-1.5 cursor-pointer"
+            title="Export text prompt for external chart generators"
           >
             {copiedPrompt ? <Check size={12} /> : <Copy size={12} />}
             <span>{copiedPrompt ? 'Copied!' : 'Export Prompt'}</span>
           </button>
+
+          {/* Capture & Broadcast option */}
+          <button
+            onClick={handleCaptureAndBroadcast}
+            disabled={isCapturing}
+            className={`px-4 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-bold uppercase tracking-wider hover:bg-emerald-500 hover:text-black hover:border-emerald-500 transition-all flex items-center gap-1.5 cursor-pointer ${isCapturing ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title="Capture chart snapshot and broadcast to Telegram"
+          >
+            {isCapturing ? <RefreshCw className="animate-spin" size={12} /> : <Camera size={12} />}
+            <span>{isCapturing ? 'Broadcasting...' : 'Snapshot & Broadcast'}</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Grid: Visual SVG Chart Left, Educational Pane Right */}
+      {/* Main Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* SVG Live Render Canvas (8 Columns) */}
+        {/* Custom SVG TradingView Canvas (8 Columns) */}
         <div className="lg:col-span-8 flex flex-col space-y-3">
           
-          {/* Layer Filter Bar */}
-          <div className="flex items-center overflow-x-auto pb-1 gap-1.5 scrollbar-thin scrollbar-thumb-white/10">
-            <button
-              onClick={() => setActiveLayer('all')}
-              className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 shrink-0 cursor-pointer ${activeLayer === 'all' ? 'bg-white/20 text-white border border-white/20' : 'bg-white/5 text-white/40 border border-transparent hover:bg-white/10'}`}
-            >
-              <Layers size={10} />
-              All Layers
-            </button>
-            <button
-              onClick={() => setActiveLayer('wyckoff')}
-              className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${activeLayer === 'wyckoff' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' : 'bg-white/5 text-white/40 border border-transparent hover:bg-white/10'}`}
-            >
-              📊 Wyckoff Schematic
-            </button>
-            <button
-              onClick={() => setActiveLayer('ict')}
-              className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${activeLayer === 'ict' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-white/5 text-white/40 border border-transparent hover:bg-white/10'}`}
-            >
-              ⚡ ICT Confluence
-            </button>
-            <button
-              onClick={() => setActiveLayer('smc')}
-              className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${activeLayer === 'smc' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'bg-white/5 text-white/40 border border-transparent hover:bg-white/10'}`}
-            >
-              🛡️ SMC Core
-            </button>
-            <button
-              onClick={() => setActiveLayer('supply_demand')}
-              className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${activeLayer === 'supply_demand' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-white/5 text-white/40 border border-transparent hover:bg-white/10'}`}
-            >
-              🟢 Supply/Demand
-            </button>
-            <button
-              onClick={() => setActiveLayer('volume')}
-              className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider transition-all shrink-0 cursor-pointer ${activeLayer === 'volume' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-white/40 border border-transparent hover:bg-white/10'}`}
-            >
-              📈 Volume Profile
-            </button>
-          </div>
-
-          {/* TradingView-Style SVG Canvas */}
-          <div className="relative w-full aspect-[16/10] sm:aspect-[16/9] min-h-[340px] rounded-2xl bg-slate-950 border border-white/10 overflow-hidden flex flex-col select-none">
+          <div className="relative w-full aspect-[16/10] sm:aspect-[16/9] min-h-[340px] rounded-2xl bg-slate-950 border border-white/10 overflow-hidden flex flex-col select-none shadow-2xl">
             
-            {/* Grid Watermark background */}
+            {/* Elegant grid line pattern backdrop */}
             <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px),linear-gradient(to_bottom,#ffffff03_1px,transparent_1px)] bg-[size:24px_24px]" />
             
-            {/* Session Indicator Watermark */}
-            <div className="absolute top-4 left-4 flex items-center gap-1.5 opacity-60">
-              <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
-              <p className="font-mono text-[9px] text-white/60 uppercase tracking-widest bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
-                London / NY Overlap Session (1H)
+            {/* Watermark Details */}
+            <div className="absolute top-4 left-4 flex items-center gap-2 opacity-65">
+              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+              <p className="font-mono text-[9px] text-white/50 uppercase tracking-widest bg-slate-900 px-2 py-0.5 rounded border border-white/5">
+                {pairName} • 1H Chart
               </p>
             </div>
             
-            {/* Asset Identifier */}
-            <div className="absolute top-4 right-16 text-right font-mono">
-              <h4 className="text-xs font-bold text-white tracking-widest">{pairName} • 1H</h4>
-              <p className="text-[8px] text-white/40 uppercase">TradingView Confluence Vector</p>
+            <div className="absolute top-4 right-16 text-right font-mono opacity-65">
+              <h4 className="text-[10px] font-bold text-white tracking-widest">SMC ALGORITHMIC VECTOR</h4>
+              <p className="text-[7px] text-indigo-400 uppercase font-bold">1:1 High-Precision Framework</p>
             </div>
 
-            {/* Live Animation Overlay Alerts */}
+            {/* Step Alerts overlay during sequence play */}
             <AnimatePresence>
-              {animationStep > 0 && (
+              {isPlayingAnimation && animationStep > 0 && (
                 <motion.div 
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="absolute top-12 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-indigo-600/90 border border-indigo-400/30 text-white shadow-xl flex items-center gap-2 z-10"
+                  className="absolute top-14 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-slate-900/95 border border-indigo-500/30 text-white shadow-2xl flex items-center gap-2 z-10"
                 >
                   <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
                   </span>
-                  <span className="font-mono text-[9px] font-bold uppercase tracking-widest">
-                    {animationStep === 1 && "Phase 1: Gathering Retail Stops (Liquidity Pooling)"}
-                    {animationStep === 2 && "Phase 2: STOP HUNT SWEEP (Institutional Liquidity Sweep!)"}
-                    {animationStep === 3 && "Phase 3: DISPLACEMENT INFLOW (BOS/CHOCH shifting Structure)"}
-                    {animationStep === 4 && "Phase 4: MITIGATION & RE-ENTRY (Tapping the demand OB)"}
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-indigo-300">
+                    {animationStep === 1 && "Phase 1: Generating Inducement (Retail bait)"}
+                    {animationStep === 2 && "Phase 2: LIQUIDITY SWEEP! (Stop Loss Hunt Completed)"}
+                    {animationStep === 3 && "Phase 3: DISPLACEMENT BREAKOUT (CHOCH/BOS shift)"}
+                    {animationStep === 4 && "Phase 4: MITIGATION OF ORDER BLOCK (Tapping Entry!)"}
+                    {animationStep === 5 && "Phase 5: TAKE PROFIT DISPATCH (Target Liquidation Hit!)"}
                   </span>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            {/* SVG Render Element */}
+            {/* Primary SVG Chart */}
             <div className="flex-1 w-full h-full relative">
-              <svg className="w-full h-full" viewBox="0 0 500 320" preserveAspectRatio="none">
+              <svg ref={svgRef} className="w-full h-full" viewBox="0 0 500 320" preserveAspectRatio="none">
                 
-                {/* Horizontal grid guide lines */}
+                {/* Horizontal grid guidelines */}
                 {[50, 100, 150, 200, 250, 300].map((y) => (
-                  <line key={y} x1="0" y1={y} x2="450" y2={y} stroke="rgba(255,255,255,0.02)" strokeDasharray="2,4" />
+                  <line key={y} x1="0" y1={y} x2="435" y2={y} stroke="rgba(255,255,255,0.015)" strokeDasharray="3,3" />
                 ))}
 
-                {/* Left/Right Dividers */}
-                <line x1="450" y1="0" x2="450" y2="320" stroke="rgba(255,255,255,0.1)" />
+                {/* Right price scale vertical divider */}
+                <line x1="435" y1="0" x2="435" y2="320" stroke="rgba(255,255,255,0.08)" />
 
-                {/* 1. Wyckoff schematic curves & indicators */}
-                {(activeLayer === 'all' || activeLayer === 'wyckoff') && (
+                {/* 1. ORDER BLOCKS (OB) - SHADED BOXES */}
+                {/* Bullish OB is shaded in transparent green, Bearish OB is shaded in transparent red */}
+                {direction === 'bullish' ? (
                   <g>
-                    {/* Parabolic Flow Curve */}
-                    <path
-                      d={direction === 'bullish' 
-                        ? "M 20 250 Q 180 300 240 200 T 430 40" 
-                        : "M 20 100 Q 180 50 240 150 T 430 300"
-                      }
-                      fill="none"
-                      stroke={direction === 'bullish' ? 'rgba(239, 68, 68, 0.25)' : 'rgba(52, 211, 153, 0.25)'}
-                      strokeWidth="2"
-                      strokeDasharray="4,4"
-                    />
-                    
-                    {/* MM Method Marker label */}
-                    <rect x="20" y="295" width="230" height="16" rx="4" fill="rgba(0,0,0,0.6)" stroke="rgba(255,255,255,0.05)" />
-                    <text x="25" y="306" fill="rgba(255,255,255,0.6)" fontSize="7" fontFamily="monospace">
-                      CYCLE: STOP HUNT → COMPRESSION → EXPANSION
-                    </text>
-                  </g>
-                )}
-
-                {/* 2. ICT Confluence Zones */}
-                {(activeLayer === 'all' || activeLayer === 'ict') && (
-                  <g>
-                    {/* HTF PD Array - Yellow block */}
                     <rect 
-                      x="140" 
-                      y={direction === 'bullish' ? "265" : "40"} 
-                      width="80" 
-                      height="20" 
-                      fill="rgba(234, 179, 8, 0.08)" 
-                      stroke="rgba(234, 179, 8, 0.25)" 
-                      strokeWidth="1"
-                      strokeDasharray="2,2"
-                    />
-                    <text 
-                      x="145" 
-                      y={direction === 'bullish' ? "277" : "52"} 
-                      fill="#eab308" 
-                      fontSize="7" 
-                      fontFamily="monospace" 
-                      fontWeight="bold"
-                    >
-                      HTF PD ARRAY ({direction === 'bullish' ? 'DISCOUNT' : 'PREMIUM'})
-                    </text>
-
-                    {/* FVG Imbalance Area - Purple zone */}
-                    <rect 
-                      x="230" 
-                      y={direction === 'bullish' ? "180" : "130"} 
-                      width="50" 
-                      height="35" 
-                      fill="rgba(168, 85, 247, 0.08)" 
-                      stroke="rgba(168, 85, 247, 0.25)" 
-                    />
-                    <text 
-                      x="233" 
-                      y={direction === 'bullish' ? "200" : "150"} 
-                      fill="#a855f7" 
-                      fontSize="7" 
-                      fontFamily="monospace"
-                    >
-                      FVG / IMBALANCE
-                    </text>
-
-                    {/* OTE Shading zone (62% - 79%) - Orange Shaded region */}
-                    <rect 
-                      x="290" 
-                      y={direction === 'bullish' ? "140" : "170"} 
-                      width="40" 
-                      height="25" 
-                      fill="rgba(249, 115, 22, 0.1)" 
-                      stroke="rgba(249, 115, 22, 0.3)" 
-                    />
-                    <text x="294" y={direction === 'bullish' ? "155" : "185"} fill="#f97316" fontSize="7" fontFamily="monospace" fontWeight="bold">
-                      OTE ZONE
-                    </text>
-
-                    {/* Liquidity Sweep / SSL / BSL Highlight */}
-                    <path 
-                      d={direction === 'bullish' ? "M 140 275 L 210 275" : "M 140 50 L 210 50"} 
-                      stroke="rgba(239, 68, 68, 0.4)" 
-                      strokeWidth="1" 
-                      strokeDasharray="2,2" 
-                    />
-                    <circle 
-                      cx="180" 
-                      cy={direction === 'bullish' ? 275 : 50} 
-                      r="3" 
-                      fill={animationStep === 2 ? '#ef4444' : 'transparent'} 
-                      stroke="#ef4444" 
-                      strokeWidth="1" 
-                      className={animationStep === 2 ? 'animate-ping' : ''}
-                    />
-                    <text 
-                      x="150" 
-                      y={direction === 'bullish' ? "286" : "44"} 
-                      fill="#ef4444" 
-                      fontSize="7" 
-                      fontFamily="monospace"
-                    >
-                      {direction === 'bullish' ? 'SSL (SELL-SIDE) STOP HUNT' : 'BSL (BUY-SIDE) STOP HUNT'}
-                    </text>
-                  </g>
-                )}
-
-                {/* 3. SMC core blocks */}
-                {(activeLayer === 'all' || activeLayer === 'smc') && (
-                  <g>
-                    {/* Order Block Rectangle - Blue / Red */}
-                    <rect 
-                      x="280" 
-                      y={direction === 'bullish' ? "170" : "140"} 
-                      width="45" 
-                      height="30" 
-                      fill={direction === 'bullish' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(239, 68, 68, 0.12)'} 
-                      stroke={direction === 'bullish' ? 'rgba(59, 130, 246, 0.4)' : 'rgba(239, 68, 68, 0.4)'} 
-                      strokeWidth="1" 
-                    />
-                    <text 
-                      x="284" 
-                      y={direction === 'bullish' ? "188" : "158"} 
-                      fill={direction === 'bullish' ? '#3b82f6' : '#ef4444'} 
-                      fontSize="7" 
-                      fontFamily="monospace" 
-                      fontWeight="bold"
-                    >
-                      {direction === 'bullish' ? 'BULLISH OB' : 'BEARISH OB'}
-                    </text>
-
-                    {/* Mitigation / Entry marker */}
-                    <line 
-                      x1="290" 
-                      y1={direction === 'bullish' ? "185" : "155"} 
-                      x2="450" 
-                      y2={direction === 'bullish' ? "185" : "155"} 
+                      x="130" 
+                      y={getPriceScaleY(entryPrice + 0.1 * Math.abs(entryPrice - slPrice))} 
+                      width="165" 
+                      height={Math.abs(getPriceScaleY(entryPrice) - getPriceScaleY(entryPrice - 0.45 * Math.abs(entryPrice - slPrice)))} 
+                      fill="url(#bullishObGrad)" 
                       stroke="#10b981" 
-                      strokeWidth="1" 
-                      strokeDasharray="2,2" 
+                      strokeWidth="1.2"
+                      opacity={animationStep === 4 ? 0.35 : 0.18}
+                      className="transition-all duration-300"
                     />
                     <text 
-                      x="335" 
-                      y={direction === 'bullish' ? "181" : "151"} 
+                      x="135" 
+                      y={getPriceScaleY(entryPrice) + 12} 
                       fill="#10b981" 
-                      fontSize="7" 
-                      fontFamily="monospace"
+                      fontSize="6.5" 
+                      fontFamily="monospace" 
+                      fontWeight="bold"
+                      opacity="0.75"
                     >
-                      MITIGATION = ENTRY ZONE
+                      BULLISH ORDER BLOCK (OB) - SHADED
                     </text>
                   </g>
-                )}
-
-                {/* 4. Supply & Demand Zones */}
-                {(activeLayer === 'all' || activeLayer === 'supply_demand') && (
+                ) : (
                   <g>
-                    {direction === 'bullish' ? (
-                      // Demand Zone (Base RBR)
-                      <rect 
-                        x="200" 
-                        y="220" 
-                        width="90" 
-                        height="30" 
-                        fill="rgba(16, 185, 129, 0.08)" 
-                        stroke="rgba(16, 185, 129, 0.2)" 
-                      />
-                    ) : (
-                      // Supply Zone (Base DBD)
-                      <rect 
-                        x="200" 
-                        y="80" 
-                        width="90" 
-                        height="30" 
-                        fill="rgba(239, 68, 68, 0.08)" 
-                        stroke="rgba(239, 68, 68, 0.2)" 
-                      />
-                    )}
+                    <rect 
+                      x="130" 
+                      y={getPriceScaleY(entryPrice + 0.45 * Math.abs(entryPrice - slPrice))} 
+                      width="165" 
+                      height={Math.abs(getPriceScaleY(entryPrice) - getPriceScaleY(entryPrice + 0.45 * Math.abs(entryPrice - slPrice)))} 
+                      fill="url(#bearishObGrad)" 
+                      stroke="#ef4444" 
+                      strokeWidth="1.2"
+                      opacity={animationStep === 4 ? 0.35 : 0.18}
+                      className="transition-all duration-300"
+                    />
                     <text 
-                      x="205" 
-                      y={direction === 'bullish' ? "238" : "98"} 
-                      fill={direction === 'bullish' ? '#10b981' : '#ef4444'} 
-                      fontSize="7" 
-                      fontFamily="monospace"
+                      x="135" 
+                      y={getPriceScaleY(entryPrice) - 8} 
+                      fill="#ef4444" 
+                      fontSize="6.5" 
+                      fontFamily="monospace" 
+                      fontWeight="bold"
+                      opacity="0.75"
                     >
-                      {direction === 'bullish' ? 'DEMAND ZONE (RBR)' : 'SUPPLY ZONE (DBD)'}
+                      BEARISH ORDER BLOCK (OB) - SHADED
                     </text>
                   </g>
                 )}
 
-                {/* 5. Volume Profile on the right axis */}
-                {(activeLayer === 'all' || activeLayer === 'volume') && (
-                  <g opacity="0.4">
-                    {/* Draw volume bars sticking out from the right axis */}
-                    <rect x="420" y="60" width="30" height="15" fill="rgba(59, 130, 246, 0.3)" />
-                    <rect x="410" y="75" width="40" height="15" fill="rgba(59, 130, 246, 0.3)" />
-                    <rect x="390" y="90" width="60" height="15" fill="rgba(59, 130, 246, 0.3)" />
-                    <rect x="405" y="105" width="45" height="15" fill="rgba(59, 130, 246, 0.3)" />
-                    <rect x="375" y="120" width="75" height="15" fill="rgba(59, 130, 246, 0.3)" />
-                    {/* Point Of Control (POC) Blue horizontal line across */}
-                    <line x1="360" y1="127" x2="450" y2="127" stroke="#3b82f6" strokeWidth="1.5" />
-                    <text x="365" y="124" fill="#3b82f6" fontSize="6" fontFamily="monospace" fontWeight="bold">POC</text>
-                    
-                    <rect x="425" y="135" width="25" height="15" fill="rgba(59, 130, 246, 0.2)" />
-                    <text x="405" y="146" fill="rgba(255,255,255,0.4)" fontSize="6" fontFamily="monospace">LVN</text>
-                    <rect x="380" y="150" width="70" height="15" fill="rgba(59, 130, 246, 0.3)" />
-                    <rect x="415" y="165" width="35" height="15" fill="rgba(59, 130, 246, 0.3)" />
-                    <rect x="430" y="180" width="20" height="15" fill="rgba(59, 130, 246, 0.3)" />
+                {/* 2. FAIR VALUE GAPS (FVG) - UNSHADED BOXES */}
+                {/* Unshaded transparent boxes with elegant purple dashed borders */}
+                {direction === 'bullish' ? (
+                  <g>
+                    <rect 
+                      x="142" 
+                      y={getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice))} 
+                      width="100" 
+                      height={Math.abs(getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice)) - getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice)))} 
+                      fill="none" 
+                      stroke="#a855f7" 
+                      strokeWidth="1" 
+                      strokeDasharray="3,3"
+                      opacity="0.5"
+                    />
+                    <text 
+                      x="147" 
+                      y={getPriceScaleY(entryPrice) - 3} 
+                      fill="#a855f7" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      opacity="0.65"
+                    >
+                      FVG (UNSHADED)
+                    </text>
+                  </g>
+                ) : (
+                  <g>
+                    <rect 
+                      x="142" 
+                      y={getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice))} 
+                      width="100" 
+                      height={Math.abs(getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice)) - getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice)))} 
+                      fill="none" 
+                      stroke="#a855f7" 
+                      strokeWidth="1" 
+                      strokeDasharray="3,3"
+                      opacity="0.5"
+                    />
+                    <text 
+                      x="147" 
+                      y={getPriceScaleY(entryPrice) + 10} 
+                      fill="#a855f7" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      opacity="0.65"
+                    >
+                      FVG (UNSHADED)
+                    </text>
                   </g>
                 )}
 
-                {/* 6. Draw Candles */}
+                {/* 3. DOTTED LINES FOR INDUCEMENT AND LIQUIDITY SWEEPS */}
+                {/* Inducement (IDM) Dotted Line */}
+                {direction === 'bullish' ? (
+                  <g>
+                    <line 
+                      x1="84" 
+                      y1={getPriceScaleY(entryPrice - 0.6 * Math.abs(entryPrice - slPrice))} 
+                      x2="280" 
+                      y2={getPriceScaleY(entryPrice - 0.6 * Math.abs(entryPrice - slPrice))} 
+                      stroke="#eab308" 
+                      strokeWidth="1.2" 
+                      strokeDasharray="2,3" 
+                      opacity={animationStep === 1 ? 0.95 : 0.55}
+                    />
+                    <text 
+                      x="90" 
+                      y={getPriceScaleY(entryPrice - 0.6 * Math.abs(entryPrice - slPrice)) - 5} 
+                      fill="#eab308" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                      opacity={animationStep === 1 ? 1 : 0.6}
+                    >
+                      INDUCEMENT LEVEL (IDM)
+                    </text>
+                  </g>
+                ) : (
+                  <g>
+                    <line 
+                      x1="84" 
+                      y1={getPriceScaleY(entryPrice + 0.6 * Math.abs(entryPrice - slPrice))} 
+                      x2="280" 
+                      y2={getPriceScaleY(entryPrice + 0.6 * Math.abs(entryPrice - slPrice))} 
+                      stroke="#eab308" 
+                      strokeWidth="1.2" 
+                      strokeDasharray="2,3" 
+                      opacity={animationStep === 1 ? 0.95 : 0.55}
+                    />
+                    <text 
+                      x="90" 
+                      y={getPriceScaleY(entryPrice + 0.6 * Math.abs(entryPrice - slPrice)) + 9} 
+                      fill="#eab308" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                      opacity={animationStep === 1 ? 1 : 0.6}
+                    >
+                      INDUCEMENT LEVEL (IDM)
+                    </text>
+                  </g>
+                )}
+
+                {/* Liquidity Sweep Dotted Line */}
+                {direction === 'bullish' ? (
+                  <g>
+                    <line 
+                      x1="30" 
+                      y1={getPriceScaleY(entryPrice - 0.94 * Math.abs(entryPrice - slPrice))} 
+                      x2="150" 
+                      y2={getPriceScaleY(entryPrice - 0.94 * Math.abs(entryPrice - slPrice))} 
+                      stroke="#ff4444" 
+                      strokeWidth="1.2" 
+                      strokeDasharray="2,3" 
+                      opacity={animationStep === 2 ? 0.95 : 0.55}
+                    />
+                    <text 
+                      x="35" 
+                      y={getPriceScaleY(entryPrice - 0.94 * Math.abs(entryPrice - slPrice)) - 5} 
+                      fill="#ff4444" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                      opacity={animationStep === 2 ? 1 : 0.6}
+                    >
+                      LIQUIDITY SWEEP (SSL ✘)
+                    </text>
+                  </g>
+                ) : (
+                  <g>
+                    <line 
+                      x1="30" 
+                      y1={getPriceScaleY(entryPrice + 0.94 * Math.abs(entryPrice - slPrice))} 
+                      x2="150" 
+                      y2={getPriceScaleY(entryPrice + 0.94 * Math.abs(entryPrice - slPrice))} 
+                      stroke="#ff4444" 
+                      strokeWidth="1.2" 
+                      strokeDasharray="2,3" 
+                      opacity={animationStep === 2 ? 0.95 : 0.55}
+                    />
+                    <text 
+                      x="35" 
+                      y={getPriceScaleY(entryPrice + 0.94 * Math.abs(entryPrice - slPrice)) + 9} 
+                      fill="#ff4444" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                      opacity={animationStep === 2 ? 1 : 0.6}
+                    >
+                      LIQUIDITY SWEEP (BSL ✘)
+                    </text>
+                  </g>
+                )}
+
+
+                {/* 4. TRENDLINES FOR BOS AND CHOCH LEVELS */}
+                {/* CHoCH Trendline */}
+                {direction === 'bullish' ? (
+                  <g>
+                    <line 
+                      x1="135" 
+                      y1={getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice))} 
+                      x2="195" 
+                      y2={getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice))} 
+                      stroke="#f59e0b" 
+                      strokeWidth="1.5" 
+                      opacity={animationStep >= 3 ? 0.95 : 0.5}
+                    />
+                    <text 
+                      x="142" 
+                      y={getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice)) - 5} 
+                      fill="#f59e0b" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                    >
+                      CHoCH ──
+                    </text>
+                  </g>
+                ) : (
+                  <g>
+                    <line 
+                      x1="135" 
+                      y1={getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice))} 
+                      x2="195" 
+                      y2={getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice))} 
+                      stroke="#f59e0b" 
+                      strokeWidth="1.5" 
+                      opacity={animationStep >= 3 ? 0.95 : 0.5}
+                    />
+                    <text 
+                      x="142" 
+                      y={getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice)) + 9} 
+                      fill="#f59e0b" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                    >
+                      CHoCH ──
+                    </text>
+                  </g>
+                )}
+
+                {/* BOS Trendline */}
+                {direction === 'bullish' ? (
+                  <g>
+                    <line 
+                      x1="192" 
+                      y1={getPriceScaleY(entryPrice + 0.9 * Math.abs(entryPrice - slPrice))} 
+                      x2="245" 
+                      y2={getPriceScaleY(entryPrice + 0.9 * Math.abs(entryPrice - slPrice))} 
+                      stroke="#22c55e" 
+                      strokeWidth="1.5" 
+                      opacity={animationStep >= 3 ? 0.95 : 0.5}
+                    />
+                    <text 
+                      x="197" 
+                      y={getPriceScaleY(entryPrice + 0.9 * Math.abs(entryPrice - slPrice)) - 5} 
+                      fill="#22c55e" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                    >
+                      BOS ──
+                    </text>
+                  </g>
+                ) : (
+                  <g>
+                    <line 
+                      x1="192" 
+                      y1={getPriceScaleY(entryPrice - 0.9 * Math.abs(entryPrice - slPrice))} 
+                      x2="245" 
+                      y2={getPriceScaleY(entryPrice - 0.9 * Math.abs(entryPrice - slPrice))} 
+                      stroke="#ef4444" 
+                      strokeWidth="1.5" 
+                      opacity={animationStep >= 3 ? 0.95 : 0.5}
+                    />
+                    <text 
+                      x="197" 
+                      y={getPriceScaleY(entryPrice - 0.9 * Math.abs(entryPrice - slPrice)) + 9} 
+                      fill="#ef4444" 
+                      fontSize="6" 
+                      fontFamily="monospace"
+                      fontWeight="bold"
+                    >
+                      BOS ──
+                    </text>
+                  </g>
+                )}
+
+
+                {/* 5. PRICE ACTION CANDLESTICKS */}
                 <g>
                   {candles.map((c, i) => {
                     const isBear = c.type === 'bear';
-                    const isSweeping = c.isSweep && animationStep === 2;
-                    const isMitigating = c.isMitigation && animationStep === 4;
-                    
-                    let wickColor = isBear ? '#ef4444' : '#10b981';
-                    let bodyColor = isBear ? 'rgba(239, 68, 68, 0.5)' : 'rgba(16, 185, 129, 0.5)';
-                    let strokeColor = isBear ? '#ef4444' : '#10b981';
+                    let wickColor = isBear ? '#ef4444' : '#22c55e';
+                    let bodyColor = isBear ? 'rgba(239, 68, 68, 0.45)' : 'rgba(34, 197, 94, 0.45)';
+                    let strokeColor = isBear ? '#ef4444' : '#22c55e';
 
-                    // Glow or change colors during animations
-                    if (isSweeping) {
-                      bodyColor = '#ef4444';
-                      wickColor = '#f43f5e';
+                    // Highlight sweeps or mitigation during active sequence step
+                    if (c.label === 'SWEEP' && animationStep === 2) {
+                      bodyColor = '#ff4444';
+                      wickColor = '#ff5555';
                       strokeColor = '#ffffff';
-                    } else if (isMitigating) {
-                      bodyColor = '#10b981';
-                      wickColor = '#34d399';
+                    } else if (c.label === 'ENTRY' && animationStep === 4) {
+                      bodyColor = '#22c55e';
+                      wickColor = '#4ade80';
+                      strokeColor = '#ffffff';
+                    } else if (c.label === 'TARGET' && animationStep === 5) {
+                      bodyColor = '#2563eb';
+                      wickColor = '#3b82f6';
                       strokeColor = '#ffffff';
                     }
 
                     return (
                       <g key={i}>
-                        {/* Candle wick */}
+                        {/* Shadow Wick */}
                         <line 
                           x1={c.x} 
                           y1={c.high} 
                           x2={c.x} 
                           y2={c.low} 
                           stroke={wickColor} 
-                          strokeWidth={c.isSweep ? "2" : "1.5"} 
+                          strokeWidth="1.5" 
                         />
-                        {/* Candle body */}
+                        {/* Real Candle Body */}
                         <rect 
-                          x={c.x - 5} 
+                          x={c.x - 4.5} 
                           y={Math.min(c.open, c.close)} 
-                          width="10" 
-                          height={Math.max(4, Math.abs(c.open - c.close))} 
+                          width="9" 
+                          height={Math.max(3, Math.abs(c.open - c.close))} 
                           fill={bodyColor} 
                           stroke={strokeColor} 
                           strokeWidth="1" 
+                          rx="0.5"
                         />
                         
-                        {/* Wyckoff Phase Annotation Text Labels */}
-                        {(activeLayer === 'all' || activeLayer === 'wyckoff') && c.label && (
-                          <g>
+                        {/* Mini floating labels on essential structural candles */}
+                        {c.label && (
+                          <g opacity="0.8">
                             <rect 
-                              x={c.x - 14} 
-                              y={isBear ? c.low + 6 : c.high - 16} 
-                              width="28" 
-                              height="10" 
+                              x={c.x - 12} 
+                              y={isBear ? c.low + 5 : c.high - 14} 
+                              width="24" 
+                              height="9" 
                               rx="2" 
-                              fill="rgba(0,0,0,0.85)" 
-                              stroke="rgba(255,255,255,0.15)" 
+                              fill="rgba(15, 23, 42, 0.85)" 
+                              stroke="rgba(255,255,255,0.1)" 
                               strokeWidth="0.5" 
                             />
                             <text 
                               x={c.x} 
-                              y={isBear ? c.low + 13 : c.high - 9} 
-                              fill={c.isSweep ? "#ef4444" : "rgba(255,255,255,0.8)"} 
-                              fontSize="6" 
+                              y={isBear ? c.low + 11 : c.high - 8} 
+                              fill={c.label === 'SWEEP' ? '#ff4444' : c.label === 'ENTRY' ? '#22c55e' : c.label === 'TARGET' ? '#2563eb' : 'rgba(255,255,255,0.75)'} 
+                              fontSize="5.5" 
                               fontFamily="monospace" 
                               fontWeight="bold" 
                               textAnchor="middle"
@@ -604,131 +824,131 @@ export default function UltimateConfluenceChart({ signal, userProfile, addToast 
                   })}
                 </g>
 
-                {/* 7. Plot exact signal price levels along the right TradingView-style scale */}
+
+                {/* 6. EXACT LEVELS PLOT: RED FOR SL, GREEN FOR ENTRY, ROYAL BLUE FOR TPs */}
+                {/* STOP LOSS LEVEL (Glowing RED) */}
                 <g>
-                  {/* Stop Loss Line */}
                   <line 
                     x1="0" 
                     y1={getPriceScaleY(slPrice)} 
-                    x2="450" 
+                    x2="435" 
                     y2={getPriceScaleY(slPrice)} 
                     stroke="#ef4444" 
-                    strokeWidth="1" 
+                    strokeWidth="1.5" 
                     strokeDasharray="4,2" 
                   />
-                  <rect x="452" y={getPriceScaleY(slPrice) - 6} width="45" height="12" rx="2" fill="#ef4444" />
-                  <text x="455" y={getPriceScaleY(slPrice) + 3} fill="#ffffff" fontSize="7" fontFamily="monospace" fontWeight="bold">
-                    SL: {slPrice.toFixed(2)}
+                  <rect x="437" y={getPriceScaleY(slPrice) - 6} width="60" height="12" rx="2" fill="#ef4444" />
+                  <text x="440" y={getPriceScaleY(slPrice) + 2.5} fill="#ffffff" fontSize="7" fontFamily="monospace" fontWeight="bold">
+                    SL {slPrice.toFixed(2)}
                   </text>
+                </g>
 
-                  {/* Entry Zone */}
+                {/* ENTRY LEVEL (Bright GREEN) */}
+                <g>
                   <line 
                     x1="0" 
                     y1={getPriceScaleY(entryPrice)} 
-                    x2="450" 
+                    x2="435" 
                     y2={getPriceScaleY(entryPrice)} 
-                    stroke="#f59e0b" 
-                    strokeWidth="1" 
-                    strokeDasharray="4,2" 
+                    stroke="#10b981" 
+                    strokeWidth="1.8" 
                   />
-                  <rect x="452" y={getPriceScaleY(entryPrice) - 6} width="45" height="12" rx="2" fill="#f59e0b" />
-                  <text x="455" y={getPriceScaleY(entryPrice) + 3} fill="#000000" fontSize="7" fontFamily="monospace" fontWeight="bold">
-                    ENT: {entryPrice.toFixed(2)}
+                  <rect x="437" y={getPriceScaleY(entryPrice) - 6} width="60" height="12" rx="2" fill="#10b981" />
+                  <text x="440" y={getPriceScaleY(entryPrice) + 2.5} fill="#000000" fontSize="7" fontFamily="monospace" fontWeight="bold">
+                    ENT {entryPrice.toFixed(2)}
                   </text>
+                </g>
 
-                  {/* TP1 Line */}
+                {/* TAKE PROFIT 1 LEVEL (Royal Blue) */}
+                <g>
                   <line 
                     x1="0" 
                     y1={getPriceScaleY(tp1Price)} 
-                    x2="450" 
+                    x2="435" 
                     y2={getPriceScaleY(tp1Price)} 
-                    stroke="#10b981" 
-                    strokeWidth="1" 
-                    strokeDasharray="4,2" 
+                    stroke="#2563eb" 
+                    strokeWidth="1.2" 
+                    strokeDasharray="3,1" 
                   />
-                  <rect x="452" y={getPriceScaleY(tp1Price) - 6} width="45" height="12" rx="2" fill="#10b981" />
-                  <text x="455" y={getPriceScaleY(tp1Price) + 3} fill="#000000" fontSize="7" fontFamily="monospace" fontWeight="bold">
-                    TP1: {tp1Price.toFixed(2)}
+                  <rect x="437" y={getPriceScaleY(tp1Price) - 6} width="60" height="12" rx="2" fill="#2563eb" />
+                  <text x="440" y={getPriceScaleY(tp1Price) + 2.5} fill="#ffffff" fontSize="7" fontFamily="monospace" fontWeight="bold">
+                    TP1 {tp1Price.toFixed(2)}
                   </text>
+                </g>
 
-                  {/* TP2 Line */}
+                {/* TAKE PROFIT 2 LEVEL (Royal Blue) */}
+                <g>
                   <line 
                     x1="0" 
                     y1={getPriceScaleY(tp2Price)} 
-                    x2="450" 
+                    x2="435" 
                     y2={getPriceScaleY(tp2Price)} 
-                    stroke="#059669" 
-                    strokeWidth="1" 
-                    strokeDasharray="4,2" 
+                    stroke="#2563eb" 
+                    strokeWidth="1.2" 
+                    strokeDasharray="3,1" 
                   />
-                  <rect x="452" y={getPriceScaleY(tp2Price) - 6} width="45" height="12" rx="2" fill="#059669" />
-                  <text x="455" y={getPriceScaleY(tp2Price) + 3} fill="#ffffff" fontSize="7" fontFamily="monospace" fontWeight="bold">
-                    TP2: {tp2Price.toFixed(2)}
+                  <rect x="437" y={getPriceScaleY(tp2Price) - 6} width="60" height="12" rx="2" fill="#2563eb" />
+                  <text x="440" y={getPriceScaleY(tp2Price) + 2.5} fill="#ffffff" fontSize="7" fontFamily="monospace" fontWeight="bold">
+                    TP2 {tp2Price.toFixed(2)}
                   </text>
                 </g>
 
-                {/* Draw CHOCH / MSS Red dotted line */}
-                {(activeLayer === 'all' || activeLayer === 'ict') && (
-                  <g>
-                    <path 
-                      d={direction === 'bullish' ? "M 200 170 L 250 170" : "M 200 195 L 250 195"} 
-                      stroke="#ef4444" 
-                      strokeWidth="1.2" 
-                      strokeDasharray="3,3" 
-                    />
-                    <circle cx="205" cy={direction === 'bullish' ? 170 : 195} r="2.5" fill="#ef4444" />
-                    <text 
-                      x="212" 
-                      y={direction === 'bullish' ? "166" : "205"} 
-                      fill="#ef4444" 
-                      fontSize="6.5" 
-                      fontFamily="monospace" 
-                      fontWeight="bold"
-                    >
-                      {direction === 'bullish' ? 'BULLISH MSS / CHOCH' : 'BEARISH MSS / CHOCH'}
-                    </text>
-                  </g>
-                )}
-
-                {/* Projected path arrow */}
+                {/* TAKE PROFIT 3 LEVEL (Royal Blue) */}
                 <g>
-                  <path
-                    d={direction === 'bullish' 
-                      ? "M 300 185 Q 320 180 340 100 T 430 35" 
-                      : "M 300 175 Q 320 180 340 240 T 430 295"
-                    }
-                    fill="none"
-                    stroke="#10b981"
-                    strokeWidth="1.5"
-                    markerEnd="url(#arrow)"
+                  <line 
+                    x1="0" 
+                    y1={getPriceScaleY(tp3Price)} 
+                    x2="435" 
+                    y2={getPriceScaleY(tp3Price)} 
+                    stroke="#2563eb" 
+                    strokeWidth="1.2" 
+                    strokeDasharray="3,1" 
                   />
-                  <defs>
-                    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#10b981" />
-                    </marker>
-                  </defs>
-                  <text 
-                    x="345" 
-                    y={direction === 'bullish' ? "120" : "215"} 
-                    fill="#10b981" 
-                    fontSize="7" 
-                    fontFamily="monospace" 
-                    fontWeight="bold"
-                    transform={`rotate(${direction === 'bullish' ? -35 : 35}, 345, ${direction === 'bullish' ? 120 : 215})`}
-                  >
-                    PROJECTED {direction === 'bullish' ? 'MARKUP' : 'MARKDOWN'}
+                  <rect x="437" y={getPriceScaleY(tp3Price) - 6} width="60" height="12" rx="2" fill="#2563eb" />
+                  <text x="440" y={getPriceScaleY(tp3Price) + 2.5} fill="#ffffff" fontSize="7" fontFamily="monospace" fontWeight="bold">
+                    TP3 {tp3Price.toFixed(2)}
                   </text>
                 </g>
+
+                {/* TAKE PROFIT 4 LEVEL (Royal Blue) */}
+                <g>
+                  <line 
+                    x1="0" 
+                    y1={getPriceScaleY(tp4Price)} 
+                    x2="435" 
+                    y2={getPriceScaleY(tp4Price)} 
+                    stroke="#2563eb" 
+                    strokeWidth="1.2" 
+                    strokeDasharray="3,1" 
+                    opacity="0.85"
+                  />
+                  <rect x="437" y={getPriceScaleY(tp4Price) - 6} width="60" height="12" rx="2" fill="#2563eb" opacity="0.85" />
+                  <text x="440" y={getPriceScaleY(tp4Price) + 2.5} fill="#ffffff" fontSize="7" fontFamily="monospace" fontWeight="bold">
+                    TP4 {tp4Price.toFixed(2)}
+                  </text>
+                </g>
+
+                {/* Linear gradient markers definition for shaded order block boxes */}
+                <defs>
+                  <linearGradient id="bullishObGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.25"/>
+                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.05"/>
+                  </linearGradient>
+                  <linearGradient id="bearishObGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ef4444" stopOpacity="0.25"/>
+                    <stop offset="100%" stopColor="#ef4444" stopOpacity="0.05"/>
+                  </linearGradient>
+                </defs>
 
               </svg>
             </div>
 
-            {/* Bottom Timeline Watermark */}
+            {/* Timestamps footer alignment */}
             <div className="h-6 border-t border-white/5 bg-black/50 px-4 flex items-center justify-between text-[8px] text-white/30 font-mono">
-              <span>08:00 (London Open)</span>
-              <span>12:00 (NY Session Sweep)</span>
-              <span>13:30 (Overlap Sweep)</span>
-              <span>16:00 (London Close)</span>
+              <span>08:00 (London Session Begin)</span>
+              <span>12:00 (NY overlap - Sweep Window)</span>
+              <span>13:30 (Institutional Inflow)</span>
+              <span>16:00 (SMC Expansion Complete)</span>
             </div>
 
           </div>
@@ -740,43 +960,52 @@ export default function UltimateConfluenceChart({ signal, userProfile, addToast 
           {/* Main Title Badge */}
           <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
             <div className="flex items-center gap-2 text-indigo-400">
-              <BookOpen size={16} />
-              <h4 className="text-xs font-bold uppercase tracking-widest">SMC Educational Briefing</h4>
+              <Award size={16} />
+              <h4 className="text-xs font-bold uppercase tracking-widest">SMC Orderflow Briefing</h4>
             </div>
-            <p className="text-[10px] text-white/40 mt-1 uppercase">Oracle Companion Guide</p>
+            <p className="text-[10px] text-white/40 mt-1 uppercase">Oracle Live Confluence Companion</p>
           </div>
 
-          {/* Why the Setup Works panel */}
-          <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-2">
-            <div className="flex items-center gap-2 text-emerald-400">
-              <ShieldCheck size={14} />
-              <h5 className="text-[11px] font-bold uppercase tracking-wider">Why the Signal Will Work</h5>
+          {/* Color Guide details */}
+          <div className="p-4 rounded-xl bg-slate-900 border border-white/5 space-y-3">
+            <h5 className="text-[11px] font-bold text-white uppercase tracking-wider">High-Precision Legend</h5>
+            
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded bg-red-500 inline-block border border-red-600" />
+                <span className="text-xs text-white/80"><strong className="text-red-400">Stop Loss (SL)</strong>: Hard Invalidation Target</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded bg-emerald-500 inline-block border border-emerald-600" />
+                <span className="text-xs text-white/80"><strong className="text-emerald-400">Entry Zone</strong>: Mitigated Institutional Base</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-3 h-3 rounded bg-blue-600 inline-block border border-blue-700" />
+                <span className="text-xs text-white/80"><strong className="text-blue-400">Take Profits (TP)</strong>: Royal Blue Liquidation Nodes</span>
+              </div>
             </div>
-            <p className="text-xs text-white/70 leading-relaxed">
-              Price sweeped preceding session high/low stop pools ({direction === 'bullish' ? 'SSL' : 'BSL'}). Retail traders were forced out of their positions, creating rapid order fills for institutional algorithms. A strong displacement impulse shifted the local bias, leaving a highly visible Fair Value Gap (imbalance) and a clean mitigation block at <code className="text-amber-400 bg-amber-400/10 px-1 rounded font-mono">{entryPrice.toFixed(2)}</code> which acts as an optimal springboard.
-            </p>
           </div>
 
-          {/* Setup Invalidation / Violation Rules */}
-          <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 space-y-2">
-            <div className="flex items-center gap-2 text-red-400">
-              <AlertTriangle size={14} />
-              <h5 className="text-[11px] font-bold uppercase tracking-wider">What Would Violate Setup</h5>
-            </div>
-            <p className="text-xs text-white/70 leading-relaxed">
-              If a 1-hour or 4-hour candle closes strictly beyond <code className="text-red-400 bg-red-400/10 px-1 rounded font-mono">{slPrice.toFixed(2)}</code>, the institutional demand base has failed. The Order Block converts to a Bearish/Bullish Breaker block, shifting the medium-term flow direction. We exit immediately to protect capital—capital preservation is our ultimate directive.
-            </p>
-          </div>
-
-          {/* SMC spotlight explanation */}
-          <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-2.5">
-            <div className="flex items-center gap-2 text-amber-400">
+          {/* Educational Concept Guide */}
+          <div className="p-4 rounded-xl bg-slate-900 border border-white/5 space-y-3">
+            <div className="flex items-center gap-1.5 text-amber-400">
               <Info size={14} />
-              <h5 className="text-[11px] font-bold uppercase tracking-wider">SMC Spotlight: Order Blocks</h5>
+              <h5 className="text-[11px] font-bold uppercase tracking-wider">Concept Alignment</h5>
             </div>
-            <p className="text-xs text-white/60 leading-relaxed">
-              An Order Block is a specialized zone where market makers place heavy, passive buy or sell limit orders. When price aggressively breaks out, it leaves behind an imbalance (FVG). When price re-enters to tap into the unmitigated OB base, it represents the exact spot institutional players add further capital—this represents our lowest risk entry point.
-            </p>
+            <div className="text-xs text-white/60 space-y-2.5 leading-relaxed">
+              <p>
+                <strong className="text-white">Order Block (OB)</strong>: Represented by the <span className="text-emerald-400 font-bold">shaded boxes</span>, representing high-volume institutional order limits.
+              </p>
+              <p>
+                <strong className="text-white">Fair Value Gaps (FVG)</strong>: Represented by the <span className="text-purple-400 font-bold">unshaded boxes</span>, visualizing market imbalances that algorithms seek to fill.
+              </p>
+              <p>
+                <strong className="text-white">BOS & CHoCH</strong>: Plotted via custom <span className="text-amber-400 font-bold">Trendlines</span>, marking local structural shifts (CHoCH) and trend continuations (BOS).
+              </p>
+              <p>
+                <strong className="text-white">Liquidity Sweep & IDM</strong>: Illustrated via high-precision <span className="text-red-400 font-bold">dotted lines</span>, visualizing stop hunt levels where retail traders are swept before the expansion.
+              </p>
+            </div>
           </div>
 
         </div>

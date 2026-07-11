@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef } from 'react';
 import { dbService } from '../services/dbService';
 import { where } from 'firebase/firestore';
-import { Trade, UserProfile } from '../types';
+import { Trade, UserProfile, Signal } from '../types';
 import { useMarketContext } from '../MarketContext';
 import { speak } from '../lib/voice';
 import { getBotCharacter } from '../lib/themeUtils';
 import { sendSignalUpdateToTelegram } from '../services/communicationService';
+import { calculateAutoLotSize } from '../lib/tradeUtils';
 
 export function useTradeMonitor(
   userProfile: UserProfile, 
@@ -15,10 +16,18 @@ export function useTradeMonitor(
   const { marketPrices } = useMarketContext();
   const [openTrades, setOpenTrades] = useState<Trade[]>([]);
   const marketPricesRef = useRef(marketPrices);
+  const priceHistoryRef = useRef<Record<string, number[]>>({});
+  const lastTriggerTimeRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     marketPricesRef.current = marketPrices;
   }, [marketPrices]);
+
+  // Real-time Automated BOS/CHoCH Structural Scanner (Fully managed 24/7 by serverScanner.ts in the background)
+  // Client-side automated signal generation is disabled to avoid duplicate trades and double-telegram messages.
+  useEffect(() => {
+    // Background server handles this securely.
+  }, []);
 
   useEffect(() => {
     if (!userProfile.uid) return;
@@ -77,7 +86,6 @@ export function useTradeMonitor(
 
         // Check Active TP or TP4
         if (!shouldClose) {
-          // If active_tp is set, exit entirely when that specific TP is hit.
           const activeLevelPrice = trade[`tp${trade.active_tp || 4}` as keyof Trade] as number;
           if (trade.type === 'buy' && currentPrice >= activeLevelPrice) {
             shouldClose = true;
@@ -105,29 +113,23 @@ export function useTradeMonitor(
                 const newTpHits = [...(trade.tp_hits || []), tp.level];
                 const updateData: any = { tp_hits: newTpHits };
 
-                // PART 2: AT TP HIT -> MOVE SL ACCORDINGLY
+                // MOVE SL ACCORDINGLY ON TP HITS
                 if (tp.level === 'TP1') {
                   updateData.stop_loss = trade.entry_price;
                   addToast(`Celestial Shield Activated: ${trade.pair} SL moved to breakeven!`, 'info');
                   speak(`Guardian protection active. Stop loss for ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has been moved to entry.`, userProfile.notification_settings.sound, sentinelChar);
-                  
-                  // Auto-broadcast TP1 hit to Telegram with BE level explanation
                   sendSignalUpdateToTelegram(trade, 'TP1_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram BE Update failed:", e));
                   
                 } else if (tp.level === 'TP2') {
                   updateData.stop_loss = trade.tp1;
                   addToast(`Profit Secured: ${trade.pair} SL moved to TP1!`, 'success');
                   speak(`Profit secured. Stop loss for ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has been moved to TP1.`, userProfile.notification_settings.sound, oracleChar);
-                  
-                  // Auto-broadcast TP2 hit to Telegram
                   sendSignalUpdateToTelegram(trade, 'TP2_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram TP2 Update failed:", e));
                   
                 } else if (tp.level === 'TP3') {
                   updateData.stop_loss = trade.tp2;
                   addToast(`Profit Secured: ${trade.pair} SL moved to TP2!`, 'success');
                   speak(`Profit secured. Stop loss for ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} has been moved to TP2.`, userProfile.notification_settings.sound, oracleChar);
-                  
-                  // Auto-broadcast TP3 hit to Telegram
                   sendSignalUpdateToTelegram(trade, 'TP3_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram TP3 Update failed:", e));
                 }
 
@@ -140,12 +142,9 @@ export function useTradeMonitor(
               }
             }
           }
-
-          // Dynamic trailing disabled as per explicit TP trailing rules.
         }
 
         if (shouldClose) {
-          // Calculate final P/L
           const finalPnl = trade.type === 'buy' 
             ? (currentPrice - trade.entry_price) * (trade.lot_size || 0.1) * 100 
             : (trade.entry_price - currentPrice) * (trade.lot_size || 0.1) * 100;
@@ -164,7 +163,6 @@ export function useTradeMonitor(
           if (onCloseTrade) {
             await onCloseTrade(updatedTrade, reason);
 
-            // Fetch the signal and mark its status as LOST or WON
             try {
               if (trade.signal_id) {
                 const signalResultStatus = finalPnl > 0 ? 'Won' : 'Lost';
@@ -177,7 +175,6 @@ export function useTradeMonitor(
               console.error("Failed to update signal status", e);
             }
 
-            // Auto-broadcast final close status to Telegram with SMC educational explanation
             if (reason.toLowerCase().includes('take profit')) {
               sendSignalUpdateToTelegram(trade, 'TP_FINAL_HIT', currentPrice, userProfile.integrations).catch(e => console.error("Telegram TP final update failed:", e));
             } else if (reason.toLowerCase().includes('break even')) {
@@ -189,7 +186,6 @@ export function useTradeMonitor(
             speak(`Ritual complete. ${trade.pair.replace('frx', '').replace('R_', 'Volatility ')} closed due to ${reason}.`, userProfile.notification_settings.sound, oracleChar);
           }
         } else {
-          // Update current P/L and MAE/MFE while open
           const currentPnl = trade.type === 'buy' 
             ? (currentPrice - trade.entry_price) * (trade.lot_size || 0.1) * 100 
             : (trade.entry_price - currentPrice) * (trade.lot_size || 0.1) * 100;
@@ -212,7 +208,7 @@ export function useTradeMonitor(
           }
         }
       });
-    }, 2000); // Check every 2 seconds instead of every tick
+    }, 2000);
 
     return () => clearInterval(monitorInterval);
   }, [openTrades, onCloseTrade, userProfile.uid, addToast]);

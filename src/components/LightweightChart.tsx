@@ -132,6 +132,7 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
   const macdHistRef = useRef<any>(null);
   
   const dataRef = useRef<any[]>([]);
+  const smcPriceLinesRef = useRef<any[]>([]);
   const [showIndicators, setShowIndicators] = useState(true);
   const [showSMC, setShowSMC] = useState(true);
   const [showBB, setShowBB] = useState(false);
@@ -431,8 +432,19 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
       if (!seriesRef.current) return;
       let markers: any[] = [];
       
+      // Clear old SMC price lines safely
+      smcPriceLinesRef.current.forEach((line) => {
+        if (seriesRef.current) {
+          try {
+            seriesRef.current.removePriceLine(line);
+          } catch (e) {}
+        }
+      });
+      smcPriceLinesRef.current = [];
+
       if (showSMC && dataRef.current && dataRef.current.length > 0) {
-          const smcMarkers = detectSMC(dataRef.current).map(m => ({
+          const calculatedMarkers = detectSMC(dataRef.current);
+          const smcMarkers = calculatedMarkers.map(m => ({
               time: m.time,
               position: m.position,
               color: m.color,
@@ -441,6 +453,57 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
               size: 2
           }));
           markers = [...markers, ...smcMarkers];
+
+          // Draw highly polished premium SMC structural zones
+          const latestBullishFvg = [...calculatedMarkers].reverse().find(m => m.type === 'bullish_fvg');
+          const latestBearishFvg = [...calculatedMarkers].reverse().find(m => m.type === 'bearish_fvg');
+          const latestBullishOb = [...calculatedMarkers].reverse().find(m => m.type === 'bullish_ob');
+          const latestBearishOb = [...calculatedMarkers].reverse().find(m => m.type === 'bearish_ob');
+
+          if (latestBullishFvg && latestBullishFvg.price) {
+            const line = seriesRef.current.createPriceLine({
+              price: latestBullishFvg.price,
+              color: '#a855f7',
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: 'BULLISH FVG',
+            });
+            smcPriceLinesRef.current.push(line);
+          }
+          if (latestBearishFvg && latestBearishFvg.price) {
+            const line = seriesRef.current.createPriceLine({
+              price: latestBearishFvg.price,
+              color: '#ec4899',
+              lineWidth: 1,
+              lineStyle: LineStyle.Dashed,
+              axisLabelVisible: true,
+              title: 'BEARISH FVG',
+            });
+            smcPriceLinesRef.current.push(line);
+          }
+          if (latestBullishOb && latestBullishOb.price) {
+            const line = seriesRef.current.createPriceLine({
+              price: latestBullishOb.price,
+              color: '#10b981',
+              lineWidth: 1.5,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: 'BULLISH OB ZONE',
+            });
+            smcPriceLinesRef.current.push(line);
+          }
+          if (latestBearishOb && latestBearishOb.price) {
+            const line = seriesRef.current.createPriceLine({
+              price: latestBearishOb.price,
+              color: '#ef4444',
+              lineWidth: 1.5,
+              lineStyle: LineStyle.Solid,
+              axisLabelVisible: true,
+              title: 'BEARISH OB ZONE',
+            });
+            smcPriceLinesRef.current.push(line);
+          }
       }
       
       // Sort markers by time as strictly required by lightweight-charts
@@ -511,6 +574,9 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
             color: newCandle.close >= newCandle.open ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)'
           });
         }
+
+        // Live refresh of SMC structures
+        updateMarkers();
       }
     };
 
@@ -575,8 +641,19 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
     
     let markers: any[] = [];
     
+    // Clear old SMC price lines safely
+    smcPriceLinesRef.current.forEach((line) => {
+      if (seriesRef.current) {
+        try {
+          seriesRef.current.removePriceLine(line);
+        } catch (e) {}
+      }
+    });
+    smcPriceLinesRef.current = [];
+
     if (showSMC) {
-        const smcMarkers = detectSMC(dataRef.current).map((m: any) => ({
+        const calculatedMarkers = detectSMC(dataRef.current);
+        const smcMarkers = calculatedMarkers.map((m: any) => ({
             time: m.time,
             position: m.position,
             color: m.color,
@@ -585,6 +662,57 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
             size: 2
         }));
         markers = [...markers, ...smcMarkers];
+
+        // Draw premium horizontal lines for the latest SMC FVG and OB
+        const latestBullishFvg = [...calculatedMarkers].reverse().find(m => m.type === 'bullish_fvg');
+        const latestBearishFvg = [...calculatedMarkers].reverse().find(m => m.type === 'bearish_fvg');
+        const latestBullishOb = [...calculatedMarkers].reverse().find(m => m.type === 'bullish_ob');
+        const latestBearishOb = [...calculatedMarkers].reverse().find(m => m.type === 'bearish_ob');
+
+        if (latestBullishFvg && latestBullishFvg.price) {
+          const line = seriesRef.current.createPriceLine({
+            price: latestBullishFvg.price,
+            color: '#a855f7',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'BULLISH FVG',
+          });
+          smcPriceLinesRef.current.push(line);
+        }
+        if (latestBearishFvg && latestBearishFvg.price) {
+          const line = seriesRef.current.createPriceLine({
+            price: latestBearishFvg.price,
+            color: '#ec4899',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            axisLabelVisible: true,
+            title: 'BEARISH FVG',
+          });
+          smcPriceLinesRef.current.push(line);
+        }
+        if (latestBullishOb && latestBullishOb.price) {
+          const line = seriesRef.current.createPriceLine({
+            price: latestBullishOb.price,
+            color: '#10b981',
+            lineWidth: 1.5,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: 'BULLISH OB ZONE',
+          });
+          smcPriceLinesRef.current.push(line);
+        }
+        if (latestBearishOb && latestBearishOb.price) {
+          const line = seriesRef.current.createPriceLine({
+            price: latestBearishOb.price,
+            color: '#ef4444',
+            lineWidth: 1.5,
+            lineStyle: LineStyle.Solid,
+            axisLabelVisible: true,
+            title: 'BEARISH OB ZONE',
+          });
+          smcPriceLinesRef.current.push(line);
+        }
     }
     
     markers.sort((a, b) => a.time - b.time);

@@ -441,62 +441,8 @@ Style: Dark TradingView theme, absolute precision, clean modern design.
                 {/* Right price scale vertical divider */}
                 <line x1="435" y1="0" x2="435" y2="320" stroke="rgba(255,255,255,0.08)" />
 
-                {/* 1. ORDER BLOCKS (OB) - SHADED BOXES */}
-                {/* Bullish OB is shaded in transparent green, Bearish OB is shaded in transparent red */}
-                {direction === 'bullish' ? (
-                  <g>
-                    <rect 
-                      x="130" 
-                      y={getPriceScaleY(entryPrice + 0.1 * Math.abs(entryPrice - slPrice))} 
-                      width="165" 
-                      height={Math.abs(getPriceScaleY(entryPrice) - getPriceScaleY(entryPrice - 0.45 * Math.abs(entryPrice - slPrice)))} 
-                      fill="url(#bullishObGrad)" 
-                      stroke="#10b981" 
-                      strokeWidth="1.2"
-                      opacity={animationStep === 4 ? 0.35 : 0.18}
-                      className="transition-all duration-300"
-                    />
-                    <text 
-                      x="135" 
-                      y={getPriceScaleY(entryPrice) + 12} 
-                      fill="#10b981" 
-                      fontSize="6.5" 
-                      fontFamily="monospace" 
-                      fontWeight="bold"
-                      opacity="0.75"
-                    >
-                      BULLISH ORDER BLOCK (OB) - SHADED
-                    </text>
-                  </g>
-                ) : (
-                  <g>
-                    <rect 
-                      x="130" 
-                      y={getPriceScaleY(entryPrice + 0.45 * Math.abs(entryPrice - slPrice))} 
-                      width="165" 
-                      height={Math.abs(getPriceScaleY(entryPrice) - getPriceScaleY(entryPrice + 0.45 * Math.abs(entryPrice - slPrice)))} 
-                      fill="url(#bearishObGrad)" 
-                      stroke="#ef4444" 
-                      strokeWidth="1.2"
-                      opacity={animationStep === 4 ? 0.35 : 0.18}
-                      className="transition-all duration-300"
-                    />
-                    <text 
-                      x="135" 
-                      y={getPriceScaleY(entryPrice) - 8} 
-                      fill="#ef4444" 
-                      fontSize="6.5" 
-                      fontFamily="monospace" 
-                      fontWeight="bold"
-                      opacity="0.75"
-                    >
-                      BEARISH ORDER BLOCK (OB) - SHADED
-                    </text>
-                  </g>
-                )}
-
-                {/* 2. FAIR VALUE GAPS (FVG) - UNSHADED BOXES */}
-                {/* Unshaded transparent boxes with elegant purple dashed borders */}
+                {/* 1. FAIR VALUE GAPS (FVG) - SHADED IMBALANCE ZONES */}
+                {/* Premium transparent shaded boxes with elegant dashed borders representing SMC liquidity voids */}
                 {direction === 'bullish' ? (
                   <g>
                     <rect 
@@ -504,21 +450,22 @@ Style: Dark TradingView theme, absolute precision, clean modern design.
                       y={getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice))} 
                       width="100" 
                       height={Math.abs(getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice)) - getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice)))} 
-                      fill="none" 
+                      fill="rgba(168, 85, 247, 0.08)" 
                       stroke="#a855f7" 
-                      strokeWidth="1" 
-                      strokeDasharray="3,3"
-                      opacity="0.5"
+                      strokeWidth="1.2" 
+                      strokeDasharray="2,2"
+                      opacity="0.75"
                     />
                     <text 
                       x="147" 
                       y={getPriceScaleY(entryPrice) - 3} 
-                      fill="#a855f7" 
+                      fill="#c084fc" 
                       fontSize="6" 
                       fontFamily="monospace"
-                      opacity="0.65"
+                      fontWeight="bold"
+                      opacity="0.85"
                     >
-                      FVG (UNSHADED)
+                      BULLISH FVG IMBALANCE ZONE
                     </text>
                   </g>
                 ) : (
@@ -528,124 +475,22 @@ Style: Dark TradingView theme, absolute precision, clean modern design.
                       y={getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice))} 
                       width="100" 
                       height={Math.abs(getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice)) - getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice)))} 
-                      fill="none" 
-                      stroke="#a855f7" 
-                      strokeWidth="1" 
-                      strokeDasharray="3,3"
-                      opacity="0.5"
+                      fill="rgba(236, 72, 153, 0.08)" 
+                      stroke="#ec4899" 
+                      strokeWidth="1.2" 
+                      strokeDasharray="2,2"
+                      opacity="0.75"
                     />
                     <text 
                       x="147" 
                       y={getPriceScaleY(entryPrice) + 10} 
-                      fill="#a855f7" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      opacity="0.65"
-                    >
-                      FVG (UNSHADED)
-                    </text>
-                  </g>
-                )}
-
-                {/* 3. DOTTED LINES FOR INDUCEMENT AND LIQUIDITY SWEEPS */}
-                {/* Inducement (IDM) Dotted Line */}
-                {direction === 'bullish' ? (
-                  <g>
-                    <line 
-                      x1="84" 
-                      y1={getPriceScaleY(entryPrice - 0.6 * Math.abs(entryPrice - slPrice))} 
-                      x2="280" 
-                      y2={getPriceScaleY(entryPrice - 0.6 * Math.abs(entryPrice - slPrice))} 
-                      stroke="#eab308" 
-                      strokeWidth="1.2" 
-                      strokeDasharray="2,3" 
-                      opacity={animationStep === 1 ? 0.95 : 0.55}
-                    />
-                    <text 
-                      x="90" 
-                      y={getPriceScaleY(entryPrice - 0.6 * Math.abs(entryPrice - slPrice)) - 5} 
-                      fill="#eab308" 
+                      fill="#f472b6" 
                       fontSize="6" 
                       fontFamily="monospace"
                       fontWeight="bold"
-                      opacity={animationStep === 1 ? 1 : 0.6}
+                      opacity="0.85"
                     >
-                      INDUCEMENT LEVEL (IDM)
-                    </text>
-                  </g>
-                ) : (
-                  <g>
-                    <line 
-                      x1="84" 
-                      y1={getPriceScaleY(entryPrice + 0.6 * Math.abs(entryPrice - slPrice))} 
-                      x2="280" 
-                      y2={getPriceScaleY(entryPrice + 0.6 * Math.abs(entryPrice - slPrice))} 
-                      stroke="#eab308" 
-                      strokeWidth="1.2" 
-                      strokeDasharray="2,3" 
-                      opacity={animationStep === 1 ? 0.95 : 0.55}
-                    />
-                    <text 
-                      x="90" 
-                      y={getPriceScaleY(entryPrice + 0.6 * Math.abs(entryPrice - slPrice)) + 9} 
-                      fill="#eab308" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                      opacity={animationStep === 1 ? 1 : 0.6}
-                    >
-                      INDUCEMENT LEVEL (IDM)
-                    </text>
-                  </g>
-                )}
-
-                {/* Liquidity Sweep Dotted Line */}
-                {direction === 'bullish' ? (
-                  <g>
-                    <line 
-                      x1="30" 
-                      y1={getPriceScaleY(entryPrice - 0.94 * Math.abs(entryPrice - slPrice))} 
-                      x2="150" 
-                      y2={getPriceScaleY(entryPrice - 0.94 * Math.abs(entryPrice - slPrice))} 
-                      stroke="#ff4444" 
-                      strokeWidth="1.2" 
-                      strokeDasharray="2,3" 
-                      opacity={animationStep === 2 ? 0.95 : 0.55}
-                    />
-                    <text 
-                      x="35" 
-                      y={getPriceScaleY(entryPrice - 0.94 * Math.abs(entryPrice - slPrice)) - 5} 
-                      fill="#ff4444" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                      opacity={animationStep === 2 ? 1 : 0.6}
-                    >
-                      LIQUIDITY SWEEP (SSL ✘)
-                    </text>
-                  </g>
-                ) : (
-                  <g>
-                    <line 
-                      x1="30" 
-                      y1={getPriceScaleY(entryPrice + 0.94 * Math.abs(entryPrice - slPrice))} 
-                      x2="150" 
-                      y2={getPriceScaleY(entryPrice + 0.94 * Math.abs(entryPrice - slPrice))} 
-                      stroke="#ff4444" 
-                      strokeWidth="1.2" 
-                      strokeDasharray="2,3" 
-                      opacity={animationStep === 2 ? 0.95 : 0.55}
-                    />
-                    <text 
-                      x="35" 
-                      y={getPriceScaleY(entryPrice + 0.94 * Math.abs(entryPrice - slPrice)) + 9} 
-                      fill="#ff4444" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                      opacity={animationStep === 2 ? 1 : 0.6}
-                    >
-                      LIQUIDITY SWEEP (BSL ✘)
+                      BEARISH FVG IMBALANCE ZONE
                     </text>
                   </g>
                 )}
@@ -994,16 +839,13 @@ Style: Dark TradingView theme, absolute precision, clean modern design.
             </div>
             <div className="text-xs text-white/60 space-y-2.5 leading-relaxed">
               <p>
-                <strong className="text-white">Order Block (OB)</strong>: Represented by the <span className="text-emerald-400 font-bold">shaded boxes</span>, representing high-volume institutional order limits.
+                <strong className="text-white">Fair Value Gaps (FVG)</strong>: Represented by the <span className="text-purple-400 font-bold">purple/pink boxes</span>, visualizing market imbalances where algorithms seek to fill structure.
               </p>
               <p>
-                <strong className="text-white">Fair Value Gaps (FVG)</strong>: Represented by the <span className="text-purple-400 font-bold">unshaded boxes</span>, visualizing market imbalances that algorithms seek to fill.
+                <strong className="text-white">BOS & CHoCH</strong>: Plotted via clean <span className="text-amber-400 font-bold">Trendlines</span>, marking structural breakout shifts (CHoCH) and trend continuations (BOS).
               </p>
               <p>
-                <strong className="text-white">BOS & CHoCH</strong>: Plotted via custom <span className="text-amber-400 font-bold">Trendlines</span>, marking local structural shifts (CHoCH) and trend continuations (BOS).
-              </p>
-              <p>
-                <strong className="text-white">Liquidity Sweep & IDM</strong>: Illustrated via high-precision <span className="text-red-400 font-bold">dotted lines</span>, visualizing stop hunt levels where retail traders are swept before the expansion.
+                <strong className="text-white">Confluence Blueprint</strong>: Shows the relationship between the entry price, immediate market structure shifts, and the imbalance zone that triggered the setup.
               </p>
             </div>
           </div>

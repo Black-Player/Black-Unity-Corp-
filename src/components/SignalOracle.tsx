@@ -60,15 +60,59 @@ interface SignalOracleProps {
 }
 
 const getFallbackPrice = (pair: string) => {
-  if (pair.includes('BTC')) return 65000 + Math.random() * 1000;
-  if (pair.includes('ETH')) return 3500 + Math.random() * 100;
-  if (pair.includes('OTC_DJI') || pair.includes('US30')) return 38500 + Math.random() * 100;
-  if (pair.includes('OTC_NDX') || pair.includes('NAS')) return 17500 + Math.random() * 100;
-  if (pair.includes('OTC_GDAXI') || pair.includes('GER40')) return 18000 + Math.random() * 100;
-  if (pair.includes('XAU')) return 2350 + Math.random() * 10;
-  if (pair.includes('R_') || pair.includes('BOOM') || pair.includes('CRASH')) return 100 + Math.random() * 500;
-  if (pair.includes('JD') || pair.includes('STP')) return 500 + Math.random() * 100;
-  if (pair.includes('JPY')) return 150 + Math.random() * 2;
+  const p = pair.toUpperCase();
+  // Crypto
+  if (p.includes('BTC')) return 63900 + Math.random() * 100;
+  if (p.includes('ETH')) return 1770 + Math.random() * 5;
+  
+  // Indices
+  if (p.includes('OTC_DJI') || p.includes('US30')) return 52500 + Math.random() * 100;
+  if (p.includes('OTC_NDX') || p.includes('NAS')) return 29590 + Math.random() * 100;
+  if (p.includes('OTC_GDAXI') || p.includes('GER')) return 25100 + Math.random() * 100;
+  
+  // Commodities
+  if (p.includes('XAU') || p.includes('GOLD')) return 2350 + Math.random() * 10;
+  if (p.includes('XAG') || p.includes('SILVER')) return 60.1 + Math.random() * 0.5;
+  if (p.includes('WTI') || p.includes('OIL')) return 80.5 + Math.random() * 1.0;
+  
+  // Jump Indices
+  if (p.includes('JD100')) return 247.5 + Math.random() * 1.0;
+  if (p.includes('JD75')) return 6970 + Math.random() * 10;
+  if (p.includes('JD50')) return 67030 + Math.random() * 100;
+  if (p.includes('JD25')) return 117140 + Math.random() * 100;
+  if (p.includes('JD10')) return 97000 + Math.random() * 100;
+  if (p.includes('JD')) return 67030 + Math.random() * 100; // General JD fallback
+  
+  // Boom & Crash
+  if (p.includes('BOOM1000')) return 14480 + Math.random() * 20;
+  if (p.includes('BOOM500')) return 5060 + Math.random() * 10;
+  if (p.includes('BOOM300')) return 3500 + Math.random() * 10;
+  if (p.includes('CRASH1000')) return 5860 + Math.random() * 10;
+  if (p.includes('CRASH500')) return 2870 + Math.random() * 10;
+  if (p.includes('CRASH300')) return 4200 + Math.random() * 10;
+  
+  // 1-second Volatility Indices (1HZ)
+  if (p.includes('1HZ25V')) return 803100 + Math.random() * 500;
+  if (p.includes('1HZ50V')) return 223200 + Math.random() * 200;
+  if (p.includes('1HZ75V')) return 6610 + Math.random() * 10;
+  if (p.includes('1HZ100V')) return 950 + Math.random() * 10;
+  if (p.includes('1HZ10V')) return 45000 + Math.random() * 500;
+  
+  // Volatility Indices (R_)
+  if (p.includes('R_100')) return 12500 + Math.random() * 50;
+  if (p.includes('R_75')) return 8200 + Math.random() * 50;
+  if (p.includes('R_50')) return 350 + Math.random() * 5;
+  if (p.includes('R_25')) return 220 + Math.random() * 5;
+  if (p.includes('R_10')) return 10500 + Math.random() * 50;
+  if (p.includes('STP') || p.includes('STEP')) return 280 + Math.random() * 5;
+  
+  // Forex
+  if (p.includes('JPY')) return 161.5 + Math.random() * 0.5;
+  if (p.includes('EURUSD')) return 1.1444 + (Math.random() * 0.0020);
+  if (p.includes('GBPUSD')) return 1.3430 + (Math.random() * 0.0020);
+  if (p.includes('AUDUSD')) return 0.6952 + (Math.random() * 0.0020);
+  if (p.includes('USDCAD')) return 1.4156 + (Math.random() * 0.0020);
+  
   return 1.0850 + (Math.random() * 0.0050);
 };
 

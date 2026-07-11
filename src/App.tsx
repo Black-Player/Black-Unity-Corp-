@@ -40,6 +40,7 @@ import Abyss from './components/Abyss';
 import CosmicFeed from './components/CosmicFeed';
 import SignalOracle from './components/SignalOracle';
 import OracleEye from './components/OracleEye';
+import OracleOversightNetwork from './components/OracleOversightNetwork';
 import Gallery from './components/Gallery';
 import Alchemist from './components/Alchemist';
 import Nexus from './components/Nexus';
@@ -54,7 +55,7 @@ import TradingGame from './components/TradingGame';
 import TelegramCenter from './components/TelegramCenter';
 import TickerTape from './components/TickerTape';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, Hammer, Book, Zap, Video, Layers, Layout, Settings2, Target, ShoppingBag, Ghost, History as HistoryIcon, Activity } from 'lucide-react';
+import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, ShieldCheck, Hammer, Book, Zap, Video, Layers, Layout, Settings2, Target, ShoppingBag, Ghost, History as HistoryIcon, Activity } from 'lucide-react';
 
 interface Toast {
   id: string;
@@ -518,6 +519,8 @@ export default function App() {
         return <Abyss {...props} />;
       case 'eye':
         return <OracleEye {...props} />;
+      case 'oon':
+        return <OracleOversightNetwork userProfile={userProfile} addToast={addToast} />;
       case 'forge':
         return <Forge {...props} />;
       case 'backtest':
@@ -652,6 +655,7 @@ export default function App() {
                           { id: 'zion', label: 'Zion AI', icon: Bot },
                           { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
                           { id: 'nexus', label: 'The Nexus', icon: Globe },
+                          { id: 'oon', label: 'Oversight (OON)', icon: ShieldCheck },
                           { id: 'portfolio', label: 'Portfolio', icon: Wallet },
                           { id: 'analytics', label: 'Analytics', icon: BarChart3 },
                           { id: 'eye', label: 'Oracle Eye', icon: Eye },

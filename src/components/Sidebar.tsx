@@ -22,6 +22,7 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
         { id: 'zion', label: 'Zion AI', icon: Bot },
         { id: 'chat', label: 'Oracle Chat', icon: MessageSquare },
         { id: 'nexus', label: 'The Nexus', icon: Globe },
+        { id: 'oon', label: 'Oversight (OON)', icon: ShieldCheck },
       ]
     },
     {

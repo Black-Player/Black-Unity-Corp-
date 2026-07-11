@@ -13,6 +13,8 @@ export interface SMCMarker {
   shape: 'circle' | 'square' | 'arrowUp' | 'arrowDown';
   text: string;
   id?: string;
+  price?: number;
+  type?: 'bullish_fvg' | 'bearish_fvg' | 'bullish_ob' | 'bearish_ob' | 'bos' | 'choch';
 }
 
 export function detectSMC(data: Candle[]): SMCMarker[] {
@@ -23,7 +25,7 @@ export function detectSMC(data: Candle[]): SMCMarker[] {
   const swingHighs: { index: number; candle: Candle }[] = [];
   const swingLows: { index: number; candle: Candle }[] = [];
   
-  const SWING_LENGTH = 15;
+  const SWING_LENGTH = 10;
 
   for (let i = SWING_LENGTH; i < data.length - SWING_LENGTH; i++) {
     const isSwingHigh = data.slice(i - SWING_LENGTH, i + SWING_LENGTH + 1).every((c, idx) => {
@@ -39,98 +41,133 @@ export function detectSMC(data: Candle[]): SMCMarker[] {
     if (isSwingLow) swingLows.push({ index: i, candle: data[i] });
   }
 
-  // Detect FVG (Fair Value Gaps) - Super Strong only
+  // 1. Detect FVG (Fair Value Gaps) with elegant labels
   for (let i = 2; i < data.length; i++) {
     const c1 = data[i - 2];
     const c3 = data[i];
     
     // Bullish FVG
     if (c1.high < c3.low && data[i-1].close > data[i-1].open) {
-      if (Math.abs(c3.low - c1.high) > (c3.high - c3.low) * 0.7) {
+      if (Math.abs(c3.low - c1.high) > (c3.high - c3.low) * 0.4) {
         markers.push({
           time: data[i - 1].time as number,
           position: 'belowBar',
-          color: '#3b82f6', // Blue for FVG
-          shape: 'circle',
-          text: 'Major FVG'
+          color: '#a855f7', // SMC Purple for Imbalance
+          shape: 'square',
+          text: `FVG Imbalance @ ${(c1.high).toFixed(2)} - ${(c3.low).toFixed(2)}`,
+          price: (c1.high + c3.low) / 2,
+          type: 'bullish_fvg'
         });
       }
     }
     
     // Bearish FVG
     if (c1.low > c3.high && data[i-1].close < data[i-1].open) {
-      if (Math.abs(c1.low - c3.high) > (c3.high - c3.low) * 0.7) {
+      if (Math.abs(c1.low - c3.high) > (c3.high - c3.low) * 0.4) {
         markers.push({
           time: data[i - 1].time as number,
           position: 'aboveBar',
-          color: '#ef4444', // Red for FVG
-          shape: 'circle',
-          text: 'Major FVG'
+          color: '#ec4899', // Bright Magenta for Bearish Imbalance
+          shape: 'square',
+          text: `FVG Imbalance @ ${(c3.high).toFixed(2)} - ${(c1.low).toFixed(2)}`,
+          price: (c1.low + c3.high) / 2,
+          type: 'bearish_fvg'
         });
       }
     }
   }
 
-  // Detect BOS and CHOCH
-  const allSwings = [...swingHighs.map(s => ({...s, type: 'high'})), ...swingLows.map(s => ({...s, type: 'low'}))].sort((a,b) => a.index - b.index);
+  // 2. Detect BOS and CHOCH (High-confluence Continuation vs Trend Reversal Shifts)
+  const allSwings = [
+    ...swingHighs.map(s => ({...s, type: 'high' as const})), 
+    ...swingLows.map(s => ({...s, type: 'low' as const}))
+  ].sort((a, b) => a.index - b.index);
   
+  let lastBreakDirection: 'up' | 'down' | null = null;
+
   for (let i = 2; i < allSwings.length; i++) {
     const current = allSwings[i];
     const prevPrev = allSwings[i - 2];
     
     if (current.type === 'high' && prevPrev.type === 'high' && current.candle.high > prevPrev.candle.high) {
+      const isCHoCH = lastBreakDirection === 'down';
+      lastBreakDirection = 'up';
+      
       markers.push({
         time: current.candle.time as number,
         position: 'aboveBar',
-        color: '#22c55e',
+        color: isCHoCH ? '#f59e0b' : '#10b981', // Orange for CHoCH, Green for BOS
         shape: 'arrowDown',
-        text: 'BOS / CHOCH'
+        text: isCHoCH ? `CHoCH (Change of Character) @ ${current.candle.high.toFixed(2)}` : `BOS (Break of Structure) @ ${current.candle.high.toFixed(2)}`,
+        price: current.candle.high,
+        type: isCHoCH ? 'choch' : 'bos'
       });
     }
     if (current.type === 'low' && prevPrev.type === 'low' && current.candle.low < prevPrev.candle.low) {
-       markers.push({
+      const isCHoCH = lastBreakDirection === 'up';
+      lastBreakDirection = 'down';
+
+      markers.push({
         time: current.candle.time as number,
         position: 'belowBar',
-        color: '#ef4444',
+        color: isCHoCH ? '#f59e0b' : '#ef4444', // Orange for CHoCH, Red for BOS
         shape: 'arrowUp',
-        text: 'BOS / CHOCH'
+        text: isCHoCH ? `CHoCH (Change of Character) @ ${current.candle.low.toFixed(2)}` : `BOS (Break of Structure) @ ${current.candle.low.toFixed(2)}`,
+        price: current.candle.low,
+        type: isCHoCH ? 'choch' : 'bos'
       });
     }
   }
 
-  // Order block detection: A down candle before a very strong up move
+  // 3. Order block detection: A down candle before a very strong up move
   for (let i = 2; i < data.length - 1; i++) {
     const current = data[i];
     const next = data[i+1];
     
     // Bullish OB
-    if (current.close < current.open && next.close > next.open && (next.close - next.open) > (current.open - current.close) * 4.0) {
+    if (current.close < current.open && next.close > next.open && (next.close - next.open) > (current.open - current.close) * 3.0) {
       markers.push({
         time: current.time as number,
         position: 'belowBar',
         color: '#10b981',
-        shape: 'arrowUp',
-        text: 'Key OB'
+        shape: 'square',
+        text: `Bullish Order Block (OB) @ ${current.low.toFixed(2)}`,
+        price: current.low,
+        type: 'bullish_ob'
       });
     }
     
     // Bearish OB
-    if (current.close > current.open && next.close < next.open && (next.open - next.close) > (current.close - current.open) * 4.0) {
+    if (current.close > current.open && next.close < next.open && (next.open - next.close) > (current.close - current.open) * 3.0) {
       markers.push({
         time: current.time as number,
         position: 'aboveBar',
         color: '#ef4444',
-        shape: 'arrowDown',
-        text: 'Key OB'
+        shape: 'square',
+        text: `Bearish Order Block (OB) @ ${current.high.toFixed(2)}`,
+        price: current.high,
+        type: 'bearish_ob'
       });
     }
   }
 
-  // Deduplicate markers by time, keeping highest priority
+  // Deduplicate markers by time, keeping highest priority elements
   const dedupedMap = new Map<number, SMCMarker>();
   markers.forEach(m => {
-    // Just use the timestamp directly to dedupe
-    dedupedMap.set(m.time, m); 
+    const existing = dedupedMap.get(m.time);
+    if (!existing) {
+      dedupedMap.set(m.time, m);
+    } else {
+      // Prioritize BOS/CHoCH, then OB, then FVG
+      const priority = (type: string) => {
+        if (type === 'bos' || type === 'choch') return 3;
+        if (type === 'bullish_ob' || type === 'bearish_ob') return 2;
+        return 1;
+      };
+      if (priority(m.type || '') > priority(existing.type || '')) {
+        dedupedMap.set(m.time, m);
+      }
+    }
   });
 
   return Array.from(dedupedMap.values()).sort((a, b) => a.time - b.time);

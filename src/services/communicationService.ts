@@ -78,9 +78,9 @@ const escapeHTML = (text: string) => {
 };
 
 /**
- * Robust fetch helper that aborts the request after a designated timeout period (5 seconds default)
+ * Robust fetch helper that aborts the request after a designated timeout period (15 seconds default)
  */
-async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 5000) {
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 15000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -90,8 +90,11 @@ async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutM
     });
     clearTimeout(id);
     return response;
-  } catch (error) {
+  } catch (error: any) {
     clearTimeout(id);
+    if (error.name === 'AbortError' || error.message?.includes('aborted') || error.message?.includes('abort')) {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
     throw error;
   }
 }
@@ -171,7 +174,7 @@ export async function sendSignalToTelegram(signal: any, customIntegrations?: any
     
     return data.result.message_id;
   } catch (error) {
-    console.error("Telegram Broadcast Error:", error);
+    console.warn("Telegram Broadcast: Failed or timed out. Check credentials or network connectivity.", error);
     return null;
   }
 }
@@ -233,7 +236,7 @@ An Order Block is where smart money leaves their footprints in the form of massi
     const data = await response.json();
     return data.ok ? data.result.message_id : null;
   } catch (error) {
-    console.error("Explanation Broadcast Error:", error);
+    console.warn("Explanation Broadcast: Failed or timed out. Check credentials or network connectivity.", error);
     return null;
   }
 }
@@ -351,7 +354,7 @@ ${educationalInsight}
     const data = await response.json();
     return data.ok ? data.result.message_id : null;
   } catch (error) {
-    console.error("Error sending signal update to Telegram:", error);
+    console.warn("Signal update: Failed or timed out. Check credentials or network connectivity.", error);
     return null;
   }
 }
@@ -389,7 +392,7 @@ export async function sendArbitraryMessageToTelegram(text: string, customIntegra
     const data = await response.json();
     return !!data.ok;
   } catch (error) {
-    console.error("Telegram Arbitrary Message Error:", error);
+    console.warn("Telegram Arbitrary Message: Failed or timed out. Check credentials or network connectivity.", error);
     return false;
   }
 }
@@ -436,7 +439,7 @@ export async function sendTradeReviewToTelegram(trade: any, customIntegrations?:
     const data = await response.json();
     return !!data.ok;
   } catch (error) {
-    console.error("Telegram Trade Review Error:", error);
+    console.warn("Telegram Trade Review: Failed or timed out. Check credentials or network connectivity.", error);
     return false;
   }
 }
@@ -529,7 +532,7 @@ Here are some high-impact ways the BUC bot can enhance the creators' workflow an
     const data = await response.json();
     return data.ok;
   } catch (error) {
-    console.error("Weekly Summary Broadcast Error:", error);
+    console.warn("Weekly Summary Broadcast: Failed or timed out. Check credentials or network connectivity.", error);
     return false;
   }
 }
@@ -657,7 +660,7 @@ Blāck-Plāyer RSA began as a vision to forge an elite, smarter trading ecosyste
     const data = await response.json();
     return data.ok;
   } catch (error) {
-    console.error("Monthly Introduction Error:", error);
+    console.warn("Monthly Introduction: Failed or timed out. Check credentials or network connectivity.", error);
     return false;
   }
 }
@@ -711,7 +714,7 @@ Keep your risk-per-trade tightly at **1%** max. The market does not reward over-
     const data = await response.json();
     return data.ok;
   } catch (error) {
-    console.error("Daily Morning Brief Error:", error);
+    console.warn("Daily Morning Brief: Failed or timed out. Check credentials or network connectivity.", error);
     return false;
   }
 }
@@ -792,7 +795,7 @@ Overtrading is born from fear of missing out (FOMO). Limit yourself to maximum 2
     const data = await response.json();
     return { success: data.ok, text };
   } catch (error: any) {
-    console.error("Simulated Command Response Error:", error);
+    console.warn("Simulated Command Response: Failed or timed out. Check credentials or network connectivity.", error);
     return { success: false, text: error.message };
   }
 }
@@ -825,12 +828,12 @@ export async function sendPhotoToTelegram(
 
     const data = await response.json();
     if (!data.ok) {
-      console.error("Telegram photo upload API error:", data.description);
+      console.warn("Telegram photo upload API warning:", data.description);
       return false;
     }
     return true;
   } catch (error) {
-    console.error("Telegram Photo Upload Error:", error);
+    console.warn("Telegram Photo Upload: Failed or timed out. Check credentials or network connectivity.", error);
     return false;
   }
 }

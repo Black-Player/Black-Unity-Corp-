@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, X, Command, ArrowRight, Zap, Bot, Globe, Trophy, GraduationCap, Wallet, Users, Settings, History, BarChart3, Book, Target, Hammer, FlaskConical, MessageSquare, Layers, Video, Layout, Settings2 } from 'lucide-react';
+import { Search, X, Command, ArrowRight, Zap, Bot, Globe, Trophy, GraduationCap, Wallet, Users, Settings, History, BarChart3, Book, Target, Hammer, FlaskConical, MessageSquare, Layers, Video, Layout, Settings2, ShieldCheck } from 'lucide-react';
 
 interface GlobalSearchProps {
   isOpen: boolean;
@@ -51,6 +51,7 @@ export default function GlobalSearch({ isOpen, onClose, setActivePage }: GlobalS
     { id: 'bot-gallery', label: 'Bot Gallery', icon: Layout, category: 'Navigation' },
     { id: 'bot-customizer', label: 'The Alchemist', icon: Settings2, category: 'Navigation' },
     { id: 'live-room', label: 'The Nexus', icon: Video, category: 'Navigation' },
+    { id: 'oon', label: 'Oversight (OON)', icon: ShieldCheck, category: 'Navigation' },
     { id: 'strategy-builder', label: 'The Weaver', icon: Layers, category: 'Navigation' },
     { id: 'forge', label: 'Bot Forge', icon: Hammer, category: 'Navigation' },
     { id: 'indicator-forge', label: 'Indicator Forge', icon: FlaskConical },

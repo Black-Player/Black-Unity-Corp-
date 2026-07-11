@@ -2,7 +2,7 @@ import { Signal } from '../types';
 import { DERIV_SYMBOLS } from '../constants';
 
 const APP_ID = 1089;
-const DERIV_WS_URL = `wss://ws.binaryws.com/websockets/v3?app_id=${APP_ID}`;
+const DERIV_WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
 
 export interface DerivTick {
   symbol: string;
@@ -83,7 +83,7 @@ class DerivService {
     };
 
     this.socket.onerror = (error) => {
-      console.error('Deriv WebSocket Error:', error);
+      console.warn('Deriv WebSocket Error:', error);
     };
   }
 

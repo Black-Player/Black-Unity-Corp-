@@ -241,7 +241,7 @@ export class ServerScanner {
         const data = JSON.parse(msgData.toString());
         if (data.msg_type === 'tick' && data.tick) {
           const symbol = data.tick.symbol;
-          const price = data.tick.quote;
+          const price = typeof data.tick.quote === 'string' ? parseFloat(data.tick.quote) : Number(data.tick.quote);
           this.currentPrices[symbol] = price;
           this.handleTick(symbol, price);
         }

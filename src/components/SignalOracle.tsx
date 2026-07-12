@@ -86,13 +86,13 @@ const getFallbackPrice = (pair: string) => {
   // Boom & Crash
   if (p.includes('BOOM1000')) return 14480 + Math.random() * 20;
   if (p.includes('BOOM500')) return 5060 + Math.random() * 10;
-  if (p.includes('BOOM300')) return 3500 + Math.random() * 10;
+  if (p.includes('BOOM300')) return 1500 + Math.random() * 10;
   if (p.includes('CRASH1000')) return 5860 + Math.random() * 10;
   if (p.includes('CRASH500')) return 2870 + Math.random() * 10;
   if (p.includes('CRASH300')) return 4200 + Math.random() * 10;
   
   // 1-second Volatility Indices (1HZ)
-  if (p.includes('1HZ25V')) return 803100 + Math.random() * 500;
+  if (p.includes('1HZ25V')) return 110500 + Math.random() * 500;
   if (p.includes('1HZ50V')) return 223200 + Math.random() * 200;
   if (p.includes('1HZ75V')) return 6610 + Math.random() * 10;
   if (p.includes('1HZ100V')) return 950 + Math.random() * 10;

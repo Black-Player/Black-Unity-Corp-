@@ -5,6 +5,7 @@ import { DERIV_SYMBOLS } from './constants';
 interface MarketContextType {
   marketPrices: Record<string, DerivTick>;
   marketPricesRef: React.MutableRefObject<Record<string, DerivTick>>;
+  connectionStatus: 'Live' | 'Syncing' | 'Delayed';
 }
 
 const MarketContext = createContext<MarketContextType | undefined>(undefined);
@@ -12,37 +13,45 @@ const MarketRefContext = createContext<React.MutableRefObject<Record<string, Der
 
 export function MarketProvider({ children }: { children: React.ReactNode }) {
   const [marketPrices, setMarketPrices] = useState<Record<string, DerivTick>>({});
+  const [connectionStatus, setConnectionStatus] = useState<'Live' | 'Syncing' | 'Delayed'>('Syncing');
   const pendingUpdates = useRef<Record<string, DerivTick>>({});
   const lastUpdateTime = useRef<number>(0);
   const latestPrices = useRef<Record<string, DerivTick>>({});
 
   useEffect(() => {
-    const symbols = DERIV_SYMBOLS.map(s => s.symbol);
-    
-    const unsubscribe = derivService.subscribeToTicks(symbols, (tick) => {
-      pendingUpdates.current[tick.symbol] = tick;
-      latestPrices.current[tick.symbol] = tick;
-      
-      const now = Date.now();
-      // Throttle updates to 500ms to improve performance
-      if (now - lastUpdateTime.current > 500) {
+    // Poll connection status every second
+    const statusInterval = setInterval(() => {
+      setConnectionStatus(derivService.getConnectionStatus());
+    }, 1000);
+
+    // Regularly flush pending ticks to state every 500ms
+    const flushInterval = setInterval(() => {
+      if (Object.keys(pendingUpdates.current).length > 0) {
         setMarketPrices(prev => ({
           ...prev,
           ...pendingUpdates.current
         }));
         pendingUpdates.current = {};
-        lastUpdateTime.current = now;
       }
+    }, 500);
+
+    const symbols = DERIV_SYMBOLS.map(s => s.symbol);
+    
+    const unsubscribe = derivService.subscribeToTicks(symbols, (tick) => {
+      pendingUpdates.current[tick.symbol] = tick;
+      latestPrices.current[tick.symbol] = tick;
     });
 
     return () => {
+      clearInterval(statusInterval);
+      clearInterval(flushInterval);
       unsubscribe();
     };
   }, []);
 
   return (
     <MarketRefContext.Provider value={latestPrices}>
-      <MarketContext.Provider value={{ marketPrices, marketPricesRef: latestPrices }}>
+      <MarketContext.Provider value={{ marketPrices, marketPricesRef: latestPrices, connectionStatus }}>
         {children}
       </MarketContext.Provider>
     </MarketRefContext.Provider>

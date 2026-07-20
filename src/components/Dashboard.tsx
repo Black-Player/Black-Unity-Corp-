@@ -79,9 +79,15 @@ const getFallbackPrice = (pair: string) => {
   if (p.includes('BOOM1000')) return 14480 + Math.random() * 20;
   if (p.includes('BOOM500')) return 5060 + Math.random() * 10;
   if (p.includes('BOOM300')) return 1500 + Math.random() * 10;
+  if (p.includes('BOOM150')) return 15000 + Math.random() * 20;
+  if (p.includes('BOOM100')) return 10000 + Math.random() * 20;
+  if (p.includes('BOOM50')) return 5000 + Math.random() * 10;
   if (p.includes('CRASH1000')) return 5860 + Math.random() * 10;
   if (p.includes('CRASH500')) return 2870 + Math.random() * 10;
   if (p.includes('CRASH300')) return 4200 + Math.random() * 10;
+  if (p.includes('CRASH150')) return 15000 + Math.random() * 20;
+  if (p.includes('CRASH100')) return 10000 + Math.random() * 20;
+  if (p.includes('CRASH50')) return 5000 + Math.random() * 10;
   
   // 1-second Volatility Indices (1HZ)
   if (p.includes('1HZ25V')) return 110500 + Math.random() * 500;
@@ -490,7 +496,9 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           where('status', '==', 'open'),
           orderBy('created_at', 'desc')
         ]);
-        setActiveTrades(data as Trade[]);
+        // Guard against offline fallback return of complete localTable
+        const filtered = (data as Trade[]).filter(t => t.status === 'open' && t.uid === userProfile.uid);
+        setActiveTrades(filtered);
       } catch (error) {
         console.error("Fetch trades failed", error);
       }
@@ -504,7 +512,9 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       where('status', '==', 'open'),
       orderBy('created_at', 'desc')
     ], (data) => {
-      setActiveTrades(data as Trade[]);
+      // Guard against offline fallback return of complete localTable
+      const filtered = (data as Trade[]).filter(t => t.status === 'open' && t.uid === userProfile.uid);
+      setActiveTrades(filtered);
     });
 
     return () => unsubscribe();
@@ -524,7 +534,14 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       where('status', '==', 'closed'),
       where('closed_at', '>=', startOfDay.toISOString())
     ], (data) => {
-      const pnl = (data as Trade[]).reduce((acc, trade) => acc + (trade.pnl || 0), 0);
+      // Guard against offline fallback return of complete localTable
+      const filtered = (data as Trade[]).filter(t => 
+        t.uid === userProfile.uid && 
+        t.status === 'closed' && 
+        t.closed_at && 
+        t.closed_at >= startOfDay.toISOString()
+      );
+      const pnl = filtered.reduce((acc, trade) => acc + (trade.pnl || 0), 0);
       setDailyPnl(pnl);
     });
 

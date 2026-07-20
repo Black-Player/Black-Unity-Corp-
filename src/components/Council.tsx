@@ -1,267 +1,756 @@
-import { useState, useEffect } from 'react';
-import { UserProfile, Tier } from '../types';
+import { useState } from 'react';
+import { UserProfile, Trade } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Brain, MessageSquare, Shield, Sparkles, TrendingUp, TrendingDown, Zap, Users, Info } from 'lucide-react';
-import { generateTradingSignal } from '../services/aiService';
+import { 
+  Brain, Shield, Sparkles, TrendingUp, TrendingDown, Zap, Users, Info, 
+  Clock, Activity, ChevronDown, ChevronUp, AlertTriangle, BookOpen, 
+  GraduationCap, HelpCircle, ArrowRight, CheckCircle2, Target
+} from 'lucide-react';
+import { generateCouncilDebate, CouncilDebateResult } from '../services/aiService';
+import { useMarketContext } from '../MarketContext';
+import { dbService } from '../services/dbService';
 
 interface CouncilProps {
   userProfile: UserProfile;
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-interface BotOpinion {
-  bot: string;
-  sentiment: 'bullish' | 'bearish' | 'neutral';
-  confidence: number;
-  reasoning: string;
-  icon: any;
-}
+const pairs = [
+  { symbol: '1HZ100V', name: 'Volatility 100 (1s) Index' },
+  { symbol: 'R_75', name: 'Volatility 75 Index' },
+  { symbol: 'R_10', name: 'Volatility 10 Index' },
+  { symbol: 'CRASH1000', name: 'Crash 1000 Index' },
+  { symbol: 'BOOM1000', name: 'Boom 1000 Index' },
+  { symbol: 'STP', name: 'Step Index' },
+  { symbol: 'JD100', name: 'Jump 100 Index' }
+];
+
+const timeframes = ['M5', 'M15', 'M30', 'H1', 'H4', 'D1'];
 
 export default function Council({ userProfile, addToast }: CouncilProps) {
-  const [pair, setPair] = useState('Volatility 100 (1s) Index');
+  const { marketPrices } = useMarketContext();
+  const [pair, setPair] = useState('1HZ100V');
+  const [timeframe, setTimeframe] = useState('H1');
+  const [educationLevel, setEducationLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('intermediate');
+  
   const [isDebating, setIsDebating] = useState(false);
-  const [opinions, setOpinions] = useState<BotOpinion[]>([]);
-  const [consensus, setConsensus] = useState<{ sentiment: string; confidence: number; signal: any } | null>(null);
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [debateResult, setDebateResult] = useState<CouncilDebateResult | null>(null);
+  const [activeBotId, setActiveBotId] = useState<string | null>(null);
 
-  const bots = [
-    { name: 'Trinity', strategy: 'Price Action & Order Flow', icon: Brain, color: 'text-gold' },
-    { name: 'Sentinel', strategy: 'Trend Following & Momentum', icon: Shield, color: 'text-emerald-400' },
-    { name: 'Oracle', strategy: 'Predictive AI & Sentiment', icon: Sparkles, color: 'text-blue-400' },
-  ];
+  const selectedPairObj = pairs.find(p => p.symbol === pair) || pairs[0];
+  const currentPrice = marketPrices[pair]?.price || 1000.0;
 
-  const pairs = [
-    'Volatility 100 (1s) Index',
-    'Volatility 75 Index',
-    'Volatility 10 Index',
-    'Crash 1000 Index',
-    'Boom 1000 Index',
-    'Step Index',
-    'Jump 100 Index'
-  ];
+  const botsConfig = {
+    Neo: {
+      name: 'Neo',
+      role: 'Smart Money Concepts Specialist',
+      focus: 'Liquidity, Order Blocks, BOS, CHoCH, Fair Value Gaps, Premium/Discount, Inducement',
+      responsibilities: 'Validate institutional entries, explain institutional logic, reject low-confluence setups.',
+      icon: Brain,
+      color: 'text-gold',
+      borderColor: 'border-gold/30',
+      glowColor: 'from-gold/10',
+      bgGlow: 'bg-gold/5'
+    },
+    Trinity: {
+      name: 'Trinity',
+      role: 'ICT Specialist',
+      focus: 'Kill Zones, Daily Bias, OTE, Session Models, Power of Three (AMD), Liquidity Timing',
+      responsibilities: 'Refine timing, improve entry precision, identify institutional session behavior.',
+      icon: Clock,
+      color: 'text-emerald-400',
+      borderColor: 'border-emerald-500/30',
+      glowColor: 'from-emerald-500/10',
+      bgGlow: 'bg-emerald-500/5'
+    },
+    Morpheus: {
+      name: 'Morpheus',
+      role: 'Price Action Master',
+      focus: 'Trend, Structure, Candlesticks, Chart Patterns, Breakouts, Pullbacks, Support/Resistance',
+      responsibilities: 'Explain pure price action, confirm market direction, identify high-quality structural setups.',
+      icon: Shield,
+      color: 'text-blue-400',
+      borderColor: 'border-blue-500/30',
+      glowColor: 'from-blue-500/10',
+      bgGlow: 'bg-blue-500/5'
+    },
+    Architect: {
+      name: 'Architect',
+      role: 'Market Maker Method Specialist',
+      focus: 'Accumulation, Manipulation, Distribution, Stop Hunts, Liquidity Traps, Engineered Liquidity',
+      responsibilities: 'Detect market maker behavior, warn against false breakouts, identify engineered liquidity.',
+      icon: Zap,
+      color: 'text-purple-400',
+      borderColor: 'border-purple-500/30',
+      glowColor: 'from-purple-500/10',
+      bgGlow: 'bg-purple-500/5'
+    },
+    Persephone: {
+      name: 'Persephone',
+      role: 'Supply & Demand Specialist',
+      focus: 'Institutional Supply, Demand, Zone Strength, Zone Freshness, Zone Mitigation',
+      responsibilities: 'Validate reaction zones, identify high-probability reversal areas.',
+      icon: Activity,
+      color: 'text-rose-400',
+      borderColor: 'border-rose-500/30',
+      glowColor: 'from-rose-500/10',
+      bgGlow: 'bg-rose-500/5'
+    }
+  };
 
   const startDebate = async () => {
     setIsDebating(true);
-    setOpinions([]);
-    setConsensus(null);
+    setDebateResult(null);
+    setActiveBotId(null);
+
+    addToast(`Convening the AI Council of Institutional Analysts for ${selectedPairObj.name}...`, 'info');
 
     try {
-      // Simulate bot opinions (in a real app, we'd call the AI for each bot)
-      const newOpinions: BotOpinion[] = [];
+      const result = await generateCouncilDebate(
+        pair,
+        timeframe,
+        educationLevel,
+        currentPrice,
+        { price: currentPrice, sentiment: 'confluent', timestamp: Date.now() }
+      );
       
-      for (const bot of bots) {
-        // We'll use a slightly different prompt for each bot to get varied opinions
-        // For now, we simulate to save API tokens and time
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        const sentiment: 'bullish' | 'bearish' | 'neutral' = Math.random() > 0.6 ? 'bullish' : Math.random() > 0.3 ? 'bearish' : 'neutral';
-        const confidence = Math.floor(Math.random() * 30) + 60;
-        
-        newOpinions.push({
-          bot: bot.name,
-          sentiment,
-          confidence,
-          reasoning: `Based on ${bot.strategy}, I see a ${sentiment} structure forming. The cosmic alignment suggests ${sentiment === 'bullish' ? 'upward expansion' : 'downward contraction'}.`,
-          icon: bot.icon
-        });
-        setOpinions([...newOpinions]);
-      }
-
-      // Calculate consensus
-      const bullishCount = newOpinions.filter(o => o.sentiment === 'bullish').length;
-      const bearishCount = newOpinions.filter(o => o.sentiment === 'bearish').length;
-      
-      let finalSentiment = 'Neutral';
-      if (bullishCount > bearishCount) finalSentiment = 'Bullish';
-      if (bearishCount > bullishCount) finalSentiment = 'Bearish';
-
-      const avgConfidence = Math.round(newOpinions.reduce((acc, o) => acc + o.confidence, 0) / newOpinions.length);
-
-      // Generate the final signal if consensus is strong
-      if (finalSentiment !== 'Neutral' && avgConfidence > 70) {
-        const councilBot = {
-          name: 'The Council',
-          strategy: 'Multi-Bot Consensus',
-          tier_requirement: 'oracle' as Tier,
-          description: 'A collective intelligence formed by the most elite Oracle bots.',
-          icon: 'Users',
-          personality: 'analytical' as const
-        };
-        const signal = await generateTradingSignal(pair, 'H1', councilBot as any, 1000, { sentiment: finalSentiment });
-        setConsensus({ sentiment: finalSentiment, confidence: avgConfidence, signal });
-      } else {
-        setConsensus({ sentiment: finalSentiment, confidence: avgConfidence, signal: null });
-      }
-
+      setDebateResult(result);
+      addToast('The Council has successfully synthesized their consensus.', 'success');
     } catch (err) {
-      addToast('The Council is divided. Cosmic interference detected.', 'error');
+      console.error(err);
+      addToast('Cosmic interference encountered. The Council debate was interrupted.', 'error');
     } finally {
       setIsDebating(false);
     }
   };
 
+  const handleDeployPosition = async () => {
+    if (!debateResult || !debateResult.creatorSynthesizer.hasTradeSetup) return;
+    
+    setIsDeploying(true);
+    try {
+      const plan = debateResult.creatorSynthesizer.educationalPlan;
+      const currentAccountType = userProfile.account_type || 'demo';
+      
+      // Calculate automated lot size
+      const balance = currentAccountType === 'live' ? userProfile.live_balance : userProfile.demo_balance;
+      const riskPercent = userProfile.risk_settings?.risk_per_trade || 1;
+      
+      const entryPrice = parseFloat(plan.entry) || currentPrice;
+      const stopLossPrice = parseFloat(plan.stop_loss) || (entryPrice * 0.995);
+      
+      let autoLotSize = 0.1;
+      try {
+        const diff = Math.abs(entryPrice - stopLossPrice);
+        if (diff > 0) {
+          autoLotSize = Math.max(0.01, parseFloat(((balance * (riskPercent / 100)) / (diff * 100)).toFixed(2)));
+        }
+      } catch (e) {
+        autoLotSize = 0.1;
+      }
+
+      const tradeData: Omit<Trade, 'id'> = {
+        uid: userProfile.uid,
+        signal_id: 'council_' + Date.now(),
+        pair: pair,
+        entry_price: entryPrice,
+        current_price: entryPrice,
+        tp1: parseFloat(plan.tp1) || (entryPrice * 1.005),
+        tp2: parseFloat(plan.tp2) || (entryPrice * 1.012),
+        tp3: parseFloat(plan.tp3) || (entryPrice * 1.020),
+        tp4: parseFloat(plan.tp4) || (entryPrice * 1.030),
+        active_tp: 3,
+        stop_loss: stopLossPrice,
+        pnl: 0,
+        pnl_percentage: 0,
+        lot_size: autoLotSize,
+        status: 'open',
+        type: plan.type.toLowerCase() as 'buy' | 'sell',
+        account_type: currentAccountType,
+        created_at: new Date().toISOString()
+      };
+
+      await dbService.create('trades', tradeData);
+      
+      // Create notification
+      await dbService.create('notifications', {
+        uid: userProfile.uid,
+        title: 'Council Position Triggered',
+        message: `AI Council coordinated execution on ${selectedPairObj.name}. Position loaded in ${currentAccountType} mode.`,
+        type: 'trade',
+        read: false,
+        created_at: new Date().toISOString()
+      });
+
+      addToast(`Council signal deployed: ${plan.type} ${selectedPairObj.name} (Lot: ${autoLotSize})`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      addToast(`Execution failed: ${err.message || 'Unknown error'}`, 'error');
+    } finally {
+      setIsDeploying(false);
+    }
+  };
+
   return (
     <div className="space-y-8 pb-12">
-      <header className="flex items-center justify-between">
+      {/* HEADER SECTION */}
+      <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-display font-bold gold-gradient">The Trading Council</h1>
-          <p className="text-white/40">Multi-bot consensus engine for high-probability cosmic entries.</p>
+          <h1 className="text-3xl font-display font-bold gold-gradient flex items-center gap-2">
+            <Users className="text-gold" size={32} />
+            The AI Trading Council <span className="text-xs uppercase tracking-widest px-2.5 py-1 rounded bg-gold/10 text-gold font-bold">V2.0 PRO</span>
+          </h1>
+          <p className="text-white/40 text-sm mt-1">
+            7 collaborative institutional specialists executing multi-methodology alignment checks.
+          </p>
         </div>
-        <div className="flex items-center gap-4">
-          <select 
-            value={pair}
-            onChange={(e) => setPair(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm focus:outline-none focus:border-gold/50"
-          >
-            {pairs.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
+
+        {/* INPUT CONTROLS */}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] text-white/30 uppercase font-bold tracking-wider">Asset Portal</span>
+            <select 
+              value={pair}
+              onChange={(e) => setPair(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-gold/50 text-white font-mono"
+            >
+              {pairs.map(p => <option key={p.symbol} value={p.symbol}>{p.name}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] text-white/30 uppercase font-bold tracking-wider">Timeframe</span>
+            <select 
+              value={timeframe}
+              onChange={(e) => setTimeframe(e.target.value)}
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-gold/50 text-white font-mono"
+            >
+              {timeframes.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <span className="text-[10px] text-white/30 uppercase font-bold tracking-wider">Education Level</span>
+            <div className="flex bg-white/5 border border-white/10 p-1 rounded-xl">
+              {(['beginner', 'intermediate', 'advanced'] as const).map(level => (
+                <button
+                  key={level}
+                  onClick={() => setEducationLevel(level)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all cursor-pointer ${
+                    educationLevel === level 
+                      ? 'bg-gold/15 text-gold border border-gold/20' 
+                      : 'text-white/40 hover:text-white/80'
+                  }`}
+                >
+                  {level}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <button 
             onClick={startDebate}
             disabled={isDebating}
-            className="gold-button px-8 py-2 flex items-center gap-2 disabled:opacity-50"
+            className="gold-button px-8 py-3.5 flex items-center gap-2 disabled:opacity-50 mt-5 cursor-pointer font-bold uppercase tracking-wider"
           >
-            {isDebating ? <Zap className="animate-pulse" size={18} /> : <Users size={18} />}
-            {isDebating ? 'Council Debating...' : 'Convene Council'}
+            {isDebating ? <Zap className="animate-spin text-black" size={18} /> : <Users size={18} />}
+            {isDebating ? 'Convening council...' : 'Convene Council'}
           </button>
         </div>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {bots.map((bot, i) => {
-          const opinion = opinions.find(o => o.bot === bot.name);
-          return (
-            <motion.div
-              key={bot.name}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              className="glass-card p-8 border-white/5 space-y-6 relative overflow-hidden"
-            >
-              <div className={`absolute top-0 right-0 w-32 h-32 -mr-16 -mt-16 rounded-full bg-current opacity-5 blur-3xl ${bot.color}`} />
+      {/* BEFORE DEBATE AWAITING STATE */}
+      {!isDebating && !debateResult && (
+        <div className="glass-card p-12 text-center border-white/5 flex flex-col items-center justify-center space-y-6 max-w-4xl mx-auto my-12">
+          <div className="p-4 rounded-full bg-white/5 border border-white/10 text-white/20 animate-pulse">
+            <Users size={64} strokeWidth={1} />
+          </div>
+          <div>
+            <h2 className="text-xl font-display font-bold">The Council Chambers are Quiet</h2>
+            <p className="text-white/40 text-sm mt-2 max-w-lg mx-auto">
+              Select your market parameters above and click <span className="text-gold font-bold">Convene Council</span> to summon the elite algorithmic analysts. They will debate market structures using SMC, ICT, pure Price Action, Market Maker cycles, and Supply/Demand zones to refine cosmic edge.
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-3 text-xs text-white/40">
+            <span className="px-3 py-1 rounded-full bg-white/5">Neo (SMC)</span>
+            <span className="px-3 py-1 rounded-full bg-white/5">Trinity (ICT)</span>
+            <span className="px-3 py-1 rounded-full bg-white/5">Morpheus (PA)</span>
+            <span className="px-3 py-1 rounded-full bg-white/5">Architect (MMM)</span>
+            <span className="px-3 py-1 rounded-full bg-white/5">Persephone (S&D)</span>
+            <span className="px-3 py-1 rounded-full bg-white/5">Oracle (Confluence)</span>
+            <span className="px-3 py-1 rounded-full bg-white/5">The Creator (Synthesis)</span>
+          </div>
+        </div>
+      )}
+
+      {/* DEBATING LOADER */}
+      {isDebating && (
+        <div className="space-y-8">
+          <div className="glass-card p-12 text-center border-gold/20 bg-gold/5 flex flex-col items-center justify-center space-y-6 max-w-3xl mx-auto">
+            <div className="relative">
+              <div className="absolute inset-0 rounded-full bg-gold/20 blur-xl animate-ping" />
+              <div className="p-6 rounded-full bg-gold/10 text-gold border border-gold/20 relative z-10">
+                <Users size={48} className="animate-pulse" />
+              </div>
+            </div>
+            <div>
+              <h2 className="text-2xl font-display font-bold gold-gradient uppercase tracking-widest animate-pulse">Debate In Session</h2>
+              <p className="text-white/50 text-sm mt-2 max-w-md mx-auto">
+                All 7 specialized institutional bots are analyzing historical order books, mapping liquidity runs, calculating optimal trade coordinates, and measuring multi-methodology confluence.
+              </p>
+            </div>
+            <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden max-w-md mx-auto">
+              <motion.div 
+                initial={{ width: '0%' }}
+                animate={{ width: '100%' }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+                className="h-full bg-gold"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DEBATE RESULTS PRESENTATION */}
+      {debateResult && (
+        <div className="space-y-10">
+          
+          {/* 1. ORACLE CONFLUENCE REPORT */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`glass-card p-8 border border-white/5 relative overflow-hidden`}
+          >
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 via-transparent to-transparent opacity-50 pointer-events-none" />
+            <div className="relative z-10 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-8">
               
-              <div className="flex items-center justify-between">
+              <div className="space-y-4 max-w-2xl">
                 <div className="flex items-center gap-3">
-                  <div className={`p-3 rounded-xl bg-white/5 ${bot.color}`}>
-                    <bot.icon size={24} />
+                  <div className="p-3.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                    <Sparkles size={24} />
                   </div>
                   <div>
-                    <h3 className="font-bold text-lg">{bot.name}</h3>
-                    <p className="text-[10px] text-white/40 uppercase tracking-widest">{bot.strategy}</p>
+                    <h2 className="text-2xl font-display font-bold text-white tracking-tight flex items-center gap-2">
+                      Oracle Analysis: <span className="text-blue-400">Confluence Metric</span>
+                    </h2>
+                    <p className="text-xs text-white/40 uppercase font-mono tracking-wider">
+                      Strategy Convergence Audit • Guarded Verdict
+                    </p>
                   </div>
                 </div>
-                {opinion && (
-                  <div className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest ${
-                    opinion.sentiment === 'bullish' ? 'bg-emerald-400/10 text-emerald-400' :
-                    opinion.sentiment === 'bearish' ? 'bg-red-400/10 text-red-400' :
-                    'bg-white/10 text-white/60'
+                
+                <p className="text-sm text-white/70 leading-relaxed italic bg-white/5 p-4 rounded-xl border border-white/5">
+                  "{debateResult.oracleAnalysis.educationalVerdict}"
+                </p>
+
+                <div className="text-xs text-white/50 flex items-center gap-2">
+                  <Info size={14} className="text-blue-400" />
+                  <span>Oracle decisions are educational, transparent, evidence-based, and do not promise certainty.</span>
+                </div>
+              </div>
+
+              {/* CONFLUENCE STATS GRID */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full lg:w-auto min-w-[320px]">
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex flex-col justify-between">
+                  <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Agreement</span>
+                  <span className="text-2xl font-mono font-bold text-white mt-2">
+                    {debateResult.oracleAnalysis.strategyAgreement.match(/\d+%/)?.[0] || "90%"}
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex flex-col justify-between">
+                  <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Confidence</span>
+                  <span className="text-2xl font-mono font-bold text-gold mt-2">
+                    {debateResult.oracleAnalysis.measuredConfidence}%
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex flex-col justify-between">
+                  <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Risk Level</span>
+                  <span className={`text-2xl font-mono font-bold mt-2 ${
+                    debateResult.oracleAnalysis.riskLevel.toLowerCase() === 'low' ? 'text-emerald-400' :
+                    debateResult.oracleAnalysis.riskLevel.toLowerCase() === 'medium' ? 'text-gold' :
+                    'text-red-400'
                   }`}>
-                    {opinion.sentiment}
-                  </div>
-                )}
-              </div>
-
-              <div className="h-32 flex flex-col justify-center">
-                {opinion ? (
-                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                    <p className="text-sm text-white/70 italic leading-relaxed">"{opinion.reasoning}"</p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-white/40 uppercase font-bold">Confidence</span>
-                      <span className={`text-sm font-bold ${bot.color}`}>{opinion.confidence}%</span>
-                    </div>
-                    <div className="h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${opinion.confidence}%` }}
-                        className={`h-full bg-current ${bot.color}`}
-                      />
-                    </div>
-                  </motion.div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-white/20 space-y-2">
-                    <Info size={32} strokeWidth={1} />
-                    <p className="text-xs uppercase tracking-widest">Awaiting Convocation</p>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      <AnimatePresence>
-        {consensus && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="glass-card p-10 border-gold/30 bg-gold/5 relative overflow-hidden"
-          >
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gold/10 via-transparent to-transparent opacity-50" />
-            
-            <div className="relative z-10 flex flex-col items-center text-center space-y-6">
-              <div className="p-4 rounded-full bg-gold/10 text-gold border border-gold/20">
-                <Sparkles size={48} />
-              </div>
-              
-              <div>
-                <h2 className="text-4xl font-display font-bold gold-gradient uppercase tracking-tighter">Council Consensus</h2>
-                <p className="text-white/40 uppercase tracking-[0.3em] text-xs mt-2">Final Verdict for {pair}</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-12 w-full max-w-3xl py-8">
-                <div className="space-y-2">
-                  <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Sentiment</p>
-                  <p className={`text-3xl font-display font-bold ${
-                    consensus.sentiment === 'Bullish' ? 'text-emerald-400' :
-                    consensus.sentiment === 'Bearish' ? 'text-red-400' :
-                    'text-white/60'
-                  }`}>{consensus.sentiment}</p>
+                    {debateResult.oracleAnalysis.riskLevel}
+                  </span>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Confidence</p>
-                  <p className="text-3xl font-display font-bold text-gold">{consensus.confidence}%</p>
+
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex flex-col justify-between">
+                  <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Probability</span>
+                  <span className="text-2xl font-mono font-bold text-blue-400 mt-2">
+                    {debateResult.oracleAnalysis.probability}%
+                  </span>
                 </div>
-                <div className="space-y-2">
-                  <p className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Verdict</p>
-                  <p className="text-3xl font-display font-bold text-white">
-                    {consensus.confidence > 75 ? 'EXECUTE' : 'OBSERVE'}
-                  </p>
+
+                <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex flex-col justify-between col-span-2">
+                  <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider">Oracle Decision</span>
+                  <span className={`text-xl font-bold uppercase tracking-wide mt-2 ${
+                    debateResult.oracleAnalysis.decision === 'Approve' ? 'text-emerald-400' : 'text-red-400'
+                  }`}>
+                    {debateResult.oracleAnalysis.decision}
+                  </span>
                 </div>
               </div>
 
-              {consensus.signal ? (
-                <div className="w-full max-w-2xl p-6 rounded-2xl bg-white/5 border border-white/10 space-y-6">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                      <p className="text-[9px] text-white/40 uppercase font-bold">Entry</p>
-                      <p className="text-sm font-mono text-gold">{consensus.signal.entry}</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                      <p className="text-[9px] text-white/40 uppercase font-bold">Stop Loss</p>
-                      <p className="text-sm font-mono text-red-400">{consensus.signal.stop_loss}</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                      <p className="text-[9px] text-white/40 uppercase font-bold">TP 1</p>
-                      <p className="text-sm font-mono text-emerald-400">{consensus.signal.tp1}</p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-black/40 border border-white/5">
-                      <p className="text-[9px] text-white/40 uppercase font-bold">TP 4</p>
-                      <p className="text-sm font-mono text-emerald-400">{consensus.signal.tp4}</p>
-                    </div>
-                  </div>
-                  <p className="text-sm text-white/60 leading-relaxed italic">
-                    "{consensus.signal.analysis}"
-                  </p>
-                </div>
-              ) : (
-                <div className="p-6 rounded-2xl bg-white/5 border border-white/10">
-                  <p className="text-sm text-white/40 italic">
-                    The Council is not in full agreement. No execution signal generated. Patience is the ultimate cosmic virtue.
-                  </p>
-                </div>
-              )}
             </div>
           </motion.div>
-        )}
-      </AnimatePresence>
+
+          {/* 2. THE CHAMELEON DEBATE BOT REVEAL GRID */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-display font-bold text-white/80 flex items-center gap-2">
+              <Users size={18} className="text-gold" /> Institutional Specialization Council Reports
+            </h3>
+            
+            <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+              {(Object.keys(botsConfig) as Array<keyof typeof botsConfig>).map((botId) => {
+                const config = botsConfig[botId];
+                const opinion = debateResult.opinions[botId];
+                if (!opinion) return null;
+
+                const isExpanded = activeBotId === botId;
+
+                return (
+                  <motion.div
+                    key={botId}
+                    layout="position"
+                    onClick={() => setActiveBotId(isExpanded ? null : botId)}
+                    className={`xl:col-span-1 glass-card border p-6 transition-all duration-300 cursor-pointer overflow-hidden relative ${
+                      isExpanded 
+                        ? 'xl:col-span-5 bg-white/5 border-white/15 shadow-xl shadow-black/40 ring-1 ring-white/10' 
+                        : `${config.borderColor} hover:bg-white/5`
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`p-2.5 rounded-xl bg-white/5 ${config.color}`}>
+                          <config.icon size={20} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-base text-white">{config.name}</h4>
+                            <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-white/5 text-white/40 font-mono">
+                              {botId === 'Neo' ? 'SMC' : botId === 'Trinity' ? 'ICT' : botId === 'Morpheus' ? 'PA' : botId === 'Architect' ? 'MMM' : 'S&D'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-white/40 truncate max-w-[160px] xl:max-w-none">{config.role}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                          opinion.sentiment === 'bullish' ? 'bg-emerald-500/10 text-emerald-400' :
+                          opinion.sentiment === 'bearish' ? 'bg-red-500/10 text-red-400' :
+                          'bg-white/10 text-white/60'
+                        }`}>
+                          {opinion.sentiment}
+                        </span>
+                        {isExpanded ? <ChevronUp size={16} className="text-white/40" /> : <ChevronDown size={16} className="text-white/40" />}
+                      </div>
+                    </div>
+
+                    {/* CONFIDENCE BAR FOR BOT */}
+                    <div className="mt-4 space-y-1.5">
+                      <div className="flex justify-between items-center text-[10px] font-mono">
+                        <span className="text-white/30">CONFIDENCE</span>
+                        <span className={`font-bold ${config.color}`}>{opinion.confidence}%</span>
+                      </div>
+                      <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                        <div className={`h-full bg-current ${config.color}`} style={{ width: `${opinion.confidence}%` }} />
+                      </div>
+                    </div>
+
+                    {/* DETECTED OVERVIEW PREVIEW (VISIBLE WHEN COLLAPSED) */}
+                    {!isExpanded && (
+                      <p className="text-xs text-white/50 italic truncate mt-4">
+                        "{opinion.detected}"
+                      </p>
+                    )}
+
+                    {/* EXPANDED RICH DETAILS */}
+                    <AnimatePresence>
+                      {isExpanded && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="mt-6 pt-6 border-t border-white/5 space-y-6 text-sm"
+                        >
+                          {/* BOT INFO ROW */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-white/60 bg-white/5 p-4 rounded-xl border border-white/5">
+                            <div>
+                              <span className="block text-[10px] text-white/30 uppercase font-bold tracking-wider mb-1">Focus Areas</span>
+                              <span className="text-white/80 font-mono">{config.focus}</span>
+                            </div>
+                            <div>
+                              <span className="block text-[10px] text-white/30 uppercase font-bold tracking-wider mb-1">Assigned Domain Responsibilities</span>
+                              <span className="text-white/80">{config.responsibilities}</span>
+                            </div>
+                          </div>
+
+                          {/* SYSTEM DETECTED & WHY IT MATTERS */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="space-y-2">
+                              <span className="text-xs text-white/40 font-bold uppercase tracking-widest flex items-center gap-1">
+                                <Target size={14} className={config.color} /> Structure Detected
+                              </span>
+                              <p className="text-white/80 leading-relaxed font-mono text-xs bg-black/30 p-3 rounded-lg border border-white/5">
+                                {opinion.detected}
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <span className="text-xs text-white/40 font-bold uppercase tracking-widest flex items-center gap-1">
+                                <BookOpen size={14} className="text-blue-400" /> Educational Significance
+                              </span>
+                              <p className="text-white/70 leading-relaxed">
+                                {opinion.whyItMatters}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* REASONING & AFFECT ON BIAS */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-white/5">
+                            <div className="space-y-2">
+                              <span className="text-xs text-white/40 font-bold uppercase tracking-widest flex items-center gap-1">
+                                <HelpCircle size={14} className="text-orange-400" /> Directional Bias Influence
+                              </span>
+                              <p className="text-white/70 leading-relaxed">
+                                {opinion.howItAffects}
+                              </p>
+                            </div>
+                            <div className="space-y-2">
+                              <span className="text-xs text-white/40 font-bold uppercase tracking-widest flex items-center gap-1">
+                                <AlertTriangle size={14} className="text-red-400" /> Structural Invalidation Conditions
+                              </span>
+                              <p className="text-white/70 leading-relaxed font-mono text-xs text-red-300">
+                                {opinion.invalidation}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* EDUCATION CORNER SECTION */}
+                          <div className="p-4 rounded-xl bg-gold/5 border border-gold/10 space-y-4">
+                            <div className="flex items-center gap-2 text-gold">
+                              <GraduationCap size={18} />
+                              <h5 className="font-bold uppercase tracking-wider text-xs">Educational Corner — Level {educationLevel}</h5>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs text-white/70">
+                              <div className="space-y-1.5">
+                                <span className="block font-bold text-red-400 uppercase tracking-widest">Common Beginner Pitfall</span>
+                                <p className="leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5">
+                                  {opinion.beginnerMistake}
+                                </p>
+                              </div>
+                              <div className="space-y-1.5">
+                                <span className="block font-bold text-emerald-400 uppercase tracking-widest">Institutional Best Practice</span>
+                                <p className="leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5">
+                                  {opinion.bestPractice}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="pt-2 border-t border-white/5 text-[11px] text-white/50">
+                              <span className="font-bold uppercase tracking-wider text-white/40 mr-1">Risk Considerations:</span>
+                              {opinion.riskConsideration}
+                            </div>
+                          </div>
+
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                );
+              })}
+            </div>
+            
+            {!activeBotId && (
+              <div className="text-center text-xs text-white/30 italic">
+                💡 Tip: Click on any bot card above to expand and review their full, deep institutional analysis report.
+              </div>
+            )}
+          </div>
+
+          {/* 3. FINAL SYNTHESIZER: BLĀCK-PLĀYER (THE CREATOR) */}
+          {debateResult.oracleAnalysis.decision === 'Reject' ? (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="glass-card p-8 border border-red-500/20 bg-red-500/5 text-center flex flex-col items-center justify-center space-y-4"
+            >
+              <AlertTriangle className="text-red-400 animate-bounce" size={48} />
+              <h3 className="text-xl font-display font-bold text-red-400">COUNCIL DIVERGENCE DETECTED</h3>
+              <p className="text-white/60 max-w-xl text-sm leading-relaxed font-mono">
+                "Market conditions currently lack sufficient institutional confluence. No trade will be generated at this time."
+              </p>
+            </motion.div>
+          ) : (
+            debateResult.creatorSynthesizer.hasTradeSetup && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="grid grid-cols-1 lg:grid-cols-3 gap-8"
+              >
+                
+                {/* EDUCATIONAL DETAILED ANALYSIS */}
+                <div className="lg:col-span-2 glass-card p-8 border border-gold/15 bg-white/5 space-y-6 flex flex-col justify-between">
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3.5 rounded-xl bg-gold/15 text-gold border border-gold/20">
+                        <Users size={24} />
+                      </div>
+                      <div>
+                        <h3 className="text-xl font-display font-bold text-white">
+                          Synthesized Educational Trade Plan
+                        </h3>
+                        <p className="text-[10px] text-white/40 uppercase font-mono tracking-widest mt-0.5">
+                          Formulated by Blāck-Plāyer (The Creator) • Lead Strategy Synthesizer
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 text-sm">
+                      <div className="space-y-1.5">
+                        <h5 className="font-bold text-xs uppercase tracking-widest text-gold/80 flex items-center gap-1">
+                          <CheckCircle2 size={14} className="text-gold" /> Why This Setup Exists
+                        </h5>
+                        <p className="text-white/70 leading-relaxed bg-white/5 p-3.5 rounded-xl border border-white/5 font-mono text-xs">
+                          {debateResult.creatorSynthesizer.educationalPlan.whyExists}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                          <h5 className="font-bold text-xs uppercase tracking-widest text-red-400 flex items-center gap-1">
+                            <AlertTriangle size={14} /> Why Setup May Fail
+                          </h5>
+                          <p className="text-white/70 leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 text-xs">
+                            {debateResult.creatorSynthesizer.educationalPlan.whyFail}
+                          </p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <h5 className="font-bold text-xs uppercase tracking-widest text-orange-400 flex items-center gap-1">
+                            <AlertTriangle size={14} /> Invalidation Points
+                          </h5>
+                          <p className="text-white/70 leading-relaxed bg-white/5 p-3 rounded-lg border border-white/5 text-xs font-mono">
+                            {debateResult.creatorSynthesizer.educationalPlan.invalidationPoints}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <div className="space-y-1.5">
+                          <h5 className="font-bold text-xs uppercase tracking-widest text-white/50">
+                            Key Risk Factors
+                          </h5>
+                          <p className="text-white/60 leading-relaxed text-xs">
+                            {debateResult.creatorSynthesizer.educationalPlan.riskFactors}
+                          </p>
+                        </div>
+                        <div className="space-y-1.5">
+                          <h5 className="font-bold text-xs uppercase tracking-widest text-white/50">
+                            Alternative Market Scenarios
+                          </h5>
+                          <p className="text-white/60 leading-relaxed text-xs">
+                            {debateResult.creatorSynthesizer.educationalPlan.alternativeScenarios}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-white/5 text-xs text-white/40 italic">
+                    Note: The Creator acts as lead educator, combining all specialties to generate transparent trade theses. Decisions remain purely educational.
+                  </div>
+                </div>
+
+                {/* SIGNAL ACTION TERMINAL CARD */}
+                <div className="lg:col-span-1 glass-card p-8 border border-gold/30 bg-gold/5 flex flex-col justify-between space-y-6 relative overflow-hidden">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gold/10 via-transparent to-transparent opacity-50 pointer-events-none" />
+                  
+                  <div className="space-y-6 relative z-10">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-white/40 uppercase font-mono tracking-widest">COSMIC TERMINAL</span>
+                      <span className={`px-3 py-1 rounded-full text-xs font-bold font-mono tracking-widest ${
+                        debateResult.creatorSynthesizer.educationalPlan.type === 'BUY' 
+                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                          : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                      }`}>
+                        {debateResult.creatorSynthesizer.educationalPlan.type}
+                      </span>
+                    </div>
+
+                    <div className="text-center space-y-1">
+                      <p className="text-xs text-white/40 uppercase tracking-[0.2em]">CURRENT MARKET</p>
+                      <h4 className="text-3xl font-display font-bold text-white tracking-tight">
+                        {selectedPairObj.name}
+                      </h4>
+                      <p className="text-sm font-mono text-gold mt-1">
+                        Live Price: ${currentPrice.toFixed(4)}
+                      </p>
+                    </div>
+
+                    <div className="space-y-3.5 pt-4 border-t border-white/5">
+                      <div className="flex justify-between items-center text-xs p-2.5 rounded bg-black/40 border border-white/5">
+                        <span className="text-white/40 font-bold uppercase tracking-wider">ENTRY REGION</span>
+                        <span className="font-mono text-white font-bold">{debateResult.creatorSynthesizer.educationalPlan.entry}</span>
+                      </div>
+                      
+                      <div className="flex justify-between items-center text-xs p-2.5 rounded bg-black/40 border border-white/5">
+                        <span className="text-red-400/80 font-bold uppercase tracking-wider">STOP LOSS</span>
+                        <span className="font-mono text-red-400 font-bold">{debateResult.creatorSynthesizer.educationalPlan.stop_loss}</span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="p-2.5 rounded bg-black/40 border border-white/5 space-y-1">
+                          <span className="text-emerald-400/80 font-bold uppercase tracking-wider text-[10px] block">TARGET TP1</span>
+                          <span className="font-mono text-emerald-400 font-bold block">{debateResult.creatorSynthesizer.educationalPlan.tp1}</span>
+                        </div>
+                        <div className="p-2.5 rounded bg-black/40 border border-white/5 space-y-1">
+                          <span className="text-emerald-400/80 font-bold uppercase tracking-wider text-[10px] block">TARGET TP2</span>
+                          <span className="font-mono text-emerald-400 font-bold block">{debateResult.creatorSynthesizer.educationalPlan.tp2}</span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="p-2.5 rounded bg-black/40 border border-white/5 space-y-1">
+                          <span className="text-emerald-400/80 font-bold uppercase tracking-wider text-[10px] block">TARGET TP3</span>
+                          <span className="font-mono text-emerald-400 font-bold block">{debateResult.creatorSynthesizer.educationalPlan.tp3}</span>
+                        </div>
+                        <div className="p-2.5 rounded bg-black/40 border border-white/5 space-y-1">
+                          <span className="text-emerald-400/80 font-bold uppercase tracking-wider text-[10px] block">TARGET TP4</span>
+                          <span className="font-mono text-emerald-400 font-bold block">{debateResult.creatorSynthesizer.educationalPlan.tp4}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleDeployPosition}
+                    disabled={isDeploying}
+                    className="gold-button w-full py-4 text-sm font-bold uppercase tracking-widest flex items-center justify-center gap-2 cursor-pointer mt-4"
+                  >
+                    {isDeploying ? (
+                      <>
+                        <Zap className="animate-spin text-black" size={16} />
+                        DEPLOYING POSITION...
+                      </>
+                    ) : (
+                      <>
+                        <ArrowRight size={16} className="text-black" />
+                        DEPLOY AS {userProfile.account_type === 'live' ? 'LIVE' : 'PAPER'} POSITION
+                      </>
+                    )}
+                  </button>
+
+                </div>
+
+              </motion.div>
+            )
+          )}
+
+        </div>
+      )}
+
     </div>
   );
 }

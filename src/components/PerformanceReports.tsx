@@ -28,7 +28,9 @@ export default function PerformanceReports({ userProfile }: PerformanceReportsPr
           where('uid', '==', userProfile.uid),
           firestoreOrderBy('created_at', 'desc')
         ]);
-        setTrades(data as Trade[]);
+        // Guard against offline fallback return of complete localTable containing multiple users' data
+        const filtered = (data as Trade[]).filter(t => t.uid === userProfile.uid);
+        setTrades(filtered);
       } catch (err) {
         console.error("Failed to fetch trades via dbService:", err);
       } finally {
@@ -41,7 +43,9 @@ export default function PerformanceReports({ userProfile }: PerformanceReportsPr
     const unsubscribe = dbService.subscribeCollection('trades', [
       where('uid', '==', userProfile.uid)
     ], (data) => {
-      setTrades(data as Trade[]);
+      // Guard against offline fallback return of complete localTable containing multiple users' data
+      const filtered = (data as Trade[]).filter(t => t.uid === userProfile.uid);
+      setTrades(filtered);
     });
 
     return () => unsubscribe();

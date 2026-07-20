@@ -15,6 +15,7 @@ import WebSocket from 'ws';
 import fs from 'fs';
 import path from 'path';
 import { DERIV_SYMBOLS } from '../constants';
+import { getFallbackATR } from '../lib/tradeUtils';
 
 // Load Firebase Config
 const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
@@ -174,8 +175,11 @@ export class ServerScanner {
     // Start users polling refresh loop (every 15s)
     this.userRefreshInterval = setInterval(() => this.refreshUsers(), 15000);
 
-    // Start open trades monitoring loop (every 2s)
-    this.monitorInterval = setInterval(() => this.monitorOpenTrades(), 2000);
+    // Start open trades and active signals monitoring loop (every 2s)
+    this.monitorInterval = setInterval(async () => {
+      await this.monitorOpenTrades();
+      await this.monitorActiveSignals();
+    }, 2000);
 
     // Establish WebSocket Connection
     this.connectDeriv();
@@ -333,15 +337,9 @@ export class ServerScanner {
         // Passed cooldown!
         this.lastTriggerTime[user.uid][symbol] = now;
 
-        // Dynamic stop loss range calculation
-        let slOffset = currentPrice * 0.005; 
-        if (symbol.startsWith('cry')) {
-          slOffset = currentPrice * 0.015;
-        } else if (symbol.startsWith('R_') || symbol.startsWith('V') || symbol.startsWith('1H') || symbol.includes('BOOM') || symbol.includes('CRASH')) {
-          slOffset = currentPrice * 0.008;
-        } else if (currentPrice > 100) {
-          slOffset = currentPrice * 0.003;
-        }
+        // Dynamic stop loss range calculation using Average True Range (ATR)
+        const atr = getFallbackATR(symbol, currentPrice);
+        const slOffset = atr * 1.5; // Tighter, adaptive stops using 1.5x ATR
 
         const entryPrice = currentPrice;
         const stop_loss = breakoutType === 'buy' ? entryPrice - slOffset : entryPrice + slOffset;
@@ -649,12 +647,141 @@ export class ServerScanner {
       console.error('[Server Scanner] Error in monitorOpenTrades loop:', err);
     }
   }
+
+  private async monitorActiveSignals() {
+    try {
+      // Get all active signals across all users
+      const activeSignalsSnapshot = await getDocs(query(
+        collection(db, 'signals'),
+        where('status', '==', 'active')
+      ));
+
+      if (activeSignalsSnapshot.empty) return;
+
+      const signalsToProcess: any[] = [];
+      activeSignalsSnapshot.forEach((doc) => {
+        signalsToProcess.push({ id: doc.id, ...doc.data() });
+      });
+
+      for (const signal of signalsToProcess) {
+        const currentPrice = this.currentPrices[signal.pair];
+        if (!currentPrice) continue;
+
+        // Find user settings for integrations
+        const user = this.users.find(u => u.uid === signal.uid);
+        if (!user) continue;
+
+        // Check if there is an active paper trade associated with this signal to avoid duplicate updates!
+        const openTradesSnapshot = await getDocs(query(
+          collection(db, 'trades'),
+          where('signal_id', '==', signal.id),
+          where('status', '==', 'open')
+        ));
+        if (!openTradesSnapshot.empty) {
+          // Open trade exists, let trade monitor handle the signal progress
+          continue;
+        }
+
+        const isBuy = signal.decision === 'Buy' || signal.tp1 > signal.entry;
+        let shouldClose = false;
+        let reason = '';
+        let updateType: 'TP1_HIT' | 'TP2_HIT' | 'TP3_HIT' | 'TP_FINAL_HIT' | 'SL_HIT' | 'BE_HIT' | null = null;
+        const tp_hits = signal.tp_hits || [];
+
+        // Check SL / BE Trailed hits
+        if (isBuy && currentPrice <= signal.stop_loss) {
+          shouldClose = true;
+          reason = signal.stop_loss === signal.entry ? 'Break Even hit' : 'Stop Loss hit';
+          updateType = signal.stop_loss === signal.entry ? 'BE_HIT' : 'SL_HIT';
+        } else if (!isBuy && currentPrice >= signal.stop_loss) {
+          shouldClose = true;
+          reason = signal.stop_loss === signal.entry ? 'Break Even hit' : 'Stop Loss hit';
+          updateType = signal.stop_loss === signal.entry ? 'BE_HIT' : 'SL_HIT';
+        }
+
+        // Check TP4 (final target)
+        if (!shouldClose) {
+          const tp4Price = signal.tp4 || (isBuy ? signal.tp3 * 1.1 : signal.tp3 * 0.9);
+          if (isBuy && currentPrice >= tp4Price) {
+            shouldClose = true;
+            reason = 'Take Profit 4 hit';
+            updateType = 'TP_FINAL_HIT';
+          } else if (!isBuy && currentPrice <= tp4Price) {
+            shouldClose = true;
+            reason = 'Take Profit 4 hit';
+            updateType = 'TP_FINAL_HIT';
+          }
+        }
+
+        // Check partial targets (TP1, TP2, TP3) for SL moves and telegram notifications
+        if (!shouldClose) {
+          const tps = [
+            { level: 'TP1', price: signal.tp1, updateType: 'TP1_HIT' as const },
+            { level: 'TP2', price: signal.tp2, updateType: 'TP2_HIT' as const },
+            { level: 'TP3', price: signal.tp3, updateType: 'TP3_HIT' as const }
+          ];
+
+          for (const tp of tps) {
+            if (!tp.price) continue;
+            const hit = isBuy ? currentPrice >= tp.price : currentPrice <= tp.price;
+            const alreadyHit = tp_hits.includes(tp.level);
+
+            if (hit && !alreadyHit) {
+              try {
+                const newTpHits = [...tp_hits, tp.level];
+                const updateData: any = { 
+                  tp_hits: newTpHits,
+                  status: tp.level.toLowerCase() + '_hit'
+                };
+
+                // Move stop_loss for the signal to trail its progress
+                if (tp.level === 'TP1') {
+                  updateData.stop_loss = signal.entry;
+                } else if (tp.level === 'TP2') {
+                  updateData.stop_loss = signal.tp1;
+                } else if (tp.level === 'TP3') {
+                  updateData.stop_loss = signal.tp2;
+                }
+
+                await updateDoc(doc(db, 'signals', signal.id), updateData);
+                console.log(`[Server Scanner] Signal ${signal.id} hit ${tp.level}, trailing SL.`);
+
+                // Auto Broadcast to Telegram
+                await sendUpdateTelegram(user, { ...signal, ...updateData }, tp.updateType, currentPrice);
+              } catch (err) {
+                console.error(`[Server Scanner] Error updating signal hit for ${tp.level}:`, err);
+              }
+            }
+          }
+        }
+
+        if (shouldClose && updateType) {
+          try {
+            await updateDoc(doc(db, 'signals', signal.id), {
+              status: updateType === 'SL_HIT' ? 'sl_hit' : updateType === 'BE_HIT' ? 'be_hit' : 'closed',
+              result: updateType.includes('TP') ? 'Won' : 'Lost',
+              exit_price: currentPrice,
+              closed_at: new Date().toISOString()
+            });
+
+            // Auto Broadcast to Telegram
+            await sendUpdateTelegram(user, signal, updateType, currentPrice);
+            console.log(`[Server Scanner] Closed Signal ${signal.id} due to ${reason}.`);
+          } catch (err) {
+            console.error(`[Server Scanner] Error closing signal ${signal.id}:`, err);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[Server Scanner] Error in monitorActiveSignals loop:', err);
+    }
+  }
 }
 
 // Telegram Update dispatcher
 async function sendUpdateTelegram(user: any, trade: any, updateType: string, currentPrice: number) {
   const pairName = formatPairName(trade.pair || 'Asset');
-  const entryVal = formatValue(trade.entry_price, trade.pair);
+  const entryVal = formatValue(trade.entry_price !== undefined ? trade.entry_price : trade.entry, trade.pair);
   const tp1Val = formatValue(trade.tp1, trade.pair);
   const tp2Val = formatValue(trade.tp2, trade.pair);
 

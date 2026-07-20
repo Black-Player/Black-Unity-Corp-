@@ -68,9 +68,15 @@ class DerivService {
       if (symbol.includes('BOOM1000')) currentPrice = 14650;
       else if (symbol.includes('BOOM500')) currentPrice = 4930;
       else if (symbol.includes('BOOM300')) currentPrice = 1500;
+      else if (symbol.includes('BOOM150')) currentPrice = 15000;
+      else if (symbol.includes('BOOM100')) currentPrice = 10000;
+      else if (symbol.includes('BOOM50')) currentPrice = 5000;
       else if (symbol.includes('CRASH1000')) currentPrice = 5830;
       else if (symbol.includes('CRASH500')) currentPrice = 2870;
       else if (symbol.includes('CRASH300')) currentPrice = 4200;
+      else if (symbol.includes('CRASH150')) currentPrice = 15000;
+      else if (symbol.includes('CRASH100')) currentPrice = 10000;
+      else if (symbol.includes('CRASH50')) currentPrice = 5000;
       else if (symbol.includes('1HZ')) currentPrice = 5000;
       else if (symbol.includes('R_')) currentPrice = 1000;
       else if (symbol.includes('JD')) currentPrice = 50000;
@@ -98,6 +104,24 @@ class DerivService {
       } else {
         change = -0.2 - Math.random() * 0.5;
       }
+    } else if (symbol.includes('BOOM150')) {
+      if (Math.random() < 0.025) {
+        change = 25 + Math.random() * 65;
+      } else {
+        change = -0.25 - Math.random() * 0.6;
+      }
+    } else if (symbol.includes('BOOM100')) {
+      if (Math.random() < 0.02) {
+        change = 20 + Math.random() * 50;
+      } else {
+        change = -0.2 - Math.random() * 0.5;
+      }
+    } else if (symbol.includes('BOOM50')) {
+      if (Math.random() < 0.015) {
+        change = 15 + Math.random() * 40;
+      } else {
+        change = -0.15 - Math.random() * 0.4;
+      }
     } else if (symbol.includes('CRASH300')) {
       if (Math.random() < 0.04) {
         change = -30 - Math.random() * 80;
@@ -115,6 +139,24 @@ class DerivService {
         change = -15 - Math.random() * 45;
       } else {
         change = 0.2 + Math.random() * 0.5;
+      }
+    } else if (symbol.includes('CRASH150')) {
+      if (Math.random() < 0.025) {
+        change = -25 - Math.random() * 65;
+      } else {
+        change = 0.25 + Math.random() * 0.6;
+      }
+    } else if (symbol.includes('CRASH100')) {
+      if (Math.random() < 0.02) {
+        change = -20 - Math.random() * 50;
+      } else {
+        change = 0.2 + Math.random() * 0.5;
+      }
+    } else if (symbol.includes('CRASH50')) {
+      if (Math.random() < 0.015) {
+        change = -15 - Math.random() * 40;
+      } else {
+        change = 0.15 + Math.random() * 0.4;
       }
     } else if (symbol.includes('STP')) {
       change = Math.random() < 0.5 ? 0.1 : -0.1;
@@ -291,11 +333,8 @@ class DerivService {
           clearTimeout(timeout);
           this.pendingRequests.delete(reqId);
           
-          if (data.error) {
-            reject(new Error(data.error.message));
-          } else {
-            resolve(data);
-          }
+          // Always resolve, let the specific request handler (like getHistory) handle any specific errors (e.g. invalid symbols) gracefully
+          resolve(data);
           return;
         }
 
@@ -568,6 +607,29 @@ class DerivService {
       this.socket = null;
     }
   }
+
+  updateToken(newToken: string) {
+    if (newToken && this.apiToken !== newToken) {
+      console.log('Updating Deriv API Token and reconnecting...');
+      this.apiToken = newToken;
+      this.shouldAuthorize = true;
+      this.isAuthorized = false;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('deriv_api_token', newToken);
+      }
+      if (this.socket) {
+        this.socket.close(); // This will trigger reconnection automatically with the new token
+      }
+    }
+  }
 }
 
-export const derivService = new DerivService('eGYgMolJfh9pBQ4');
+const getInitialToken = () => {
+  if (typeof window !== 'undefined') {
+    const stored = localStorage.getItem('deriv_api_token');
+    if (stored) return stored;
+  }
+  return 'pat_165192ec637f5c82e4d3f04f98de40df58372e111c84f267574b65b455e6681e';
+};
+
+export const derivService = new DerivService(getInitialToken());

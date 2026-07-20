@@ -43,6 +43,7 @@ import OracleEye from './components/OracleEye';
 import OracleOversightNetwork from './components/OracleOversightNetwork';
 import Gallery from './components/Gallery';
 import Alchemist from './components/Alchemist';
+import { OptimizationEngine } from './components/OptimizationEngine';
 import Nexus from './components/Nexus';
 import Vault from './components/Vault';
 import Chat from './components/Chat';
@@ -55,7 +56,7 @@ import TradingGame from './components/TradingGame';
 import TelegramCenter from './components/TelegramCenter';
 import TickerTape from './components/TickerTape';
 import { motion, AnimatePresence } from 'motion/react';
-import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, ShieldCheck, Hammer, Book, Zap, Video, Layers, Layout, Settings2, Target, ShoppingBag, Ghost, History as HistoryIcon, Activity } from 'lucide-react';
+import { Loader2, Bell, CheckCircle2, XCircle, Info, LayoutDashboard, Globe, MessageSquare, BarChart3, Settings as SettingsIcon, Sparkles, Search, Bot, Menu, X as CloseIcon, Wallet, Clock, Trophy, Users, Eye, FlaskConical, GraduationCap, Shield, ShieldCheck, Hammer, Book, Zap, Video, Layers, Layout, Settings2, Target, ShoppingBag, Ghost, History as HistoryIcon, Activity, Cpu } from 'lucide-react';
 
 interface Toast {
   id: string;
@@ -272,6 +273,12 @@ export default function App() {
       document.documentElement.style.removeProperty('--theme-bg');
     }
   }, [userProfile?.theme]);
+
+  useEffect(() => {
+    if (userProfile?.integrations?.deriv_api_token) {
+      derivService.updateToken(userProfile.integrations.deriv_api_token);
+    }
+  }, [userProfile?.integrations?.deriv_api_token]);
 
   const handleCloseTrade = useCallback(async (trade: Trade, reason: string = 'Manual Close') => {
     if (!userProfile) return;
@@ -525,6 +532,8 @@ export default function App() {
         return <Forge {...props} />;
       case 'backtest':
         return <Backtester {...props} />;
+      case 'optimization':
+        return <OptimizationEngine {...props} />;
       case 'academy':
         return <Academy userProfile={userProfile} addToast={addToast} setActiveTab={setActivePage} />;
       case 'vault':
@@ -666,6 +675,7 @@ export default function App() {
                           { id: 'signal-oracle', label: 'Signal Oracle', icon: Target },
                           { id: 'gallery', label: 'The Gallery', icon: ShoppingBag },
                           { id: 'simulator', label: 'Trading Simulator', icon: Activity },
+                          { id: 'optimization', label: 'AI Optimization', icon: Cpu },
                           { id: 'alchemist', label: 'The Alchemist', icon: Settings2 },
                           { id: 'marketplace', label: 'Marketplace', icon: Search },
                           { id: 'council', label: 'Council', icon: Users },

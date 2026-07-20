@@ -1,4 +1,4 @@
-import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock, User, Ghost, Activity } from 'lucide-react';
+import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock, User, Ghost, Activity, Cpu } from 'lucide-react';
 import { supabase } from '../supabase';
 import { auth as firebaseAuth } from '../firebase';
 import { UserProfile, Tier, hasTierAccess } from '../types';
@@ -42,6 +42,7 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
       items: [
         { id: 'simulator', label: 'Trading Simulator', icon: Activity },
         { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
+        { id: 'optimization', label: 'AI Optimization', icon: Cpu },
         { id: 'alchemist', label: 'The Alchemist', icon: Settings2, requiredTier: 'zion' },
         { id: 'strategy-builder', label: 'The Weaver', icon: Layers, requiredTier: 'legendary' },
         { id: 'forge', label: 'The Forge', icon: Hammer, requiredTier: 'zion' },

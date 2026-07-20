@@ -9,7 +9,7 @@ import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { generateTradingSignal, getMarketSentiment } from '../services/aiService';
 import { sendSignalToTelegram, sendMonthlyOracleIntroduction, sendDailyMorningBrief } from '../services/communicationService';
 import { useMarketContext } from '../MarketContext';
-import { calculateAutoLotSize } from '../lib/tradeUtils';
+import { calculateAutoLotSize, calculateATR, getFallbackATR } from '../lib/tradeUtils';
 import { derivService } from '../services/derivService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 import UltimateConfluenceChart from './UltimateConfluenceChart';
@@ -87,9 +87,15 @@ const getFallbackPrice = (pair: string) => {
   if (p.includes('BOOM1000')) return 14480 + Math.random() * 20;
   if (p.includes('BOOM500')) return 5060 + Math.random() * 10;
   if (p.includes('BOOM300')) return 1500 + Math.random() * 10;
+  if (p.includes('BOOM150')) return 15000 + Math.random() * 20;
+  if (p.includes('BOOM100')) return 10000 + Math.random() * 20;
+  if (p.includes('BOOM50')) return 5000 + Math.random() * 10;
   if (p.includes('CRASH1000')) return 5860 + Math.random() * 10;
   if (p.includes('CRASH500')) return 2870 + Math.random() * 10;
   if (p.includes('CRASH300')) return 4200 + Math.random() * 10;
+  if (p.includes('CRASH150')) return 15000 + Math.random() * 20;
+  if (p.includes('CRASH100')) return 10000 + Math.random() * 20;
+  if (p.includes('CRASH50')) return 5000 + Math.random() * 10;
   
   // 1-second Volatility Indices (1HZ)
   if (p.includes('1HZ25V')) return 110500 + Math.random() * 500;
@@ -339,25 +345,38 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
           decision = rsi > 52 ? 'Buy' : 'Sell';
         }
 
-        // Calculate precise Stop Loss & Take Profit (Min 1:3 Reward)
+        // Calculate precise Stop Loss & Take Profit using dynamic Average True Range (ATR)
         let stop_loss = 0;
-        const avgRange = highs.slice(len - 14).reduce((sum, h, idx) => sum + (h - lows[len - 14 + idx]), 0) / 14;
+        const atrCandles = candles.slice(-20); // Get last 20 candles for smooth ATR calculation
+        const dynamicAtr = calculateATR(atrCandles, 14);
+        const fallbackAtr = getFallbackATR(pair, activePrice);
+        const atr = dynamicAtr > 0 ? dynamicAtr : fallbackAtr;
+
+        // Use 1.5 * ATR as dynamic volatility-based stop-loss buffer (tighter and adaptive)
+        const slBuffer = atr * 1.5;
+        
+        // Ensure minimum risk is scaled to 50% of fallback ATR rather than a rigid fixed percentage
+        const minRange = fallbackAtr * 0.5;
 
         if (decision === 'Buy') {
           const rawSl = Math.min(lastSwingLow, ema21);
-          stop_loss = rawSl < activePrice ? rawSl : activePrice - (avgRange * 1.5);
-          if (stop_loss >= activePrice) {
-            stop_loss = activePrice - (avgRange * 1.5);
+          // Tight dynamic stop loss based on structure, buffered by 1.5x ATR
+          const structuralSl = Math.max(rawSl, activePrice - slBuffer);
+          stop_loss = structuralSl < activePrice ? structuralSl : activePrice - slBuffer;
+          if (stop_loss >= activePrice || (activePrice - stop_loss) < minRange) {
+            stop_loss = activePrice - slBuffer;
           }
         } else {
           const rawSl = Math.max(lastSwingHigh, ema21);
-          stop_loss = rawSl > activePrice ? rawSl : activePrice + (avgRange * 1.5);
-          if (stop_loss <= activePrice) {
-            stop_loss = activePrice + (avgRange * 1.5);
+          // Tight dynamic stop loss based on structure, buffered by 1.5x ATR
+          const structuralSl = Math.min(rawSl, activePrice + slBuffer);
+          stop_loss = structuralSl > activePrice ? structuralSl : activePrice + slBuffer;
+          if (stop_loss <= activePrice || (stop_loss - activePrice) < minRange) {
+            stop_loss = activePrice + slBuffer;
           }
         }
 
-        const risk = Math.abs(activePrice - stop_loss);
+        const risk = Math.max(Math.abs(activePrice - stop_loss), minRange);
         const risk_reward = 3.2;
 
         let tp1 = 0, tp2 = 0, tp3 = 0, tp4 = 0;
@@ -420,8 +439,8 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
               order_block: lastSwingLow
             },
             liquidity_zones: {
-              buy_side: lastSwingHigh + avgRange,
-              sell_side: lastSwingLow - avgRange
+              buy_side: lastSwingHigh + atr,
+              sell_side: lastSwingLow - atr
             },
             wave_projection: [
               activePrice,

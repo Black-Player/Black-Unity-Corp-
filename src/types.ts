@@ -59,6 +59,7 @@ export interface UserProfile {
     pairs: string[];
   };
   integrations?: {
+    deriv_api_token?: string;
     telegram_bot_token?: string;
     telegram_chat_id?: string;
     telegram_automation_enabled?: boolean;
@@ -159,12 +160,16 @@ export interface Signal {
   analysis: string;
   psychological_trap?: string;
   recommended_lot_size: number;
-  status: 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'tp4_hit' | 'sl_hit' | 'rejected';
+  status: 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'tp4_hit' | 'sl_hit' | 'rejected' | 'closed' | 'be_hit';
   created_at: string;
   is_shared?: boolean;
   likes_count?: number;
   shares_count?: number;
   telegram_message_id?: string;
+  tp_hits?: string[];
+  exit_price?: number;
+  closed_at?: string;
+  result?: 'Won' | 'Lost';
 }
 
 export interface Trade {

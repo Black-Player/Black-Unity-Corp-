@@ -27,6 +27,7 @@ const THEMES = [
 export default function Settings({ userProfile, addToast }: SettingsProps) {
   const [settings, setSettings] = useState(userProfile.notification_settings);
   const [integrations, setIntegrations] = useState({
+    deriv_api_token: '',
     telegram_bot_token: '',
     telegram_chat_id: '',
     notification_email: userProfile.email || '',
@@ -365,6 +366,20 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
             <p className="text-sm text-white/60">Connect MetaAPI for automated executions (Deriv/Exness/HFM) and Telegram for remote Oracle whispers.</p>
             
             <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-white/40">Deriv API Token</label>
+                <input 
+                  type="password" 
+                  value={integrations.deriv_api_token || ''}
+                  onChange={(e) => setIntegrations({...integrations, deriv_api_token: e.target.value})}
+                  placeholder="e.g. pat_165192ec637f5... or other Deriv token" 
+                  className="w-full cosmic-input bg-black/40 border border-gold/20 focus:border-gold/60 text-gold" 
+                />
+                <p className="text-[10px] text-white/40 leading-relaxed">
+                  Provide your Deriv Personal Access Token or Developer API Key to authorize and stream authentic market data.
+                </p>
+              </div>
+
               <div className="space-y-2">
                 <label className="text-[10px] font-bold uppercase tracking-widest text-white/40">Telegram Bot Token</label>
                 <input 
@@ -758,7 +773,12 @@ export default function Settings({ userProfile, addToast }: SettingsProps) {
             </h2>
             <div className="space-y-4">
               {[
-                { name: 'Deriv', status: 'Connected', id: 'CR123456', icon: 'https://picsum.photos/seed/deriv/40/40' },
+                { 
+                  name: 'Deriv', 
+                  status: integrations.deriv_api_token ? 'Connected' : 'Disconnected', 
+                  id: integrations.deriv_api_token ? (integrations.deriv_api_token.length > 12 ? `${integrations.deriv_api_token.slice(0, 8)}...` : 'Authorized') : '-', 
+                  icon: 'https://picsum.photos/seed/deriv/40/40' 
+                },
                 { name: 'Exness', status: 'Disconnected', id: '-', icon: 'https://picsum.photos/seed/exness/40/40' },
                 { name: 'IC Markets', status: 'Disconnected', id: '-', icon: 'https://picsum.photos/seed/icmarkets/40/40' },
               ].map((broker) => (

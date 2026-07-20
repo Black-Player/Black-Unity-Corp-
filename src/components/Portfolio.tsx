@@ -1,11 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Wallet, TrendingUp, TrendingDown, PieChart, ArrowUpRight, ArrowDownRight, Briefcase, Activity, Target, Shield, Clock, XCircle, Zap, Share2 } from 'lucide-react';
+import { Wallet, TrendingUp, TrendingDown, PieChart, ArrowUpRight, ArrowDownRight, Briefcase, Activity, Target, Shield, Clock, XCircle, Zap, Share2, Megaphone, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { dbService } from '../services/dbService';
 import { where, orderBy } from 'firebase/firestore';
 import { UserProfile, Trade } from '../types';
 import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { sendTradeReviewToTelegram } from '../services/communicationService';
+import { generateClosedSignalBroadcast } from '../services/aiService';
+import { supabase, isSupabaseConfigured } from '../supabase';
 
 import { useMarketContext } from '../MarketContext';
 
@@ -21,8 +23,95 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
   const { marketPrices } = useMarketContext();
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isClosingAll, setIsClosingAll] = useState(false);
+  const [broadcastingTradeId, setBroadcastingTradeId] = useState<string | null>(null);
   const portfolio = userProfile.portfolio || [];
   const currentAccountType = userProfile.account_type || 'demo';
+
+  const handleCloseAllPaperTrades = async () => {
+    const demoTrades = trades.filter(t => t.status === 'open' && (t.account_type || 'demo') === 'demo');
+    if (demoTrades.length === 0) {
+      addToast("No active paper trades to close.", "info");
+      return;
+    }
+
+    setIsClosingAll(true);
+    addToast("Initiating mass close of all active paper trading positions...", "info");
+    
+    let closedCount = 0;
+    for (const trade of demoTrades) {
+      try {
+        await handleCloseTrade(trade, 'Mass Conclude');
+        closedCount++;
+      } catch (err) {
+        console.error("Failed to close trade during mass action:", trade.id, err);
+      }
+    }
+    
+    setIsClosingAll(false);
+    addToast(`Successfully closed ${closedCount} active paper trading signals.`, "success");
+  };
+
+  const handleBroadcastTrade = async (trade: Trade) => {
+    setBroadcastingTradeId(trade.id);
+    addToast("Synthesizing Omni AI Broadcast for this closed signal...", "info");
+    
+    try {
+      const exitPrice = trade.exit_price || marketPrices[trade.pair]?.price || trade.current_price || trade.entry_price;
+      const diff = trade.type === 'buy' ? exitPrice - trade.entry_price : trade.entry_price - exitPrice;
+      const pnl = trade.pnl || (diff * (trade.lot_size || 0.1) * 100);
+      const pnlPerc = trade.pnl_percentage || ((diff / trade.entry_price) * 100);
+
+      const result = await generateClosedSignalBroadcast({
+        pair: trade.pair,
+        type: trade.type,
+        entry_price: trade.entry_price,
+        exit_price: exitPrice,
+        pnl: pnl,
+        pnl_percentage: pnlPerc,
+        close_reason: trade.close_reason || 'Manual Close',
+        stop_loss: trade.stop_loss || 0,
+        tp1: trade.tp1 || 0,
+        tp2: trade.tp2 || 0,
+        tp3: trade.tp3 || 0,
+        tp4: trade.tp4 || 0,
+      });
+
+      const broadcastContent = result.broadcast_summary;
+
+      if (isSupabaseConfigured) {
+        const { error } = await supabase
+          .from('posts')
+          .insert([{
+            uid: userProfile.uid,
+            username: userProfile.username || userProfile.email.split('@')[0] || 'Anonymous Sentinel',
+            avatar_url: userProfile.avatar_url || '',
+            content: broadcastContent,
+            likes: [],
+            comments: [],
+            created_at: new Date().toISOString()
+          }]);
+        if (error) {
+          console.error("Supabase insert failed:", error);
+        }
+      }
+
+      await dbService.create('social_posts', {
+        uid: userProfile.uid,
+        username: userProfile.username || userProfile.email.split('@')[0] || 'Anonymous Sentinel',
+        avatar_url: userProfile.avatar_url || '',
+        content: broadcastContent,
+        created_at: new Date().toISOString()
+      });
+
+      addToast("Successfully broadcasted AI Closed Signal Review to Cosmic Feed!", "success");
+    } catch (err: any) {
+      console.error("Failed to broadcast trade:", err);
+      addToast(`Broadcast failed: ${err.message || 'Unknown error'}`, "error");
+    } finally {
+      setBroadcastingTradeId(null);
+    }
+  };
   
   useEffect(() => {
     const fetchTrades = async () => {
@@ -31,7 +120,9 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
           where('uid', '==', userProfile.uid),
           orderBy('created_at', 'desc')
         ]);
-        setTrades(data as Trade[]);
+        // Guard against offline fallback return of complete localTable containing multiple users' data
+        const filtered = (data as Trade[]).filter(t => t.uid === userProfile.uid);
+        setTrades(filtered);
       } catch (error) {
         console.error("Fetch trades failed", error);
       }
@@ -44,7 +135,9 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
       where('uid', '==', userProfile.uid),
       orderBy('created_at', 'desc')
     ], (data) => {
-      setTrades(data as Trade[]);
+      // Guard against offline fallback return of complete localTable containing multiple users' data
+      const filtered = (data as Trade[]).filter(t => t.uid === userProfile.uid);
+      setTrades(filtered);
     });
     
     return () => unsubscribe();
@@ -214,9 +307,20 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
       </div>
 
       <div className="glass-card p-6 space-y-6">
-        <h3 className="text-lg font-display font-bold flex items-center gap-2">
-          <Zap className="text-gold" size={20} /> Active Rituals (Open Trades)
-        </h3>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h3 className="text-lg font-display font-bold flex items-center gap-2">
+            <Zap className="text-gold" size={20} /> Active Rituals (Open Trades)
+          </h3>
+          {currentAccountType === 'demo' && openTrades.length > 0 && (
+            <button
+              onClick={handleCloseAllPaperTrades}
+              disabled={isClosingAll}
+              className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-bold uppercase tracking-widest transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+            >
+              <Trash2 size={14} /> {isClosingAll ? "Concluding all..." : "Close All Paper Trades"}
+            </button>
+          )}
+        </div>
 
         <div className="space-y-4">
           {openTrades.map((trade) => {
@@ -318,7 +422,7 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
                 <th className="pb-4">Entry</th>
                 <th className="pb-4">Exit</th>
                 <th className="pb-4 text-right">Result</th>
-                <th className="pb-4 text-right pr-2">STT</th>
+                <th className="pb-4 text-right pr-2">Broadcast / Share</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -343,24 +447,38 @@ export const Portfolio: React.FC<PortfolioProps> = ({ userProfile, addToast, han
                       </div>
                     </td>
                     <td className="py-4 text-right pr-2">
-                      <button 
-                        onClick={async () => {
-                          if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
-                            addToast("Please configure your Telegram credentials in Settings first.", "error");
-                            return;
-                          }
-                          const success = await sendTradeReviewToTelegram(trade, userProfile.integrations);
-                          if (success) {
-                            addToast("Closed trade review sent to Telegram!", "success");
-                          } else {
-                            addToast("Failed to send trade review. Please verify your bot settings.", "error");
-                          }
-                        }}
-                        className="p-1 px-2.5 rounded bg-gold/15 hover:bg-gold/25 text-gold text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-1"
-                        title="Send Closed Trade Report to Telegram"
-                      >
-                        <Share2 size={10} /> STT
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={async () => {
+                            await handleBroadcastTrade(trade);
+                          }}
+                          disabled={broadcastingTradeId === trade.id}
+                          className="p-1 px-2.5 rounded bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
+                          title="Broadcast AI Summary to Cosmic Feed"
+                        >
+                          <Megaphone size={10} />
+                          {broadcastingTradeId === trade.id ? 'Broadcasting...' : 'Broadcast'}
+                        </button>
+                        
+                        <button 
+                          onClick={async () => {
+                            if (!userProfile.integrations?.telegram_bot_token || !userProfile.integrations?.telegram_chat_id) {
+                              addToast("Please configure your Telegram credentials in Settings first.", "error");
+                              return;
+                            }
+                            const success = await sendTradeReviewToTelegram(trade, userProfile.integrations);
+                            if (success) {
+                              addToast("Closed trade review sent to Telegram!", "success");
+                            } else {
+                              addToast("Failed to send trade review. Please verify your bot settings.", "error");
+                            }
+                          }}
+                          className="p-1 px-2.5 rounded bg-gold/15 hover:bg-gold/25 text-gold text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-1"
+                          title="Send Closed Trade Report to Telegram"
+                        >
+                          <Share2 size={10} /> STT
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

@@ -154,9 +154,23 @@ service cloud.firestore {
     }
 
     match /access_keys/{id} {
-      allow list, get: if true;
-      allow create, delete: if isAdmin();
-      allow update: if true;
+      allow read, write: if true;
+    }
+
+    match /investor_approved_emails/{id} {
+      allow read, write: if true;
+    }
+
+    match /investor_code_requests/{id} {
+      allow read, write: if true;
+    }
+
+    match /blessed_tier_emails/{id} {
+      allow read, write: if true;
+    }
+
+    match /access_audit_logs/{id} {
+      allow read, write: if true;
     }
 
     match /oon_configs/{id} {

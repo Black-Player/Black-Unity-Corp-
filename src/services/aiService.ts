@@ -104,41 +104,41 @@ function getFallbackPriceForAI(pair: string): number {
   if (p.includes('WTI') || p.includes('OIL')) return 80.5;
   
   // Jump Indices
-  if (p.includes('JD100')) return 247.5;
-  if (p.includes('JD75')) return 6970;
-  if (p.includes('JD50')) return 67030;
-  if (p.includes('JD25')) return 117140;
-  if (p.includes('JD10')) return 97000;
-  if (p.includes('JD')) return 67030;
+  if (p.includes('JD100')) return 214.7;
+  if (p.includes('JD75')) return 8142.77;
+  if (p.includes('JD50')) return 68102.6;
+  if (p.includes('JD25')) return 112796.08;
+  if (p.includes('JD10')) return 93625.1;
+  if (p.includes('JD')) return 68102.6;
   
   // Boom & Crash
-  if (p.includes('BOOM1000')) return 14480;
-  if (p.includes('BOOM500')) return 5060;
-  if (p.includes('BOOM300')) return 1500;
+  if (p.includes('BOOM1000')) return 14317.74;
+  if (p.includes('BOOM500')) return 5005.75;
+  if (p.includes('BOOM300')) return 2800;
   if (p.includes('BOOM150')) return 15000;
-  if (p.includes('BOOM100')) return 10000;
-  if (p.includes('BOOM50')) return 5000;
-  if (p.includes('CRASH1000')) return 5860;
-  if (p.includes('CRASH500')) return 2870;
-  if (p.includes('CRASH300')) return 4200;
+  if (p.includes('BOOM100')) return 94915.95;
+  if (p.includes('BOOM50')) return 106692.62;
+  if (p.includes('CRASH1000')) return 5724.30;
+  if (p.includes('CRASH500')) return 3086.21;
+  if (p.includes('CRASH300')) return 9500;
   if (p.includes('CRASH150')) return 15000;
-  if (p.includes('CRASH100')) return 10000;
-  if (p.includes('CRASH50')) return 5000;
+  if (p.includes('CRASH100')) return 95871.08;
+  if (p.includes('CRASH50')) return 99035.82;
   
   // 1-second Volatility Indices (1HZ)
-  if (p.includes('1HZ25V')) return 110500;
-  if (p.includes('1HZ50V')) return 223200;
-  if (p.includes('1HZ75V')) return 6610;
-  if (p.includes('1HZ100V')) return 950;
-  if (p.includes('1HZ10V')) return 45000;
+  if (p.includes('1HZ25V')) return 795691.72;
+  if (p.includes('1HZ50V')) return 262861.19;
+  if (p.includes('1HZ75V')) return 7100.83;
+  if (p.includes('1HZ100V')) return 703.2;
+  if (p.includes('1HZ10V')) return 9382.88;
   
   // Volatility Indices (R_)
-  if (p.includes('R_100')) return 12500;
-  if (p.includes('R_75')) return 8200;
-  if (p.includes('R_50')) return 350;
-  if (p.includes('R_25')) return 220;
-  if (p.includes('R_10')) return 10500;
-  if (p.includes('STP') || p.includes('STEP')) return 280;
+  if (p.includes('R_100')) return 556.82;
+  if (p.includes('R_75')) return 47186.13;
+  if (p.includes('R_50')) return 94.99;
+  if (p.includes('R_25')) return 2659.22;
+  if (p.includes('R_10')) return 4865.01;
+  if (p.includes('STP') || p.includes('STEP')) return 7637.4;
 
   return 1.0850;
 }
@@ -207,15 +207,15 @@ function validateAndSanitizeSignal(
     rawSignal.entry = Number(entryPrice.toFixed(decimals));
     rawSignal.stop_loss = Number((isBuy ? entryPrice - slOffset : entryPrice + slOffset).toFixed(decimals));
     
-    // Scale all TP levels relative to the 22-pips Stop Loss to maintain elegant Risk-Reward ratio
-    rawSignal.tp1 = Number((isBuy ? entryPrice + slOffset * 1.2 : entryPrice - slOffset * 1.2).toFixed(decimals));
-    rawSignal.tp2 = Number((isBuy ? entryPrice + slOffset * 2.5 : entryPrice - slOffset * 2.5).toFixed(decimals));
-    rawSignal.tp3 = Number((isBuy ? entryPrice + slOffset * 4.0 : entryPrice - slOffset * 4.0).toFixed(decimals));
-    rawSignal.tp4 = Number((isBuy ? entryPrice + slOffset * 5.5 : entryPrice - slOffset * 5.5).toFixed(decimals));
+    // Scale all TP levels relative to Stop Loss to maintain strict Risk-Reward ratio (TP1 must be at least 3.5x risk)
+    rawSignal.tp1 = Number((isBuy ? entryPrice + slOffset * 3.5 : entryPrice - slOffset * 3.5).toFixed(decimals));
+    rawSignal.tp2 = Number((isBuy ? entryPrice + slOffset * 5.0 : entryPrice - slOffset * 5.0).toFixed(decimals));
+    rawSignal.tp3 = Number((isBuy ? entryPrice + slOffset * 7.5 : entryPrice - slOffset * 7.5).toFixed(decimals));
+    rawSignal.tp4 = Number((isBuy ? entryPrice + slOffset * 10.0 : entryPrice - slOffset * 10.0).toFixed(decimals));
     rawSignal.risk_reward = 3.5;
     
-    rawSignal.dynamic_sl_logic = `Strict 22 pips institutional invalidation setup at ${rawSignal.stop_loss} to secure capital.`;
-    rawSignal.analysis = `SMC execution on ${finalPair}. Shift in market structure confirmed. Invalidation strictly set 22 pips away at ${rawSignal.stop_loss}.`;
+    rawSignal.dynamic_sl_logic = `Strict institutional invalidation setup at ${rawSignal.stop_loss} to secure capital.`;
+    rawSignal.analysis = `SMC execution on ${finalPair}. Shift in market structure confirmed. Invalidation strictly set at ${rawSignal.stop_loss} with 1:3.5+ RR target at ${rawSignal.tp1}.`;
   } else {
     // No Trade - set default placeholders gracefully
     const pipSize = getPipSizeForPair(finalPair, resolvedCurrentPrice);
@@ -223,10 +223,10 @@ function validateAndSanitizeSignal(
 
     rawSignal.entry = resolvedCurrentPrice;
     rawSignal.stop_loss = Number((resolvedCurrentPrice - slOffset).toFixed(decimals));
-    rawSignal.tp1 = Number((resolvedCurrentPrice + slOffset * 1.2).toFixed(decimals));
-    rawSignal.tp2 = Number((resolvedCurrentPrice + slOffset * 2.5).toFixed(decimals));
-    rawSignal.tp3 = Number((resolvedCurrentPrice + slOffset * 4.0).toFixed(decimals));
-    rawSignal.tp4 = Number((resolvedCurrentPrice + slOffset * 5.5).toFixed(decimals));
+    rawSignal.tp1 = Number((resolvedCurrentPrice + slOffset * 3.5).toFixed(decimals));
+    rawSignal.tp2 = Number((resolvedCurrentPrice + slOffset * 5.0).toFixed(decimals));
+    rawSignal.tp3 = Number((resolvedCurrentPrice + slOffset * 7.5).toFixed(decimals));
+    rawSignal.tp4 = Number((resolvedCurrentPrice + slOffset * 10.0).toFixed(decimals));
   }
 
   return rawSignal;
@@ -611,7 +611,7 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
 
       const finalTimeframe = timeframe === 'Auto' ? 'D1' : timeframe;
       const finalStyle = advancedOptions?.tradingStyle === 'Auto' ? 'Intraday' : (advancedOptions?.tradingStyle || 'Intraday');
-      const finalPrice = currentPrice || (finalPair.includes('XAU') || finalPair.includes('GOLD') ? 2350.50 : finalPair.includes('JPY') ? 150.20 : finalPair.startsWith('R_100') ? 500000 : finalPair.startsWith('cry') ? 60000 : 1.0850);
+      const finalPrice = currentPrice || getFallbackPriceForAI(finalPair);
       
       let atr = 0;
       try {
@@ -628,11 +628,11 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
       const slOffset = finalAtr * 1.5;
       
       const stop_loss = isBuy ? finalPrice - slOffset : finalPrice + slOffset;
-      // High-Probability progressive TP targets: TP1 (1:1.2), TP2 (1:2.5), TP3 (1:4.0), TP4 (1:5.5)
-      const tp1 = isBuy ? finalPrice + slOffset * 1.2 : finalPrice - slOffset * 1.2; 
-      const tp2 = isBuy ? finalPrice + slOffset * 2.5 : finalPrice - slOffset * 2.5; 
-      const tp3 = isBuy ? finalPrice + slOffset * 4.0 : finalPrice - slOffset * 4.0; 
-      const tp4 = isBuy ? finalPrice + slOffset * 5.5 : finalPrice - slOffset * 5.5; 
+      // High-Probability progressive TP targets: TP1 (1:3.5 min RR), TP2 (1:5.0), TP3 (1:7.5), TP4 (1:10.0)
+      const tp1 = isBuy ? finalPrice + slOffset * 3.5 : finalPrice - slOffset * 3.5; 
+      const tp2 = isBuy ? finalPrice + slOffset * 5.0 : finalPrice - slOffset * 5.0; 
+      const tp3 = isBuy ? finalPrice + slOffset * 7.5 : finalPrice - slOffset * 7.5; 
+      const tp4 = isBuy ? finalPrice + slOffset * 10.0 : finalPrice - slOffset * 10.0; 
       
       const rr = 3.5; // Average target risk reward
       const confidence = Math.floor(Math.random() * 10) + 85; // high-grade confidence 85-95%

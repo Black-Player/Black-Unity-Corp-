@@ -199,15 +199,87 @@ export class ServerScanner {
     try {
       const usersSnapshot = await getDocs(collection(db, 'users'));
       const loadedUsers: any[] = [];
-      usersSnapshot.forEach((doc) => {
-        const data = doc.data();
+      const now = new Date();
+
+      for (const userDoc of usersSnapshot.docs) {
+        const data = userDoc.data();
+        
+        // Check for expired access codes
+        if (data.access_code_expiry) {
+          try {
+            const expiryDate = new Date(data.access_code_expiry);
+            if (expiryDate < now && data.tier !== 'free') {
+              // Expired! Downgrade
+              await updateDoc(doc(db, 'users', userDoc.id), {
+                tier: 'free',
+                role: 'subscriber',
+                subscriber_tag: 'Subscriber',
+                access_code_expiry: null,
+                expiry_warning_sent: null,
+                updated_at: now.toISOString()
+              });
+
+              // Send in-app notification
+              await addDoc(collection(db, 'notifications'), {
+                uid: userDoc.id,
+                title: 'Access Expired 🌌',
+                message: `Your investor access tier (${data.subscriber_tag || 'Investor'}) has reached its cosmic expiration date and was automatically downgraded to Novice Oracle.`,
+                type: 'system',
+                read: false,
+                created_at: now.toISOString()
+              });
+
+              // Log to immutable audit trail
+              await addDoc(collection(db, 'access_audit_logs'), {
+                action: 'Expired Tier Downgrade',
+                performed_by: 'System',
+                target_user: data.email || userDoc.id,
+                details: `Investor/Student access expired on ${data.access_code_expiry}. Downgraded to Novice Oracle (Free).`,
+                timestamp: now.toISOString()
+              });
+
+              console.log(`[Server Scanner] Access expired for user: ${data.email || userDoc.id}. Downgraded to free.`);
+            } else {
+              // Check if expiring soon (within 3 days) and send warning notification
+              const timeDiff = expiryDate.getTime() - now.getTime();
+              const daysDiff = timeDiff / (1000 * 3600 * 24);
+              if (daysDiff > 0 && daysDiff <= 3 && !data.expiry_warning_sent) {
+                await updateDoc(doc(db, 'users', userDoc.id), {
+                  expiry_warning_sent: true,
+                  updated_at: now.toISOString()
+                });
+
+                await addDoc(collection(db, 'notifications'), {
+                  uid: userDoc.id,
+                  title: 'Access Expiring Soon ⚠️',
+                  message: `Your current access tier is expiring in ${Math.ceil(daysDiff)} days. Contact the Creators for approval and code renewal.`,
+                  type: 'system',
+                  read: false,
+                  created_at: now.toISOString()
+                });
+
+                // Audit log for warning
+                await addDoc(collection(db, 'access_audit_logs'), {
+                  action: 'Expiry Warning Sent',
+                  performed_by: 'System',
+                  target_user: data.email || userDoc.id,
+                  details: `Access expiring in ${Math.ceil(daysDiff)} days on ${data.access_code_expiry}. Warning notification sent.`,
+                  timestamp: now.toISOString()
+                });
+              }
+            }
+          } catch (expiryErr) {
+            console.error('[Server Scanner] Error checking access expiry for user:', userDoc.id, expiryErr);
+          }
+        }
+
         if (data.integrations?.telegram_bot_token && data.integrations?.telegram_chat_id) {
           loadedUsers.push({
-            uid: doc.id,
+            uid: userDoc.id,
             ...data
           });
         }
-      });
+      }
       this.users = loadedUsers;
     } catch (err) {
       console.error('[Server Scanner] Error fetching user profiles from Firestore:', err);
@@ -344,10 +416,11 @@ export class ServerScanner {
         const entryPrice = currentPrice;
         const stop_loss = breakoutType === 'buy' ? entryPrice - slOffset : entryPrice + slOffset;
 
-        const tp1 = breakoutType === 'buy' ? entryPrice + slOffset * 1.3 : entryPrice - slOffset * 1.3;
-        const tp2 = breakoutType === 'buy' ? entryPrice + slOffset * 2.5 : entryPrice - slOffset * 2.5;
-        const tp3 = breakoutType === 'buy' ? entryPrice + slOffset * 4.0 : entryPrice - slOffset * 4.0;
-        const tp4 = breakoutType === 'buy' ? entryPrice + slOffset * 5.5 : entryPrice - slOffset * 5.5;
+        // Mandate: If SL risk is $1.00 (slOffset), TP1 must be at least $3.50 (3.5x slOffset)
+        const tp1 = breakoutType === 'buy' ? entryPrice + slOffset * 3.5 : entryPrice - slOffset * 3.5;
+        const tp2 = breakoutType === 'buy' ? entryPrice + slOffset * 5.0 : entryPrice - slOffset * 5.0;
+        const tp3 = breakoutType === 'buy' ? entryPrice + slOffset * 7.5 : entryPrice - slOffset * 7.5;
+        const tp4 = breakoutType === 'buy' ? entryPrice + slOffset * 10.0 : entryPrice - slOffset * 10.0;
 
         const confidence = Math.floor(Math.random() * 11) + 85; // 85% - 95%
         const actionWord = breakoutType === 'buy' ? 'bullish' : 'bearish';
@@ -367,10 +440,10 @@ export class ServerScanner {
           tp3,
           tp4,
           risk_reward: 4.2,
-          strategy: 'Smart Money Concepts (SMC)',
-          ai_bot: 'Sentinel AI',
+          strategy: breakStyle === 'CHoCH' ? '6-Step Multi-Timeframe Reversal Set Up' : 'Smart Money Concepts (SMC)',
+          ai_bot: breakStyle === 'CHoCH' ? 'Morpheus Reversal AI' : 'Sentinel AI',
           confidence,
-          market_structure: breakStyle === 'BOS' ? 'Trending (BOS Confirmation)' : 'Reversal (CHoCH Shift)',
+          market_structure: breakStyle === 'BOS' ? 'Trending (BOS Confirmation)' : '6-Step Multi-Timeframe Reversal (15M/5M/1M)',
           liquidity_presence: true,
           session_timing: 'Active Liquidity Session',
           timeframe_alignment: 'Highly Aligned',

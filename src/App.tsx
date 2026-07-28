@@ -36,6 +36,7 @@ import SignalStream from './components/SignalStream';
 import Forge from './components/Forge';
 import Arena from './components/Arena';
 import ZionAI from './components/ZionAI';
+import ReversalAI from './components/ReversalAI';
 import Abyss from './components/Abyss';
 import CosmicFeed from './components/CosmicFeed';
 import SignalOracle from './components/SignalOracle';
@@ -51,6 +52,7 @@ import Settings from './components/Settings';
 import { runFridayAutomatedSummary } from './services/communicationService';
 import Subscription from './components/Subscription';
 import Diagnostics from './components/Diagnostics';
+import KeyGenerator from './components/KeyGenerator';
 import ErrorBoundary from './components/ErrorBoundary';
 import TradingGame from './components/TradingGame';
 import TelegramCenter from './components/TelegramCenter';
@@ -534,6 +536,8 @@ export default function App() {
         return <Backtester {...props} />;
       case 'optimization':
         return <OptimizationEngine {...props} />;
+      case 'reversal-ai':
+        return <ReversalAI {...props} />;
       case 'academy':
         return <Academy userProfile={userProfile} addToast={addToast} setActiveTab={setActivePage} />;
       case 'vault':
@@ -556,6 +560,8 @@ export default function App() {
         return <Subscription {...props} />;
       case 'diagnostics':
         return <Diagnostics {...props} />;
+      case 'access-control':
+        return <KeyGenerator userProfile={userProfile || undefined} addToast={addToast} />;
       case 'telegram':
         return <TelegramCenter {...props} />;
       case 'archive':

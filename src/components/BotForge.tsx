@@ -24,6 +24,7 @@ interface BotForgeProps {
 }
 
 const STRATEGIES = [
+  '6-Step Reversal Set Up (15M/5M/1M)',
   'MMM (Market Maker Model)',
   'SMC (Smart Money Concepts)',
   'ICT (Inner Circle Trader)',
@@ -63,9 +64,21 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
 
   const customBots = userProfile.custom_bots || [];
 
+  const isCreatorOrApproved = 
+    userProfile.role === 'creator' || 
+    ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'].includes(userProfile.email?.toLowerCase() || '') ||
+    userProfile.subscriber_tag === 'Investor' ||
+    userProfile.subscriber_tag === 'Student' ||
+    userProfile.tier !== 'free';
+
   const handleCreate = async () => {
     if (!newBot.name || !newBot.description) {
       addToast('Please fill in all fields', 'error');
+      return;
+    }
+
+    if (newBot.strategy === '6-Step Reversal Set Up (15M/5M/1M)' && !isCreatorOrApproved) {
+      addToast('The 6-Step Reversal strategy is exclusive to Creators and approved Investor/Student code holders!', 'error');
       return;
     }
 
@@ -191,12 +204,38 @@ export const BotForge: React.FC<BotForgeProps> = ({ userProfile, addToast }) => 
           <p className="text-white/40 mt-2 max-w-2xl">
             The ultimate workshop for creating custom AI trading logic. Define your own Oracle bots with specialized strategies and unique cosmic signatures.
           </p>
-          <button 
-            onClick={() => setShowCreate(true)}
-            className="mt-6 gold-button flex items-center gap-2"
-          >
-            <Plus size={18} /> Forge New Bot
-          </button>
+          <div className="flex flex-wrap gap-3 mt-6">
+            <button 
+              onClick={() => setShowCreate(true)}
+              className="gold-button flex items-center gap-2"
+            >
+              <Plus size={18} /> Forge New Bot
+            </button>
+            <button 
+              onClick={() => {
+                if (!isCreatorOrApproved) {
+                  addToast('The 6-Step Reversal Bot strategy is restricted to Creators and approved Access Code holders!', 'error');
+                  return;
+                }
+                setNewBot({
+                  name: 'Morpheus 6-Step Reversal Engine',
+                  strategy: '6-Step Reversal Set Up (15M/5M/1M)',
+                  description: 'Step1: 15M Ranging Market High Prob Starting Point\nStep2: 5M Breakout Below Uptrend / Above Downtrend\nStep3: 5M Sweep creating Long Wick on 15M\nStep4: Direction Change creating 15M FVG\nStep5: 15M Retest & 1M Rejection Candle\nStep6: Entry on 2nd Candle after Rejection',
+                  icon: 'Cpu',
+                  tier_requirement: 'oracle',
+                  risk_profile: 'balanced',
+                  preferred_pairs: ['EUR/USD', 'GBP/USD', 'BTC/USD', 'Volatility 100'],
+                  preferred_timeframes: ['M15', 'M5', 'M1'],
+                  personality: 'analytical'
+                });
+                setShowCreate(true);
+                addToast('6-Step Reversal Bot Blueprint loaded into Forge!', 'info');
+              }}
+              className="px-4 py-2.5 rounded-xl bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 text-purple-300 font-bold text-sm flex items-center gap-2 transition-all"
+            >
+              <Sparkles size={16} /> Load 6-Step Reversal Blueprint
+            </button>
+          </div>
         </div>
       </div>
 

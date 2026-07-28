@@ -77,6 +77,18 @@ export const MasterStrategy: React.FC<MasterStrategyProps> = ({ userProfile, add
   };
 
   const toggleBot = (botName: string) => {
+    const isCreator = 
+      userProfile.tier === 'creator' || 
+      userProfile.role === 'creator' || 
+      userProfile.email?.toLowerCase() === 'kanitezu@gmail.com' ||
+      userProfile.email?.toLowerCase() === 'andilenqobile561@gmail.com';
+
+    const targetBot = BOTS.find(b => b.name === botName);
+    if (targetBot?.tier_requirement === 'creator' && !isCreator) {
+      addToast('Reversal AI bot requires Creator tier access to include in Master Strategies.', 'error');
+      return;
+    }
+
     setNewStrategy(prev => ({
       ...prev,
       bots: prev.bots.includes(botName)

@@ -1,4 +1,4 @@
-import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock, User, Ghost, Activity, Cpu } from 'lucide-react';
+import { LayoutDashboard, History, Bot, MessageSquare, Settings, LogOut, Zap, CreditCard, Sparkles, ShieldCheck, BarChart3, Globe, Trophy, Hammer, GraduationCap, Wallet, Users, Calendar, Layers, Bell, Shield, Clock, Eye, FlaskConical, Target, ShoppingBag, Video, FileText, Book, Settings2, Layout, Search, Lock, User, Ghost, Activity, Cpu, Key } from 'lucide-react';
 import { supabase } from '../supabase';
 import { auth as firebaseAuth } from '../firebase';
 import { UserProfile, Tier, hasTierAccess } from '../types';
@@ -43,6 +43,7 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
         { id: 'simulator', label: 'Trading Simulator', icon: Activity },
         { id: 'backtest', label: 'The Prophet', icon: FlaskConical },
         { id: 'optimization', label: 'AI Optimization', icon: Cpu },
+        { id: 'reversal-ai', label: 'Reversal AI', icon: Cpu, requiredTier: 'creator' },
         { id: 'alchemist', label: 'The Alchemist', icon: Settings2, requiredTier: 'zion' },
         { id: 'strategy-builder', label: 'The Weaver', icon: Layers, requiredTier: 'legendary' },
         { id: 'forge', label: 'The Forge', icon: Hammer, requiredTier: 'zion' },
@@ -126,6 +127,17 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
               >
                 <ShieldCheck size={20} />
                 <span className="font-medium">Diagnostics</span>
+              </button>
+              <button
+                onClick={() => setActivePage('access-control')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                  activePage === 'access-control' 
+                    ? 'bg-gold/10 text-gold border border-gold/20' 
+                    : 'text-white/60 hover:bg-white/5 hover:text-white'
+                }`}
+              >
+                <Key size={20} />
+                <span className="font-medium">Access Control</span>
               </button>
               <button
                 onClick={() => setActivePage('telegram')}

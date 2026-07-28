@@ -13,7 +13,7 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const validateAccessKey = async (keyStr: string): Promise<{ role: UserRole; keyId?: string } | null> => {
+  const validateAccessKey = async (keyStr: string): Promise<{ role: UserRole; keyId?: string; expiry?: string; key?: string } | null> => {
     if (!keyStr) return { role: 'subscriber' };
 
     const keys = await dbService.list('access_keys');
@@ -29,7 +29,9 @@ export default function Auth() {
 
     return { 
       role: keyData.type === 'student' ? 'student' : 'investor',
-      keyId: keyData.id 
+      keyId: keyData.id,
+      expiry: keyData.expiry,
+      key: keyData.key
     };
   };
 
@@ -45,12 +47,16 @@ export default function Auth() {
       const role: UserRole = keyResult?.role || 'subscriber';
       const creatorEmails = ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'];
       const finalRole: UserRole = creatorEmails.includes((user.email || '').toLowerCase()) ? 'creator' : role;
+      const tag: 'Investor' | 'Student' | 'Subscriber' = finalRole === 'investor' ? 'Investor' : (finalRole === 'student' ? 'Student' : 'Subscriber');
 
       const profile: UserProfile = {
         uid: user.uid,
         email: user.email || '',
         role: finalRole,
         tier: finalRole === 'creator' ? 'creator' : (finalRole === 'investor' ? 'zion' : 'free'),
+        subscriber_tag: tag,
+        access_code_used: keyResult?.key || undefined,
+        access_code_expiry: keyResult?.expiry || undefined,
         ...(finalRole === 'student' ? {
           student_tier: 'initiate',
           student_rank: 'Initiate'
@@ -110,6 +116,24 @@ export default function Auth() {
                 usage_count: (keyData.usage_count || 0) + 1
             });
         }
+
+        // Notification
+        await dbService.create('notifications', {
+          uid: user.uid,
+          title: 'Access Code Activated 🔓',
+          message: `Welcome! Your ${tag} access code has been activated successfully. Tier features unlocked.`,
+          type: 'system',
+          read: false
+        });
+
+        // Audit Trail
+        await dbService.create('access_audit_logs', {
+          action: 'Entered Code',
+          performed_by: user.email || user.uid,
+          target_user: user.email || user.uid,
+          details: `Activated ${tag} access via code: ${keyResult.key}. Expiry: ${keyResult.expiry || 'Never'}.`,
+          timestamp: new Date().toISOString()
+        });
       }
     }
   };

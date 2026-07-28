@@ -16,7 +16,7 @@ interface OONProps {
 }
 
 export default function OracleOversightNetwork({ userProfile, addToast }: OONProps) {
-  const isCreator = userProfile?.role === 'creator' || userProfile?.email === 'kanitezu@gmail.com';
+  const isCreator = userProfile?.role === 'creator' || ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'].includes((userProfile?.email || '').toLowerCase());
   
   const [oracles, setOracles] = useState<OONOracle[]>([]);
   const [events, setEvents] = useState<OONEvent[]>([]);

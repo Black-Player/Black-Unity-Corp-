@@ -76,41 +76,41 @@ const getFallbackPrice = (pair: string) => {
   if (p.includes('WTI') || p.includes('OIL')) return 80.5 + Math.random() * 1.0;
   
   // Jump Indices
-  if (p.includes('JD100')) return 247.5 + Math.random() * 1.0;
-  if (p.includes('JD75')) return 6970 + Math.random() * 10;
-  if (p.includes('JD50')) return 67030 + Math.random() * 100;
-  if (p.includes('JD25')) return 117140 + Math.random() * 100;
-  if (p.includes('JD10')) return 97000 + Math.random() * 100;
-  if (p.includes('JD')) return 67030 + Math.random() * 100; // General JD fallback
+  if (p.includes('JD100')) return 214.7 + Math.random() * 0.5;
+  if (p.includes('JD75')) return 8142.77 + Math.random() * 5;
+  if (p.includes('JD50')) return 68102.6 + Math.random() * 20;
+  if (p.includes('JD25')) return 112796.08 + Math.random() * 50;
+  if (p.includes('JD10')) return 93625.1 + Math.random() * 50;
+  if (p.includes('JD')) return 68102.6 + Math.random() * 20;
   
   // Boom & Crash
-  if (p.includes('BOOM1000')) return 14480 + Math.random() * 20;
-  if (p.includes('BOOM500')) return 5060 + Math.random() * 10;
-  if (p.includes('BOOM300')) return 1500 + Math.random() * 10;
-  if (p.includes('BOOM150')) return 15000 + Math.random() * 20;
-  if (p.includes('BOOM100')) return 10000 + Math.random() * 20;
-  if (p.includes('BOOM50')) return 5000 + Math.random() * 10;
-  if (p.includes('CRASH1000')) return 5860 + Math.random() * 10;
-  if (p.includes('CRASH500')) return 2870 + Math.random() * 10;
-  if (p.includes('CRASH300')) return 4200 + Math.random() * 10;
+  if (p.includes('BOOM1000')) return 14317.74 + Math.random() * 10;
+  if (p.includes('BOOM500')) return 5005.75 + Math.random() * 5;
+  if (p.includes('BOOM300')) return 2800 + Math.random() * 5;
+  if (p.includes('BOOM150')) return 15000 + Math.random() * 10;
+  if (p.includes('BOOM100')) return 94915.95 + Math.random() * 20;
+  if (p.includes('BOOM50')) return 106692.62 + Math.random() * 20;
+  if (p.includes('CRASH1000')) return 5724.30 + Math.random() * 5;
+  if (p.includes('CRASH500')) return 3086.21 + Math.random() * 5;
+  if (p.includes('CRASH300')) return 9500 + Math.random() * 10;
   if (p.includes('CRASH150')) return 15000 + Math.random() * 20;
-  if (p.includes('CRASH100')) return 10000 + Math.random() * 20;
-  if (p.includes('CRASH50')) return 5000 + Math.random() * 10;
+  if (p.includes('CRASH100')) return 95871.08 + Math.random() * 20;
+  if (p.includes('CRASH50')) return 99035.82 + Math.random() * 20;
   
   // 1-second Volatility Indices (1HZ)
-  if (p.includes('1HZ25V')) return 110500 + Math.random() * 500;
-  if (p.includes('1HZ50V')) return 223200 + Math.random() * 200;
-  if (p.includes('1HZ75V')) return 6610 + Math.random() * 10;
-  if (p.includes('1HZ100V')) return 950 + Math.random() * 10;
-  if (p.includes('1HZ10V')) return 45000 + Math.random() * 500;
+  if (p.includes('1HZ25V')) return 795691.72 + Math.random() * 100;
+  if (p.includes('1HZ50V')) return 262861.19 + Math.random() * 50;
+  if (p.includes('1HZ75V')) return 7100.83 + Math.random() * 5;
+  if (p.includes('1HZ100V')) return 703.2 + Math.random() * 1;
+  if (p.includes('1HZ10V')) return 9382.88 + Math.random() * 10;
   
   // Volatility Indices (R_)
-  if (p.includes('R_100')) return 12500 + Math.random() * 50;
-  if (p.includes('R_75')) return 8200 + Math.random() * 50;
-  if (p.includes('R_50')) return 350 + Math.random() * 5;
-  if (p.includes('R_25')) return 220 + Math.random() * 5;
-  if (p.includes('R_10')) return 10500 + Math.random() * 50;
-  if (p.includes('STP') || p.includes('STEP')) return 280 + Math.random() * 5;
+  if (p.includes('R_100')) return 556.82 + Math.random() * 2;
+  if (p.includes('R_75')) return 47186.13 + Math.random() * 20;
+  if (p.includes('R_50')) return 94.99 + Math.random() * 1;
+  if (p.includes('R_25')) return 2659.22 + Math.random() * 5;
+  if (p.includes('R_10')) return 4865.01 + Math.random() * 10;
+  if (p.includes('STP') || p.includes('STEP')) return 7637.4 + Math.random() * 2;
   
   // Forex
   if (p.includes('JPY')) return 161.5 + Math.random() * 0.5;
@@ -377,19 +377,19 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
         }
 
         const risk = Math.max(Math.abs(activePrice - stop_loss), minRange);
-        const risk_reward = 3.2;
+        const risk_reward = 3.5;
 
         let tp1 = 0, tp2 = 0, tp3 = 0, tp4 = 0;
         if (decision === 'Buy') {
-          tp1 = activePrice + (risk * 1.0);
-          tp2 = activePrice + (risk * 2.0);
-          tp3 = activePrice + (risk * 3.2);
-          tp4 = activePrice + (risk * 4.8);
+          tp1 = activePrice + (risk * 3.5);
+          tp2 = activePrice + (risk * 5.0);
+          tp3 = activePrice + (risk * 7.5);
+          tp4 = activePrice + (risk * 10.0);
         } else {
-          tp1 = activePrice - (risk * 1.0);
-          tp2 = activePrice - (risk * 2.0);
-          tp3 = activePrice - (risk * 3.2);
-          tp4 = activePrice - (risk * 4.8);
+          tp1 = activePrice - (risk * 3.5);
+          tp2 = activePrice - (risk * 5.0);
+          tp3 = activePrice - (risk * 7.5);
+          tp4 = activePrice - (risk * 10.0);
         }
 
         const trendStrength = Math.abs(ema9 - ema21) / ema21 * 100;

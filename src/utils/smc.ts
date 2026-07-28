@@ -153,22 +153,87 @@ export function detectSMC(data: Candle[]): SMCMarker[] {
 
   // Deduplicate markers by time, keeping highest priority elements
   const dedupedMap = new Map<number, SMCMarker>();
-  markers.forEach(m => {
+  
+  // Include 6-step reversal setup markers
+  const reversalMarkers = detect6StepReversalSetup(data);
+  [...markers, ...reversalMarkers].forEach(m => {
     const existing = dedupedMap.get(m.time);
     if (!existing) {
       dedupedMap.set(m.time, m);
     } else {
-      // Prioritize BOS/CHoCH, then OB, then FVG
-      const priority = (type: string) => {
+      // Prioritize 6-step reversal triggers, then BOS/CHoCH, then OB, then FVG
+      const priority = (text: string, type: string) => {
+        if (text.includes('6-Step Reversal')) return 4;
         if (type === 'bos' || type === 'choch') return 3;
         if (type === 'bullish_ob' || type === 'bearish_ob') return 2;
         return 1;
       };
-      if (priority(m.type || '') > priority(existing.type || '')) {
+      if (priority(m.text || '', m.type || '') > priority(existing.text || '', existing.type || '')) {
         dedupedMap.set(m.time, m);
       }
     }
   });
 
   return Array.from(dedupedMap.values()).sort((a, b) => a.time - b.time);
+}
+
+/**
+ * Detects 6-Step Multi-Timeframe Reversal Setups:
+ * Step 1: 15M Ranging Market High Probability Starting Point
+ * Step 2: 5M Breakout Below Uptrend / Above Downtrend
+ * Step 3: 5M Sweep creating Long Wick on 15M
+ * Step 4: Direction Change creating 15M Fair Value Gap
+ * Step 5: 15M Gap Retest + 1M Rejection Candlestick
+ * Step 6: Entry on 2nd Candlestick after Rejection
+ */
+export function detect6StepReversalSetup(data: Candle[]): SMCMarker[] {
+  const setupMarkers: SMCMarker[] = [];
+  if (data.length < 15) return setupMarkers;
+
+  for (let i = 5; i < data.length - 2; i++) {
+    const prev3 = data.slice(i - 5, i - 1);
+    const curr = data[i - 1]; // Rejection candle candidate
+    const entryCandle = data[i]; // 2nd candle after rejection (Trigger)
+
+    const rangeHigh = Math.max(...prev3.map(c => c.high));
+    const rangeLow = Math.min(...prev3.map(c => c.low));
+    const rangeSpread = rangeHigh - rangeLow;
+
+    // Step 1 Check: Ranging Market Starting Point (compact ATR)
+    const isRanging = rangeSpread <= curr.open * 0.008;
+
+    // Step 3 Check: Long Wick (Rejection)
+    const candleHeight = curr.high - curr.low;
+    const bodyHeight = Math.abs(curr.close - curr.open);
+    const upperWick = curr.high - Math.max(curr.open, curr.close);
+    const lowerWick = Math.min(curr.open, curr.close) - curr.low;
+
+    const isBullishRejection = candleHeight > 0 && lowerWick >= candleHeight * 0.45 && bodyHeight <= candleHeight * 0.4;
+    const isBearishRejection = candleHeight > 0 && upperWick >= candleHeight * 0.45 && bodyHeight <= candleHeight * 0.4;
+
+    // Step 6: Entry on 2nd Candlestick after Rejected Candlestick
+    if (isRanging && isBullishRejection && entryCandle.close > curr.high) {
+      setupMarkers.push({
+        time: entryCandle.time,
+        position: 'belowBar',
+        color: '#10b981', // Emerald green
+        shape: 'arrowUp',
+        text: `🚀 Step 6 Entry: Bullish 6-Step Reversal (2nd Candle Trigger) @ ${entryCandle.close.toFixed(2)}`,
+        price: entryCandle.low,
+        type: 'bullish_ob'
+      });
+    } else if (isRanging && isBearishRejection && entryCandle.close < curr.low) {
+      setupMarkers.push({
+        time: entryCandle.time,
+        position: 'aboveBar',
+        color: '#f43f5e', // Bright Rose
+        shape: 'arrowDown',
+        text: `💥 Step 6 Entry: Bearish 6-Step Reversal (2nd Candle Trigger) @ ${entryCandle.close.toFixed(2)}`,
+        price: entryCandle.high,
+        type: 'bearish_ob'
+      });
+    }
+  }
+
+  return setupMarkers;
 }

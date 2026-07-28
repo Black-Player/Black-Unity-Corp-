@@ -104,8 +104,8 @@ export function validateSLRange(entry: number, sl: number, tp: number): boolean 
     
     if (risk === 0) return false;
 
-    // Minimum 1:2 RR for the Oracle to ensure Strict Institutional Grade rules.
-    return reward >= risk * 2;
+    // Minimum 1:3.5 RR for the Oracle to ensure Strict Institutional Grade rules.
+    return reward >= risk * 3.5;
 }
 
 export interface Candle {

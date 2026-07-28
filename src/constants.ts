@@ -9,6 +9,7 @@ export const BOTS: BotType[] = [
   { name: 'Zion', strategy: 'Chart Patterns', tier_requirement: 'zion', description: 'Master of geometry and psychological levels.', icon: 'Grid' },
   { name: 'Sentinel', strategy: 'ICT/SMC Hybrid', tier_requirement: 'zion', description: 'Advanced hybrid bot for high-precision entries.', icon: 'Shield' },
   { name: 'Architect', strategy: 'All Strategies', tier_requirement: 'zion', description: 'The ultimate bot. Combines all strategies for maximum confidence.', icon: 'Layout' },
+  { name: 'Reversal AI', strategy: '6-Step Reversal (15M/5M/1M)', tier_requirement: 'creator', description: '6-Step Multi-Timeframe Reversal Specialist (15M Range -> 5M Sweep -> FVG -> 1M Rejection Trigger). Restricted to Creator access.', icon: 'Cpu' },
 ];
 
 export interface Article {
@@ -47,7 +48,7 @@ export const DERIV_SYMBOLS = [
   { symbol: 'CRASH300', name: 'Crash 300' },
   { symbol: 'CRASH500', name: 'Crash 500' },
   { symbol: 'CRASH1000', name: 'Crash 1000' },
-  { symbol: 'STP', name: 'Step Index' },
+  { symbol: 'STPRNG', name: 'Step Index' },
   { symbol: 'JD10', name: 'Jump 10' },
   { symbol: 'JD25', name: 'Jump 25' },
   { symbol: 'JD50', name: 'Jump 50' },
@@ -131,5 +132,34 @@ export const ACADEMY_ARTICLES: Article[] = [
     read_time: '15 min',
     difficulty: 'Advanced',
     requiredTier: 'zion'
+  },
+  {
+    id: '6',
+    title: 'The 6-Step Multi-Timeframe Reversal Set Up Blueprint',
+    category: 'SMC & Price Action',
+    content: `Master the high-confluence 6-step multi-timeframe reversal blueprint executed by elite traders:
+
+Step 1 (15M Timeframe): Identify a Ranging Market that serves as the High Probability Starting Point Of Reversal.
+Look for consolidation at key institutional supply/demand levels where liquidity accumulates.
+
+Step 2 (5M Timeframe): Detect early structure shift (Break Out Below on an Up Trend, or Above on a Down Trend).
+This signals that institutional orderflow is shifting against the prevailing trend.
+
+Step 3 (5M Timeframe): Confirm Liquidity Sweep Below on a Down Trend Or Above on an Up Trend, creating a Long Wick Rejection on the 15M Timeframe.
+The market grabs stop-loss liquidity to fund the true reversal direction.
+
+Step 4 (15M Timeframe): Rapid Change In Direction creating an Imbalance / Fair Value Gap (FVG) on the 15M Timeframe.
+Displacement creates an unfilled price gap showing heavy institutional buying or selling power.
+
+Step 5 (15M & 1M Timeframes): Wait for Price to Retest the Gap on the 15M Timeframe. Drop to the 1M Timeframe and look for Rejection Candlesticks (Pin Bars / Engulfing Rejections).
+The retest mitigates the 15M gap while 1M candlestick structure confirms immediate buyer/seller rejection.
+
+Step 6 (1M Entry Trigger): Enter on the SECOND Candlestick immediately AFTER the rejected candlestick on the 1M Timeframe.
+This guarantees momentum confirmation while maintaining an ultra-tight stop loss beyond the 1M rejection wick for maximum R:R.`,
+    image_url: 'https://picsum.photos/seed/reversal6/800/400',
+    created_at: new Date().toISOString(),
+    read_time: '10 min',
+    difficulty: 'Advanced',
+    requiredTier: 'free'
   }
 ];

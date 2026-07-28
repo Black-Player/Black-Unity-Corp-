@@ -149,6 +149,10 @@
     "/tasks/{taskId}": {
       "schema": "Task",
       "description": "Tasks for tribes."
+    },
+    "/blessed_tier_emails/{id}": {
+      "schema": "BlessedTierEmail",
+      "description": "Creator-blessed emails with custom PIN tier allocations."
     }
   }
 }

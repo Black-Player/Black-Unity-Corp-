@@ -101,6 +101,9 @@ export interface UserProfile {
   cooldown_active?: boolean;
   cooldown_until?: string;
   cooldown_reason?: string;
+  subscriber_tag?: 'Investor' | 'Student' | 'Subscriber';
+  access_code_expiry?: string;
+  access_code_used?: string;
 }
 
 export interface AccessKey {
@@ -112,6 +115,19 @@ export interface AccessKey {
   usage_count: number;
   created_at: string;
   signature: string;
+}
+
+export interface BlessedTierEmail {
+  id: string;
+  email: string;
+  allocated_tier: Tier;
+  pin: string;
+  pin_status: 'active' | 'redeemed' | 'revoked';
+  blessed_by: string;
+  blessed_at: string;
+  redeemed_by_uid?: string;
+  redeemed_at?: string;
+  notes?: string;
 }
 
 export interface AdvancementRequest {
@@ -275,6 +291,7 @@ export const BOTS: Bot[] = [
   { name: 'Sentinel', strategy: 'ICT/SMC Hybrid', tier_requirement: 'zion', description: 'Advanced hybrid bot for high-precision entries.', icon: 'Shield' },
   { name: 'Architect', strategy: 'All Strategies', tier_requirement: 'zion', description: 'The ultimate bot. Combines all strategies for maximum confidence.', icon: 'Layout' },
   { name: 'Hyperion', strategy: 'Institutional Order Flow', tier_requirement: 'legendary', description: 'Titan of the markets. Analyzes depth of book and massive institutional moves.', icon: 'Zap' },
+  { name: 'Reversal AI', strategy: '6-Step Reversal (15M/5M/1M)', tier_requirement: 'creator', description: '6-Step Multi-Timeframe Reversal Specialist (15M Range -> 5M Sweep -> FVG -> 1M Rejection Trigger). Restricted to Creator access.', icon: 'Cpu' },
 ];
 
 export const TIER_ORDER: Tier[] = ['free', 'oracle', 'zion', 'legendary', 'mythic', 'creator'];

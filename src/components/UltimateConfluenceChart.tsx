@@ -441,155 +441,67 @@ Style: Dark TradingView theme, absolute precision, clean modern design.
                 {/* Right price scale vertical divider */}
                 <line x1="435" y1="0" x2="435" y2="320" stroke="rgba(255,255,255,0.08)" />
 
-                {/* 1. FAIR VALUE GAPS (FVG) - SHADED IMBALANCE ZONES */}
-                {/* Premium transparent shaded boxes with elegant dashed borders representing SMC liquidity voids */}
-                {direction === 'bullish' ? (
-                  <g>
-                    <rect 
-                      x="142" 
-                      y={getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice))} 
-                      width="100" 
-                      height={Math.abs(getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice)) - getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice)))} 
-                      fill="rgba(168, 85, 247, 0.08)" 
-                      stroke="#a855f7" 
-                      strokeWidth="1.2" 
-                      strokeDasharray="2,2"
-                      opacity="0.75"
-                    />
-                    <text 
-                      x="147" 
-                      y={getPriceScaleY(entryPrice) - 3} 
-                      fill="#c084fc" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                      opacity="0.85"
-                    >
-                      BULLISH FVG IMBALANCE ZONE
-                    </text>
-                  </g>
-                ) : (
-                  <g>
-                    <rect 
-                      x="142" 
-                      y={getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice))} 
-                      width="100" 
-                      height={Math.abs(getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice)) - getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice)))} 
-                      fill="rgba(236, 72, 153, 0.08)" 
-                      stroke="#ec4899" 
-                      strokeWidth="1.2" 
-                      strokeDasharray="2,2"
-                      opacity="0.75"
-                    />
-                    <text 
-                      x="147" 
-                      y={getPriceScaleY(entryPrice) + 10} 
-                      fill="#f472b6" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                      opacity="0.85"
-                    >
-                      BEARISH FVG IMBALANCE ZONE
-                    </text>
-                  </g>
-                )}
+                {/* 6-STEP REVERSAL SETUP MARKINGS ONLY */}
+                <g>
+                  {/* Step 1: 15M Range Base */}
+                  <line 
+                    x1="60" 
+                    y1={getPriceScaleY(direction === 'bullish' ? entryPrice - 0.5 * Math.abs(entryPrice - slPrice) : entryPrice + 0.5 * Math.abs(entryPrice - slPrice))} 
+                    x2="140" 
+                    y2={getPriceScaleY(direction === 'bullish' ? entryPrice - 0.5 * Math.abs(entryPrice - slPrice) : entryPrice + 0.5 * Math.abs(entryPrice - slPrice))} 
+                    stroke="#a855f7" 
+                    strokeWidth="1.5" 
+                    strokeDasharray="3,3" 
+                  />
+                  <text 
+                    x="65" 
+                    y={getPriceScaleY(direction === 'bullish' ? entryPrice - 0.5 * Math.abs(entryPrice - slPrice) : entryPrice + 0.5 * Math.abs(entryPrice - slPrice)) - 4} 
+                    fill="#c084fc" 
+                    fontSize="7" 
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                  >
+                    STEP 1: 15M RANGE BASE
+                  </text>
 
+                  {/* Step 3: 5M Sweep Wick Rejection */}
+                  <circle 
+                    cx="150" 
+                    cy={getPriceScaleY(slPrice)} 
+                    r="4" 
+                    fill="#3b82f6" 
+                  />
+                  <text 
+                    x="158" 
+                    y={getPriceScaleY(slPrice) + 3} 
+                    fill="#60a5fa" 
+                    fontSize="7" 
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                  >
+                    STEP 3: 5M SWEEP REJECTION
+                  </text>
 
-                {/* 4. TRENDLINES FOR BOS AND CHOCH LEVELS */}
-                {/* CHoCH Trendline */}
-                {direction === 'bullish' ? (
-                  <g>
-                    <line 
-                      x1="135" 
-                      y1={getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice))} 
-                      x2="195" 
-                      y2={getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice))} 
-                      stroke="#f59e0b" 
-                      strokeWidth="1.5" 
-                      opacity={animationStep >= 3 ? 0.95 : 0.5}
-                    />
-                    <text 
-                      x="142" 
-                      y={getPriceScaleY(entryPrice + 0.25 * Math.abs(entryPrice - slPrice)) - 5} 
-                      fill="#f59e0b" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                    >
-                      CHoCH ──
-                    </text>
-                  </g>
-                ) : (
-                  <g>
-                    <line 
-                      x1="135" 
-                      y1={getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice))} 
-                      x2="195" 
-                      y2={getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice))} 
-                      stroke="#f59e0b" 
-                      strokeWidth="1.5" 
-                      opacity={animationStep >= 3 ? 0.95 : 0.5}
-                    />
-                    <text 
-                      x="142" 
-                      y={getPriceScaleY(entryPrice - 0.25 * Math.abs(entryPrice - slPrice)) + 9} 
-                      fill="#f59e0b" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                    >
-                      CHoCH ──
-                    </text>
-                  </g>
-                )}
-
-                {/* BOS Trendline */}
-                {direction === 'bullish' ? (
-                  <g>
-                    <line 
-                      x1="192" 
-                      y1={getPriceScaleY(entryPrice + 0.9 * Math.abs(entryPrice - slPrice))} 
-                      x2="245" 
-                      y2={getPriceScaleY(entryPrice + 0.9 * Math.abs(entryPrice - slPrice))} 
-                      stroke="#22c55e" 
-                      strokeWidth="1.5" 
-                      opacity={animationStep >= 3 ? 0.95 : 0.5}
-                    />
-                    <text 
-                      x="197" 
-                      y={getPriceScaleY(entryPrice + 0.9 * Math.abs(entryPrice - slPrice)) - 5} 
-                      fill="#22c55e" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                    >
-                      BOS ──
-                    </text>
-                  </g>
-                ) : (
-                  <g>
-                    <line 
-                      x1="192" 
-                      y1={getPriceScaleY(entryPrice - 0.9 * Math.abs(entryPrice - slPrice))} 
-                      x2="245" 
-                      y2={getPriceScaleY(entryPrice - 0.9 * Math.abs(entryPrice - slPrice))} 
-                      stroke="#ef4444" 
-                      strokeWidth="1.5" 
-                      opacity={animationStep >= 3 ? 0.95 : 0.5}
-                    />
-                    <text 
-                      x="197" 
-                      y={getPriceScaleY(entryPrice - 0.9 * Math.abs(entryPrice - slPrice)) + 9} 
-                      fill="#ef4444" 
-                      fontSize="6" 
-                      fontFamily="monospace"
-                      fontWeight="bold"
-                    >
-                      BOS ──
-                    </text>
-                  </g>
-                )}
+                  {/* Step 6: Entry Trigger */}
+                  <line 
+                    x1="210" 
+                    y1={getPriceScaleY(entryPrice)} 
+                    x2="350" 
+                    y2={getPriceScaleY(entryPrice)} 
+                    stroke={direction === 'bullish' ? '#10b981' : '#f43f5e'} 
+                    strokeWidth="2" 
+                  />
+                  <text 
+                    x="215" 
+                    y={getPriceScaleY(entryPrice) - 5} 
+                    fill={direction === 'bullish' ? '#34d399' : '#fb7185'} 
+                    fontSize="7" 
+                    fontFamily="monospace"
+                    fontWeight="bold"
+                  >
+                    STEP 6: ENTRY TRIGGER @ {entryPrice.toFixed(2)}
+                  </text>
+                </g>
 
 
                 {/* 5. PRICE ACTION CANDLESTICKS */}

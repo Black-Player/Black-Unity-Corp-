@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UserProfile, TIER_BOT_LIMITS, TIER_FEATURES, BlessedTierEmail } from '../types';
+import { UserProfile, TIER_BOT_LIMITS, TIER_FEATURES, BlessedTierEmail, TierAssignment } from '../types';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { dbService } from '../services/dbService';
 import { where } from 'firebase/firestore';
@@ -110,37 +110,63 @@ export default function Subscription({ userProfile, addToast }: SubscriptionProp
     try {
       const cleanCode = code.trim();
       const uppercaseCode = cleanCode.toUpperCase();
+      const userEmail = (userProfile.email || '').toLowerCase().trim();
 
-      // 1. Check Creator Blessed Tier PINs first!
+      // 1. Validation Layer against Firestore 'tiers' collection
+      const tiersList = await dbService.list<TierAssignment>('tiers');
       const blessedList = await dbService.list<BlessedTierEmail>('blessed_tier_emails');
-      const blessedRecord = blessedList.find(b => 
-        b.pin === cleanCode || 
-        b.pin === uppercaseCode || 
-        `PIN-${b.pin}` === uppercaseCode
-      );
 
-      if (blessedRecord) {
-        if (blessedRecord.pin_status === 'revoked') {
-          addToast("This Creator PIN has been revoked.", "error");
+      // Check if user's email exists in 'tiers' or 'blessed_tier_emails'
+      const userTierRecord = tiersList.find(t => t.email.toLowerCase() === userEmail) ||
+        blessedList.find(b => b.email.toLowerCase() === userEmail);
+
+      // Check if code matches any record or specifically the user's email record
+      const matchedRecord = userTierRecord || 
+        tiersList.find(t => t.pin === cleanCode || t.pin === uppercaseCode || `PIN-${t.pin}` === uppercaseCode || t.email_code === cleanCode) ||
+        blessedList.find(b => b.pin === cleanCode || b.pin === uppercaseCode || `PIN-${b.pin}` === uppercaseCode);
+
+      if (matchedRecord) {
+        // If user has a registered email record in 'tiers', verify the PIN strictly matches their email's record
+        if (userTierRecord) {
+          const validPin = userTierRecord.pin === cleanCode || 
+            userTierRecord.pin === uppercaseCode || 
+            `PIN-${userTierRecord.pin}` === uppercaseCode ||
+            (userTierRecord as any).email_code === cleanCode;
+
+          if (!validPin) {
+            addToast(`PIN verification failed. The entered PIN does not match the allocated record for ${userEmail} in the tiers database.`, "error");
+            return;
+          }
+        }
+
+        if (matchedRecord.pin_status === 'revoked') {
+          addToast("This Creator Tier assignment or PIN has been revoked.", "error");
           return;
         }
 
-        const allocatedTier = blessedRecord.allocated_tier || 'creator';
+        const allocatedTier = (matchedRecord as any).tier || (matchedRecord as any).allocated_tier || 'creator';
         const newRole = allocatedTier === 'creator' ? 'creator' : 'investor';
-        const tag = `Blessed (${allocatedTier.toUpperCase()})`;
+        const tag = `Tier Verified (${allocatedTier.toUpperCase()})`;
 
         // Update User Profile
         await dbService.update('users', userProfile.uid, {
           role: newRole,
           tier: allocatedTier,
           subscriber_tag: tag,
-          access_code_used: `PIN-${blessedRecord.pin}`,
-          access_code_expiry: null, // Permanent Creator Blessing
+          access_code_used: `PIN-${matchedRecord.pin}`,
+          access_code_expiry: null, // Permanent Creator Tier Blessing
           updated_at: new Date().toISOString()
         });
 
-        // Mark PIN as redeemed
-        await dbService.update('blessed_tier_emails', blessedRecord.id, {
+        // Mark PIN as redeemed in 'tiers' and 'blessed_tier_emails'
+        if ((matchedRecord as any).tier) {
+          await dbService.update('tiers', matchedRecord.id, {
+            pin_status: 'redeemed',
+            redeemed_by_uid: userProfile.uid,
+            redeemed_at: new Date().toISOString()
+          });
+        }
+        await dbService.update('blessed_tier_emails', matchedRecord.id, {
           pin_status: 'redeemed',
           redeemed_by_uid: userProfile.uid,
           redeemed_at: new Date().toISOString()
@@ -149,23 +175,23 @@ export default function Subscription({ userProfile, addToast }: SubscriptionProp
         // Welcome Notification
         await dbService.create('notifications', {
           uid: userProfile.uid,
-          title: '👑 Creator Blessed Tier Activated!',
-          message: `Your account has been elevated to the ${allocatedTier.toUpperCase()} tier blessed directly by the Creator! All features unlocked.`,
+          title: '👑 Tier Verified & Features Unlocked!',
+          message: `Your email (${userEmail}) and PIN have been validated against the Firestore tiers database. Account elevated to ${allocatedTier.toUpperCase()} tier!`,
           type: 'system',
           read: false,
           created_at: new Date().toISOString()
         });
 
-        // Audit Trail
+        // Audit Log
         await dbService.create('access_audit_logs', {
-          action: 'Redeemed Blessed Creator PIN',
+          action: 'Verified Email & PIN in Tiers Collection',
           performed_by: userProfile.email || userProfile.uid,
-          target_user: blessedRecord.email,
-          details: `Activated ${allocatedTier.toUpperCase()} Tier via Creator Blessed PIN (${blessedRecord.pin}).`,
+          target_user: matchedRecord.email,
+          details: `Unlocked ${allocatedTier.toUpperCase()} Tier features via verified PIN (${matchedRecord.pin}) in tiers DB.`,
           timestamp: new Date().toISOString()
         });
 
-        addToast(`👑 Creator Blessed Tier (${allocatedTier.toUpperCase()}) Unlocked!`, "success");
+        addToast(`👑 Verified Email & PIN! ${allocatedTier.toUpperCase()} Tier Features Unlocked!`, "success");
         setCode('');
         setTimeout(() => {
           window.location.reload();

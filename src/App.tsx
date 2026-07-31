@@ -206,13 +206,28 @@ export default function App() {
               await dbService.create('users', defaultProfile, user.uid);
               profile = defaultProfile;
           } else {
-              // Automatically upgrade existing user profile to Creator if their email is in the list
+              // Automatically upgrade existing user profile if email is Creator or in 'tiers' database
               const typedProfile = profile as UserProfile;
+              const userEmail = (user.email || '').toLowerCase().trim();
+
               if (isCreatorEmail && (typedProfile.role !== 'creator' || typedProfile.tier !== 'creator')) {
                 console.warn('Creator email detected, upgrading existing user profile...');
                 await dbService.update('users', user.uid, { role: 'creator', tier: 'creator' });
                 typedProfile.role = 'creator';
                 typedProfile.tier = 'creator';
+              } else if (userEmail) {
+                try {
+                  const tiersList = await dbService.list<any>('tiers');
+                  const tierRec = tiersList.find((t: any) => t.email?.toLowerCase() === userEmail && t.pin_status !== 'revoked');
+                  if (tierRec && tierRec.tier && typedProfile.tier !== tierRec.tier) {
+                    const newRole = tierRec.tier === 'creator' ? 'creator' : (typedProfile.role === 'creator' ? 'creator' : 'investor');
+                    await dbService.update('users', user.uid, { role: newRole, tier: tierRec.tier });
+                    typedProfile.role = newRole;
+                    typedProfile.tier = tierRec.tier;
+                  }
+                } catch (tErr) {
+                  console.error("Error checking tiers collection for user profile sync:", tErr);
+                }
               }
           }
           
@@ -560,6 +575,7 @@ export default function App() {
         return <Subscription {...props} />;
       case 'diagnostics':
         return <Diagnostics {...props} />;
+      case 'creator-hub':
       case 'access-control':
         return <KeyGenerator userProfile={userProfile || undefined} addToast={addToast} />;
       case 'telegram':

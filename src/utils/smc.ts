@@ -18,163 +18,8 @@ export interface SMCMarker {
 }
 
 export function detectSMC(data: Candle[]): SMCMarker[] {
-  const markers: SMCMarker[] = [];
-  if (data.length < 10) return markers;
-
-  // Simple Swing High / Swing Low detection
-  const swingHighs: { index: number; candle: Candle }[] = [];
-  const swingLows: { index: number; candle: Candle }[] = [];
-  
-  const SWING_LENGTH = 10;
-
-  for (let i = SWING_LENGTH; i < data.length - SWING_LENGTH; i++) {
-    const isSwingHigh = data.slice(i - SWING_LENGTH, i + SWING_LENGTH + 1).every((c, idx) => {
-      return idx === SWING_LENGTH || c.high <= data[i].high;
-    });
-    
-    if (isSwingHigh) swingHighs.push({ index: i, candle: data[i] });
-
-    const isSwingLow = data.slice(i - SWING_LENGTH, i + SWING_LENGTH + 1).every((c, idx) => {
-      return idx === SWING_LENGTH || c.low >= data[i].low;
-    });
-
-    if (isSwingLow) swingLows.push({ index: i, candle: data[i] });
-  }
-
-  // 1. Detect FVG (Fair Value Gaps) with elegant labels
-  for (let i = 2; i < data.length; i++) {
-    const c1 = data[i - 2];
-    const c3 = data[i];
-    
-    // Bullish FVG
-    if (c1.high < c3.low && data[i-1].close > data[i-1].open) {
-      if (Math.abs(c3.low - c1.high) > (c3.high - c3.low) * 0.4) {
-        markers.push({
-          time: data[i - 1].time as number,
-          position: 'belowBar',
-          color: '#a855f7', // SMC Purple for Imbalance
-          shape: 'square',
-          text: `FVG Imbalance @ ${(c1.high).toFixed(2)} - ${(c3.low).toFixed(2)}`,
-          price: (c1.high + c3.low) / 2,
-          type: 'bullish_fvg'
-        });
-      }
-    }
-    
-    // Bearish FVG
-    if (c1.low > c3.high && data[i-1].close < data[i-1].open) {
-      if (Math.abs(c1.low - c3.high) > (c3.high - c3.low) * 0.4) {
-        markers.push({
-          time: data[i - 1].time as number,
-          position: 'aboveBar',
-          color: '#ec4899', // Bright Magenta for Bearish Imbalance
-          shape: 'square',
-          text: `FVG Imbalance @ ${(c3.high).toFixed(2)} - ${(c1.low).toFixed(2)}`,
-          price: (c1.low + c3.high) / 2,
-          type: 'bearish_fvg'
-        });
-      }
-    }
-  }
-
-  // 2. Detect BOS and CHOCH (High-confluence Continuation vs Trend Reversal Shifts)
-  const allSwings = [
-    ...swingHighs.map(s => ({...s, type: 'high' as const})), 
-    ...swingLows.map(s => ({...s, type: 'low' as const}))
-  ].sort((a, b) => a.index - b.index);
-  
-  let lastBreakDirection: 'up' | 'down' | null = null;
-
-  for (let i = 2; i < allSwings.length; i++) {
-    const current = allSwings[i];
-    const prevPrev = allSwings[i - 2];
-    
-    if (current.type === 'high' && prevPrev.type === 'high' && current.candle.high > prevPrev.candle.high) {
-      const isCHoCH = lastBreakDirection === 'down';
-      lastBreakDirection = 'up';
-      
-      markers.push({
-        time: current.candle.time as number,
-        position: 'aboveBar',
-        color: isCHoCH ? '#f59e0b' : '#10b981', // Orange for CHoCH, Green for BOS
-        shape: 'arrowDown',
-        text: isCHoCH ? `CHoCH (Change of Character) @ ${current.candle.high.toFixed(2)}` : `BOS (Break of Structure) @ ${current.candle.high.toFixed(2)}`,
-        price: current.candle.high,
-        type: isCHoCH ? 'choch' : 'bos'
-      });
-    }
-    if (current.type === 'low' && prevPrev.type === 'low' && current.candle.low < prevPrev.candle.low) {
-      const isCHoCH = lastBreakDirection === 'up';
-      lastBreakDirection = 'down';
-
-      markers.push({
-        time: current.candle.time as number,
-        position: 'belowBar',
-        color: isCHoCH ? '#f59e0b' : '#ef4444', // Orange for CHoCH, Red for BOS
-        shape: 'arrowUp',
-        text: isCHoCH ? `CHoCH (Change of Character) @ ${current.candle.low.toFixed(2)}` : `BOS (Break of Structure) @ ${current.candle.low.toFixed(2)}`,
-        price: current.candle.low,
-        type: isCHoCH ? 'choch' : 'bos'
-      });
-    }
-  }
-
-  // 3. Order block detection: A down candle before a very strong up move
-  for (let i = 2; i < data.length - 1; i++) {
-    const current = data[i];
-    const next = data[i+1];
-    
-    // Bullish OB
-    if (current.close < current.open && next.close > next.open && (next.close - next.open) > (current.open - current.close) * 3.0) {
-      markers.push({
-        time: current.time as number,
-        position: 'belowBar',
-        color: '#10b981',
-        shape: 'square',
-        text: `Bullish Order Block (OB) @ ${current.low.toFixed(2)}`,
-        price: current.low,
-        type: 'bullish_ob'
-      });
-    }
-    
-    // Bearish OB
-    if (current.close > current.open && next.close < next.open && (next.open - next.close) > (current.close - current.open) * 3.0) {
-      markers.push({
-        time: current.time as number,
-        position: 'aboveBar',
-        color: '#ef4444',
-        shape: 'square',
-        text: `Bearish Order Block (OB) @ ${current.high.toFixed(2)}`,
-        price: current.high,
-        type: 'bearish_ob'
-      });
-    }
-  }
-
-  // Deduplicate markers by time, keeping highest priority elements
-  const dedupedMap = new Map<number, SMCMarker>();
-  
-  // Include 6-step reversal setup markers
-  const reversalMarkers = detect6StepReversalSetup(data);
-  [...markers, ...reversalMarkers].forEach(m => {
-    const existing = dedupedMap.get(m.time);
-    if (!existing) {
-      dedupedMap.set(m.time, m);
-    } else {
-      // Prioritize 6-step reversal triggers, then BOS/CHoCH, then OB, then FVG
-      const priority = (text: string, type: string) => {
-        if (text.includes('6-Step Reversal')) return 4;
-        if (type === 'bos' || type === 'choch') return 3;
-        if (type === 'bullish_ob' || type === 'bearish_ob') return 2;
-        return 1;
-      };
-      if (priority(m.text || '', m.type || '') > priority(existing.text || '', existing.type || '')) {
-        dedupedMap.set(m.time, m);
-      }
-    }
-  });
-
-  return Array.from(dedupedMap.values()).sort((a, b) => a.time - b.time);
+  // Only detect and return the clean 6-Step Multi-Timeframe Reversal Setup Markings
+  return detect6StepReversalSetup(data);
 }
 
 /**
@@ -200,7 +45,7 @@ export function detect6StepReversalSetup(data: Candle[]): SMCMarker[] {
     const rangeSpread = rangeHigh - rangeLow;
 
     // Step 1 Check: Ranging Market Starting Point (compact ATR)
-    const isRanging = rangeSpread <= curr.open * 0.008;
+    const isRanging = rangeSpread <= curr.open * 0.012;
 
     // Step 3 Check: Long Wick (Rejection)
     const candleHeight = curr.high - curr.low;
@@ -208,27 +53,65 @@ export function detect6StepReversalSetup(data: Candle[]): SMCMarker[] {
     const upperWick = curr.high - Math.max(curr.open, curr.close);
     const lowerWick = Math.min(curr.open, curr.close) - curr.low;
 
-    const isBullishRejection = candleHeight > 0 && lowerWick >= candleHeight * 0.45 && bodyHeight <= candleHeight * 0.4;
-    const isBearishRejection = candleHeight > 0 && upperWick >= candleHeight * 0.45 && bodyHeight <= candleHeight * 0.4;
+    const isBullishRejection = candleHeight > 0 && lowerWick >= candleHeight * 0.4 && bodyHeight <= candleHeight * 0.5;
+    const isBearishRejection = candleHeight > 0 && upperWick >= candleHeight * 0.4 && bodyHeight <= candleHeight * 0.5;
 
     // Step 6: Entry on 2nd Candlestick after Rejected Candlestick
     if (isRanging && isBullishRejection && entryCandle.close > curr.high) {
+      // Step 1: 15M Range Base
+      setupMarkers.push({
+        time: prev3[0].time,
+        position: 'aboveBar',
+        color: '#a855f7',
+        shape: 'square',
+        text: `Step 1: 15M Range Base`,
+        price: rangeHigh
+      });
+      // Step 3: 5M Sweep Wick Rejection
+      setupMarkers.push({
+        time: curr.time,
+        position: 'belowBar',
+        color: '#3b82f6',
+        shape: 'circle',
+        text: `Step 3: 5M Sweep Wick Rejection`,
+        price: curr.low
+      });
+      // Step 6: Entry Trigger
       setupMarkers.push({
         time: entryCandle.time,
         position: 'belowBar',
         color: '#10b981', // Emerald green
         shape: 'arrowUp',
-        text: `🚀 Step 6 Entry: Bullish 6-Step Reversal (2nd Candle Trigger) @ ${entryCandle.close.toFixed(2)}`,
+        text: `🚀 Step 6 Entry: Bullish 6-Step Reversal Trigger @ ${entryCandle.close.toFixed(2)}`,
         price: entryCandle.low,
         type: 'bullish_ob'
       });
     } else if (isRanging && isBearishRejection && entryCandle.close < curr.low) {
+      // Step 1: 15M Range Base
+      setupMarkers.push({
+        time: prev3[0].time,
+        position: 'belowBar',
+        color: '#a855f7',
+        shape: 'square',
+        text: `Step 1: 15M Range Base`,
+        price: rangeLow
+      });
+      // Step 3: 5M Sweep Wick Rejection
+      setupMarkers.push({
+        time: curr.time,
+        position: 'aboveBar',
+        color: '#3b82f6',
+        shape: 'circle',
+        text: `Step 3: 5M Sweep Wick Rejection`,
+        price: curr.high
+      });
+      // Step 6: Entry Trigger
       setupMarkers.push({
         time: entryCandle.time,
         position: 'aboveBar',
         color: '#f43f5e', // Bright Rose
         shape: 'arrowDown',
-        text: `💥 Step 6 Entry: Bearish 6-Step Reversal (2nd Candle Trigger) @ ${entryCandle.close.toFixed(2)}`,
+        text: `💥 Step 6 Entry: Bearish 6-Step Reversal Trigger @ ${entryCandle.close.toFixed(2)}`,
         price: entryCandle.high,
         type: 'bearish_ob'
       });

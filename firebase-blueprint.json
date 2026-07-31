@@ -153,6 +153,10 @@
     "/blessed_tier_emails/{id}": {
       "schema": "BlessedTierEmail",
       "description": "Creator-blessed emails with custom PIN tier allocations."
+    },
+    "/tiers/{id}": {
+      "schema": "TierAssignment",
+      "description": "Firestore collection storing email to tier assignments and PIN validation records."
     }
   }
 }

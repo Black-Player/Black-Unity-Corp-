@@ -169,6 +169,10 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    match /tiers/{id} {
+      allow read, write: if true;
+    }
+
     match /access_audit_logs/{id} {
       allow read, write: if true;
     }

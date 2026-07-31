@@ -21,7 +21,17 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
   const [newBlessedEmail, setNewBlessedEmail] = useState('');
   const [newBlessedTier, setNewBlessedTier] = useState<Tier>('creator');
   const [newBlessedNote, setNewBlessedNote] = useState('');
+  const [customPinInput, setCustomPinInput] = useState('');
   const [blessing, setBlessing] = useState(false);
+
+  // Prominent Issued PIN Modal state
+  const [issuedPinModal, setIssuedPinModal] = useState<{
+    isOpen: boolean;
+    email: string;
+    tier: Tier;
+    pin: string;
+    isExisting: boolean;
+  } | null>(null);
 
   // Standing Code Generation Form state
   const [type, setType] = useState<'student' | 'investor'>('student');
@@ -60,16 +70,19 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
     setLoadingBlessed(true);
     try {
       let data = await dbService.list<BlessedTierEmail>('blessed_tier_emails');
+      let tiersData = await dbService.list<any>('tiers');
       
       // Auto-provision master creator emails if not already present
       const masterEmails = ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'];
       let needsRefresh = false;
 
       for (const masterEmail of masterEmails) {
-        const exists = data.some(item => item.email?.toLowerCase() === masterEmail);
-        if (!exists) {
-          const masterDocId = masterEmail.replace(/[@.]/g, '_');
-          const initialPin = Math.floor(100000 + Math.random() * 900000).toString();
+        const existsInBlessed = data.some(item => item.email?.toLowerCase() === masterEmail);
+        const existsInTiers = tiersData.some(item => item.email?.toLowerCase() === masterEmail);
+        const masterDocId = masterEmail.replace(/[@.]/g, '_');
+        const initialPin = '777999';
+
+        if (!existsInBlessed) {
           const masterRecord: BlessedTierEmail = {
             id: masterDocId,
             email: masterEmail,
@@ -81,6 +94,22 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
             notes: 'Master Creator Account Blessed Email'
           };
           await dbService.create('blessed_tier_emails', masterRecord, masterDocId);
+          needsRefresh = true;
+        }
+
+        if (!existsInTiers) {
+          const tierRecord = {
+            id: masterDocId,
+            email: masterEmail,
+            email_code: masterDocId,
+            tier: 'creator',
+            pin: initialPin,
+            pin_status: 'active',
+            created_by: 'Creator Auto-Provision',
+            created_at: new Date().toISOString(),
+            notes: 'Master Creator Account Tier Record'
+          };
+          await dbService.create('tiers', tierRecord, masterDocId);
           needsRefresh = true;
         }
       }
@@ -102,13 +131,8 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
     setBlessing(true);
     try {
       const email = newBlessedEmail.toLowerCase().trim();
-      const exists = blessedEmails.some(b => b.email.toLowerCase() === email);
-      if (exists) {
-        addToast(`${email} is already on the Blessed Tiers list.`, "info");
-        return;
-      }
-
-      const generatedPin = Math.floor(100000 + Math.random() * 900000).toString();
+      const existing = blessedEmails.find(b => b.email.toLowerCase() === email);
+      const generatedPin = customPinInput.trim() || Math.floor(100000 + Math.random() * 900000).toString();
       const docId = email.replace(/[@.]/g, '_');
 
       const newRecord: BlessedTierEmail = {
@@ -122,24 +146,63 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
         notes: newBlessedNote || `Blessed by Creator as ${newBlessedTier.toUpperCase()}`
       };
 
-      await dbService.create('blessed_tier_emails', newRecord, docId);
+      const tierRecord = {
+        id: docId,
+        email,
+        email_code: docId,
+        tier: newBlessedTier,
+        pin: generatedPin,
+        pin_status: 'active',
+        created_by: userProfile?.email || 'Creator',
+        created_at: new Date().toISOString(),
+        notes: newBlessedNote || `Assigned ${newBlessedTier.toUpperCase()} Tier`
+      };
 
-      await dbService.create('access_audit_logs', {
-        action: 'Blessed Email & PIN Generated',
-        performed_by: userProfile?.email || 'Creator',
-        target_user: email,
-        details: `Blessed ${email} with ${newBlessedTier.toUpperCase()} Tier and generated Creator PIN: ${generatedPin}`,
-        timestamp: new Date().toISOString()
+      // 1. INSTANT OPTIMISTIC UI UPDATE - 0ms Delay!
+      setBlessedEmails(prev => {
+        const filtered = prev.filter(b => b.id !== docId && b.email.toLowerCase() !== email);
+        return [newRecord, ...filtered];
       });
 
-      addToast(`Blessed ${email}! Creator PIN Generated: ${generatedPin}`, "success");
+      // 2. AUTO COPY PIN TO CLIPBOARD
+      try {
+        await navigator.clipboard.writeText(generatedPin);
+      } catch (clipErr) {
+        console.warn('Clipboard write warning:', clipErr);
+      }
+
+      // 3. SHOW PROMINENT ISSUED PIN MODAL IMMEDIATELY
+      setIssuedPinModal({
+        isOpen: true,
+        email,
+        tier: newBlessedTier,
+        pin: generatedPin,
+        isExisting: !!existing
+      });
+
+      addToast(`Accepted ${email}! PIN: ${generatedPin} (Copied to Clipboard)`, "success");
+
+      // Reset form
       setNewBlessedEmail('');
       setNewBlessedNote('');
-      fetchBlessedEmails();
-      fetchAuditLogs();
+      setCustomPinInput('');
+
+      // 4. PERSIST TO DB IN BACKGROUND
+      Promise.all([
+        dbService.create('blessed_tier_emails', newRecord, docId),
+        dbService.create('tiers', tierRecord, docId),
+        dbService.create('access_audit_logs', {
+          action: 'Blessed Email & PIN Issued',
+          performed_by: userProfile?.email || 'Creator',
+          target_user: email,
+          details: `Issued PIN (${generatedPin}) for ${email} with ${newBlessedTier.toUpperCase()} tier.`,
+          timestamp: new Date().toISOString()
+        })
+      ]).catch(err => console.error('Background DB sync error:', err));
+
     } catch (err) {
       console.error(err);
-      addToast("Failed to bless email.", "error");
+      addToast("Failed to accept email and generate PIN.", "error");
     } finally {
       setBlessing(false);
     }
@@ -148,23 +211,55 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
   const generateNewPinForEmail = async (item: BlessedTierEmail) => {
     try {
       const newPin = Math.floor(100000 + Math.random() * 900000).toString();
-      await dbService.update('blessed_tier_emails', item.id, {
+      const updatedRecord: BlessedTierEmail = {
+        ...item,
         pin: newPin,
         pin_status: 'active',
         blessed_at: new Date().toISOString()
+      };
+
+      // 1. INSTANT OPTIMISTIC UI UPDATE
+      setBlessedEmails(prev => prev.map(b => b.id === item.id ? updatedRecord : b));
+
+      // 2. AUTO COPY TO CLIPBOARD
+      try {
+        await navigator.clipboard.writeText(newPin);
+      } catch (clipErr) {
+        console.warn('Clipboard error:', clipErr);
+      }
+
+      // 3. SHOW PROMINENT ISSUED PIN MODAL
+      setIssuedPinModal({
+        isOpen: true,
+        email: item.email,
+        tier: item.allocated_tier || 'creator',
+        pin: newPin,
+        isExisting: true
       });
 
-      await dbService.create('access_audit_logs', {
-        action: 'Regenerated Creator PIN',
-        performed_by: userProfile?.email || 'Creator',
-        target_user: item.email,
-        details: `Regenerated new Creator PIN (${newPin}) for blessed email: ${item.email}`,
-        timestamp: new Date().toISOString()
-      });
+      addToast(`Regenerated Creator PIN for ${item.email}: ${newPin} (Copied!)`, "success");
 
-      addToast(`New Creator PIN generated for ${item.email}: ${newPin}`, "success");
-      fetchBlessedEmails();
-      fetchAuditLogs();
+      // 4. PERSIST IN BACKGROUND
+      Promise.all([
+        dbService.update('blessed_tier_emails', item.id, {
+          pin: newPin,
+          pin_status: 'active',
+          blessed_at: new Date().toISOString()
+        }),
+        dbService.update('tiers', item.id, {
+          pin: newPin,
+          pin_status: 'active',
+          updated_at: new Date().toISOString()
+        }),
+        dbService.create('access_audit_logs', {
+          action: 'Regenerated Creator PIN',
+          performed_by: userProfile?.email || 'Creator',
+          target_user: item.email,
+          details: `Regenerated new Creator PIN (${newPin}) for email: ${item.email}`,
+          timestamp: new Date().toISOString()
+        })
+      ]).catch(err => console.error('Background DB sync error:', err));
+
     } catch (err) {
       console.error(err);
       addToast("Failed to regenerate PIN.", "error");
@@ -174,21 +269,22 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
   const removeBlessedEmail = async (id: string, email: string) => {
     try {
       await dbService.delete('blessed_tier_emails', id);
+      await dbService.delete('tiers', id);
 
       await dbService.create('access_audit_logs', {
-        action: 'Revoked Blessed Email',
+        action: 'Revoked Email Tier Assignment',
         performed_by: userProfile?.email || 'Creator',
         target_user: email,
-        details: `Removed ${email} from Creator Blessed Tiers list and revoked associated PIN.`,
+        details: `Removed ${email} from Creator Tiers list and revoked PIN.`,
         timestamp: new Date().toISOString()
       });
 
-      addToast(`Removed ${email} from Creator Blessed list.`, "info");
+      addToast(`Removed ${email} from Creator Tiers list.`, "info");
       fetchBlessedEmails();
       fetchAuditLogs();
     } catch (err) {
       console.error(err);
-      addToast("Failed to remove blessed email.", "error");
+      addToast("Failed to remove email from tiers list.", "error");
     }
   };
 
@@ -196,6 +292,10 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
     try {
       await dbService.update('blessed_tier_emails', item.id, {
         allocated_tier: tier
+      });
+      await dbService.update('tiers', item.id, {
+        tier: tier,
+        updated_at: new Date().toISOString()
       });
 
       addToast(`Updated ${item.email} allocated tier to ${tier.toUpperCase()}`, "success");
@@ -586,10 +686,10 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                   </div>
                   <div>
                     <h3 className="text-xl font-display font-bold text-white flex items-center gap-2">
-                      Bless Email & Generate PIN
+                      Email Address Acceptance & Tier Assignment
                     </h3>
                     <p className="text-xs text-white/40">
-                      Grant special tiers blessed directly by the Creator. Add/remove emails at will and generate unique access PINs.
+                      Accept user emails or codes, assign custom tiers (Creator, Mythic, Legendary, Zion, Oracle), and issue PINs verified against the Firestore 'tiers' collection.
                     </p>
                   </div>
                 </div>
@@ -597,10 +697,10 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end pt-2">
                 <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Blessed Email</label>
+                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">User Email Address or Code</label>
                   <input
-                    type="email"
-                    placeholder="e.g. kanitezu@gmail.com or user@domain.com"
+                    type="text"
+                    placeholder="e.g. user@domain.com or trader_email@gmail.com"
                     value={newBlessedEmail}
                     onChange={(e) => setNewBlessedEmail(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-gold/50 outline-none"
@@ -608,17 +708,17 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Allocated Tier</label>
+                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Assigned Tier</label>
                   <select
                     value={newBlessedTier}
                     onChange={(e) => setNewBlessedTier(e.target.value as Tier)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-gold/50 outline-none"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-gold/50 outline-none font-bold text-gold"
                   >
                     <option value="creator">Creator (Master Tier)</option>
-                    <option value="mythic">Mythic</option>
-                    <option value="legendary">Legendary</option>
-                    <option value="zion">Zion</option>
-                    <option value="oracle">Oracle</option>
+                    <option value="mythic">Mythic Tier</option>
+                    <option value="legendary">Legendary Tier</option>
+                    <option value="zion">Zion Tier</option>
+                    <option value="oracle">Oracle Tier</option>
                   </select>
                 </div>
 
@@ -628,18 +728,31 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                   className="w-full bg-gold text-black font-bold py-2.5 rounded-xl hover:bg-gold/80 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {blessing ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-                  Bless & Generate PIN
+                  Accept Email & Issue PIN
                 </button>
               </div>
 
-              <div className="pt-2">
-                <input
-                  type="text"
-                  placeholder="Optional Note / Reason for Blessing (e.g. VIP Creator Partner)"
-                  value={newBlessedNote}
-                  onChange={(e) => setNewBlessedNote(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white/70 focus:border-gold/50 outline-none"
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Custom PIN (Optional - Auto-generated if left blank)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 777999 or 6-digit numeric PIN"
+                    value={customPinInput}
+                    onChange={(e) => setCustomPinInput(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white/90 font-mono focus:border-gold/50 outline-none"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Reason / Approval Notes</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Creator-accepted VIP trader email"
+                    value={newBlessedNote}
+                    onChange={(e) => setNewBlessedNote(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white/70 focus:border-gold/50 outline-none"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1231,6 +1344,80 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
           </div>
         )}
       </div>
+
+      {/* Prominent Issued PIN Modal Dialog */}
+      <AnimatePresence>
+        {issuedPinModal && issuedPinModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="glass-card max-w-md w-full p-8 border-gold/40 bg-gradient-to-b from-cosmic-black via-purple-950/40 to-cosmic-black shadow-[0_0_50px_rgba(234,179,8,0.3)] relative space-y-6 text-center"
+            >
+              <button
+                onClick={() => setIssuedPinModal(null)}
+                className="absolute top-4 right-4 p-2 text-white/40 hover:text-white rounded-xl bg-white/5 hover:bg-white/10 transition-all"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="w-16 h-16 rounded-full bg-gold/20 border-2 border-gold/50 mx-auto flex items-center justify-center text-gold shadow-lg shadow-gold/20 animate-pulse">
+                <Crown size={32} />
+              </div>
+
+              <div>
+                <span className="px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest bg-gold/20 text-gold border border-gold/40 inline-block mb-2">
+                  {issuedPinModal.isExisting ? 'PIN Regenerated & Activated' : '✨ Creator PIN Issued'}
+                </span>
+                <h3 className="text-xl font-display font-bold text-white">
+                  Access PIN Ready for {issuedPinModal.email}
+                </h3>
+                <p className="text-xs text-white/60 mt-1">
+                  Allocated Tier: <strong className="text-gold uppercase font-mono">{issuedPinModal.tier}</strong>
+                </p>
+              </div>
+
+              {/* Big PIN Display Box */}
+              <div className="bg-black/60 border-2 border-gold/60 rounded-2xl p-6 relative group space-y-2">
+                <p className="text-[10px] text-gold/80 font-mono font-bold uppercase tracking-widest">
+                  6-Digit Verification PIN
+                </p>
+                <div className="text-4xl font-mono font-black text-gold tracking-[0.3em] flex items-center justify-center select-all">
+                  {issuedPinModal.pin}
+                </div>
+                <div className="flex items-center justify-center gap-1.5 text-[10px] text-emerald-400 font-bold">
+                  <CheckCircle2 size={12} /> Automatically Copied to Clipboard
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="space-y-3 pt-2">
+                <button
+                  onClick={async () => {
+                    await navigator.clipboard.writeText(issuedPinModal.pin);
+                    addToast(`Copied Creator PIN ${issuedPinModal.pin} to Clipboard!`, "success");
+                  }}
+                  className="w-full bg-gold text-black font-bold py-3.5 rounded-xl hover:bg-gold/80 transition-all flex items-center justify-center gap-2 text-sm shadow-xl shadow-gold/10"
+                >
+                  <Copy size={18} /> Copy PIN to Clipboard
+                </button>
+
+                <button
+                  onClick={() => setIssuedPinModal(null)}
+                  className="w-full bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 font-bold py-2.5 rounded-xl transition-all text-xs"
+                >
+                  Close Window
+                </button>
+              </div>
+
+              <p className="text-[10px] text-white/40 italic leading-relaxed">
+                The user can enter <strong className="text-white">{issuedPinModal.email}</strong> and PIN <strong className="text-gold font-mono">{issuedPinModal.pin}</strong> on the Access & Login screen to instantly unlock full platform features.
+              </p>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

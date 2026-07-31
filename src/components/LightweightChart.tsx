@@ -133,10 +133,10 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
   
   const dataRef = useRef<any[]>([]);
   const smcPriceLinesRef = useRef<any[]>([]);
-  const [showIndicators, setShowIndicators] = useState(true);
+  const [showIndicators, setShowIndicators] = useState(false);
   const [showSMC, setShowSMC] = useState(true);
   const [showBB, setShowBB] = useState(false);
-  const [showVolume, setShowVolume] = useState(true);
+  const [showVolume, setShowVolume] = useState(false);
   const [showMACD, setShowMACD] = useState(false);
   const [timeframe, setTimeframe] = useState(60); // Default 1m
   const [isLoading, setIsLoading] = useState(true);
@@ -912,7 +912,7 @@ export default function LightweightChart({ symbol, entry, sl, tps, signalType, a
           <button 
             onClick={() => setShowSMC(!showSMC)}
             className={`p-2 rounded-lg transition-all ${showSMC ? 'text-gold bg-gold/10' : 'text-white/20 hover:text-white/40'}`}
-            title="Smart Money Concepts (SMC)"
+            title="6-Step Reversal Markings"
           >
             <Eye size={16} />
           </button>

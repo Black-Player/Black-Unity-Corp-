@@ -64,8 +64,21 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
         { id: 'council', label: 'Council', icon: Users, requiredTier: 'mythic' },
         { id: 'academy', label: 'The Library', icon: GraduationCap },
       ]
+    },
+    {
+      label: 'Creator Suite',
+      items: [
+        { id: 'creator-hub', label: 'Creator Hub / Email Acceptance', icon: Key, requiredTier: 'creator' },
+        { id: 'diagnostics', label: 'Diagnostics Engine', icon: ShieldCheck, requiredTier: 'creator' },
+        { id: 'telegram', label: 'Telegram Center', icon: Bot, requiredTier: 'creator' },
+      ]
     }
   ];
+
+  const isCreatorUser = userProfile?.tier === 'creator' || 
+    userProfile?.role === 'creator' || 
+    (userProfile?.email || '').toLowerCase().trim() === 'kanitezu@gmail.com' || 
+    localStorage.getItem('dev_mode_enabled') === 'true';
 
   return (
     <div className="hidden lg:flex w-64 h-screen glass-card rounded-none border-y-0 border-l-0 flex-col p-6 space-y-8 fixed left-0 top-0">
@@ -85,14 +98,15 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
               <p className="text-[10px] text-white/20 uppercase tracking-widest px-4 font-bold">{group.label}</p>
               <div className="space-y-1">
                 {group.items.map((item) => {
-                  const hasAccess = !item.requiredTier || (userProfile && hasTierAccess(userProfile.tier, item.requiredTier as Tier));
+                  const hasAccess = !item.requiredTier || (userProfile && hasTierAccess(userProfile.tier, item.requiredTier as Tier)) || isCreatorUser;
+                  const isActive = activePage === item.id || (item.id === 'creator-hub' && activePage === 'access-control');
                   
                   return (
                     <button
                       key={item.id}
                       onClick={() => hasAccess ? setActivePage(item.id) : setActivePage('subscription')}
                       className={`w-full flex items-center justify-between px-4 py-2.5 rounded-xl transition-all ${
-                        activePage === item.id 
+                        isActive 
                           ? 'bg-gold/10 text-gold border border-gold/20' 
                           : hasAccess ? 'text-white/60 hover:bg-white/5 hover:text-white' : 'text-white/20 cursor-not-allowed'
                       }`}
@@ -113,45 +127,6 @@ export default function Sidebar({ activePage, setActivePage, userProfile }: Side
               </div>
             </div>
           ))}
-
-          {(userProfile?.tier === 'creator' || userProfile?.role === 'creator' || localStorage.getItem('dev_mode_enabled') === 'true') && (
-            <div className="pt-4 border-t border-white/5 space-y-1">
-              <p className="text-[10px] text-white/20 uppercase tracking-widest px-4 mb-2">Admin</p>
-              <button
-                onClick={() => setActivePage('diagnostics')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                  activePage === 'diagnostics' 
-                    ? 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20' 
-                    : 'text-white/60 hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <ShieldCheck size={20} />
-                <span className="font-medium">Diagnostics</span>
-              </button>
-              <button
-                onClick={() => setActivePage('access-control')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                  activePage === 'access-control' 
-                    ? 'bg-gold/10 text-gold border border-gold/20' 
-                    : 'text-white/60 hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <Key size={20} />
-                <span className="font-medium">Access Control</span>
-              </button>
-              <button
-                onClick={() => setActivePage('telegram')}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-                  activePage === 'telegram' 
-                    ? 'bg-gold/10 text-gold border border-gold/20' 
-                    : 'text-white/60 hover:bg-white/5 hover:text-white'
-                }`}
-              >
-                <Bot size={20} />
-                <span className="font-medium">Telegram Center</span>
-              </button>
-            </div>
-          )}
         </nav>
 
       <div className="space-y-4">

@@ -130,6 +130,21 @@ export interface BlessedTierEmail {
   notes?: string;
 }
 
+export interface TierAssignment {
+  id: string;
+  email: string;
+  email_code?: string;
+  tier: Tier;
+  pin: string;
+  pin_status: 'active' | 'redeemed' | 'revoked';
+  created_by: string;
+  created_at: string;
+  updated_at?: string;
+  redeemed_by_uid?: string;
+  redeemed_at?: string;
+  notes?: string;
+}
+
 export interface AdvancementRequest {
   id: string;
   uid: string;

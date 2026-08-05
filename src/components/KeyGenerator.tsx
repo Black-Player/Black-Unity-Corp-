@@ -15,13 +15,16 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
   const [generating, setGenerating] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Blessed Tier Email States
+  // Email Tier Access Management States
   const [blessedEmails, setBlessedEmails] = useState<BlessedTierEmail[]>([]);
   const [loadingBlessed, setLoadingBlessed] = useState(false);
   const [newBlessedEmail, setNewBlessedEmail] = useState('');
-  const [newBlessedTier, setNewBlessedTier] = useState<Tier>('creator');
+  const [newBlessedTier, setNewBlessedTier] = useState<Tier>('mythic');
+  const [newBlessedExpiry, setNewBlessedExpiry] = useState<'never' | '7' | '30' | '90' | '365' | 'custom'>('never');
+  const [customExpiryDate, setCustomExpiryDate] = useState('');
+  const [newAccessStatus, setNewAccessStatus] = useState<'enabled' | 'disabled'>('enabled');
+  const [newAllowTelegram, setNewAllowTelegram] = useState<boolean>(false);
   const [newBlessedNote, setNewBlessedNote] = useState('');
-  const [customPinInput, setCustomPinInput] = useState('');
   const [blessing, setBlessing] = useState(false);
 
   // Prominent Issued PIN Modal state
@@ -126,24 +129,41 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
     }
   };
 
+  const computeExpiryTimestamp = (mode: string, customDateStr?: string): string | null => {
+    if (mode === 'never' || !mode) return null;
+    const now = Date.now();
+    if (mode === '7') return new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString();
+    if (mode === '30') return new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString();
+    if (mode === '90') return new Date(now + 90 * 24 * 60 * 60 * 1000).toISOString();
+    if (mode === '365') return new Date(now + 365 * 24 * 60 * 60 * 1000).toISOString();
+    if (mode === 'custom' && customDateStr) {
+      const d = new Date(customDateStr);
+      return isNaN(d.getTime()) ? null : d.toISOString();
+    }
+    return null;
+  };
+
   const addBlessedEmail = async () => {
     if (!newBlessedEmail) return;
     setBlessing(true);
     try {
       const email = newBlessedEmail.toLowerCase().trim();
-      const existing = blessedEmails.find(b => b.email.toLowerCase() === email);
-      const generatedPin = customPinInput.trim() || Math.floor(100000 + Math.random() * 900000).toString();
       const docId = email.replace(/[@.]/g, '_');
+      const computedExpiry = computeExpiryTimestamp(newBlessedExpiry, customExpiryDate);
 
       const newRecord: BlessedTierEmail = {
         id: docId,
         email,
         allocated_tier: newBlessedTier,
-        pin: generatedPin,
-        pin_status: 'active',
+        status: newAccessStatus,
+        enabled: newAccessStatus === 'enabled',
+        expires_at: computedExpiry,
+        allow_telegram_broadcast: newAllowTelegram,
+        pin: 'AUTO-EMAIL-ACCESS',
+        pin_status: newAccessStatus === 'enabled' ? 'active' : 'revoked',
         blessed_by: userProfile?.email || 'Creator',
         blessed_at: new Date().toISOString(),
-        notes: newBlessedNote || `Blessed by Creator as ${newBlessedTier.toUpperCase()}`
+        notes: newBlessedNote || `Assigned ${newBlessedTier.toUpperCase()} tier access by Creator.`
       };
 
       const tierRecord = {
@@ -151,118 +171,174 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
         email,
         email_code: docId,
         tier: newBlessedTier,
-        pin: generatedPin,
-        pin_status: 'active',
+        status: newAccessStatus,
+        enabled: newAccessStatus === 'enabled',
+        expires_at: computedExpiry,
+        allow_telegram_broadcast: newAllowTelegram,
+        pin: 'AUTO-EMAIL-ACCESS',
+        pin_status: newAccessStatus === 'enabled' ? 'active' : 'revoked',
         created_by: userProfile?.email || 'Creator',
         created_at: new Date().toISOString(),
-        notes: newBlessedNote || `Assigned ${newBlessedTier.toUpperCase()} Tier`
+        notes: newBlessedNote || `Assigned ${newBlessedTier.toUpperCase()} Tier Access`
       };
 
-      // 1. INSTANT OPTIMISTIC UI UPDATE - 0ms Delay!
+      // 1. INSTANT OPTIMISTIC UI UPDATE
       setBlessedEmails(prev => {
         const filtered = prev.filter(b => b.id !== docId && b.email.toLowerCase() !== email);
         return [newRecord, ...filtered];
       });
 
-      // 2. AUTO COPY PIN TO CLIPBOARD
-      try {
-        await navigator.clipboard.writeText(generatedPin);
-      } catch (clipErr) {
-        console.warn('Clipboard write warning:', clipErr);
-      }
-
-      // 3. SHOW PROMINENT ISSUED PIN MODAL IMMEDIATELY
-      setIssuedPinModal({
-        isOpen: true,
-        email,
-        tier: newBlessedTier,
-        pin: generatedPin,
-        isExisting: !!existing
-      });
-
-      addToast(`Accepted ${email}! PIN: ${generatedPin} (Copied to Clipboard)`, "success");
+      addToast(`Granted Tier Access for ${email} (${newBlessedTier.toUpperCase()})!`, "success");
 
       // Reset form
       setNewBlessedEmail('');
       setNewBlessedNote('');
-      setCustomPinInput('');
+      setCustomExpiryDate('');
 
-      // 4. PERSIST TO DB IN BACKGROUND
+      // 2. PERSIST TO DB IN BACKGROUND & UPDATE USER PROFILE IF LOGGED IN
       Promise.all([
         dbService.create('blessed_tier_emails', newRecord, docId),
         dbService.create('tiers', tierRecord, docId),
         dbService.create('access_audit_logs', {
-          action: 'Blessed Email & PIN Issued',
+          action: 'Assigned Email Tier Access',
           performed_by: userProfile?.email || 'Creator',
           target_user: email,
-          details: `Issued PIN (${generatedPin}) for ${email} with ${newBlessedTier.toUpperCase()} tier.`,
+          details: `Assigned ${newBlessedTier.toUpperCase()} access to ${email}. Status: ${newAccessStatus.toUpperCase()}, Expiry: ${computedExpiry ? new Date(computedExpiry).toLocaleDateString() : 'Lifetime'}, Telegram Broadcast: ${newAllowTelegram ? 'ALLOWED' : 'DENIED'}`,
           timestamp: new Date().toISOString()
         })
       ]).catch(err => console.error('Background DB sync error:', err));
 
+      // Check if user already registered in users collection to sync live
+      dbService.list<UserProfile>('users').then(usersList => {
+        const matchedUser = usersList.find(u => u.email?.toLowerCase() === email);
+        if (matchedUser) {
+          const isEnabled = newAccessStatus === 'enabled';
+          dbService.update('users', matchedUser.uid, {
+            tier: isEnabled ? newBlessedTier : 'free',
+            role: isEnabled ? (newBlessedTier === 'creator' ? 'creator' : (newBlessedTier === 'student' ? 'student' : 'investor')) : 'subscriber',
+            allow_telegram_broadcast: isEnabled ? newAllowTelegram : false,
+            tier_access_status: newAccessStatus,
+            tier_expires_at: computedExpiry
+          });
+        }
+      }).catch(e => console.warn('User live sync error:', e));
+
     } catch (err) {
       console.error(err);
-      addToast("Failed to accept email and generate PIN.", "error");
+      addToast("Failed to assign email tier access.", "error");
     } finally {
       setBlessing(false);
     }
   };
 
-  const generateNewPinForEmail = async (item: BlessedTierEmail) => {
+  const toggleEmailAccessStatus = async (item: BlessedTierEmail) => {
     try {
-      const newPin = Math.floor(100000 + Math.random() * 900000).toString();
+      const currentEnabled = item.status !== 'disabled' && item.enabled !== false && item.pin_status !== 'revoked';
+      const newStatus: 'enabled' | 'disabled' = currentEnabled ? 'disabled' : 'enabled';
+      const newEnabled = !currentEnabled;
+
       const updatedRecord: BlessedTierEmail = {
         ...item,
-        pin: newPin,
-        pin_status: 'active',
-        blessed_at: new Date().toISOString()
+        status: newStatus,
+        enabled: newEnabled,
+        pin_status: newEnabled ? 'active' : 'revoked'
       };
 
-      // 1. INSTANT OPTIMISTIC UI UPDATE
       setBlessedEmails(prev => prev.map(b => b.id === item.id ? updatedRecord : b));
+      addToast(`Tier Access for ${item.email} is now ${newStatus.toUpperCase()}`, newEnabled ? "success" : "info");
 
-      // 2. AUTO COPY TO CLIPBOARD
-      try {
-        await navigator.clipboard.writeText(newPin);
-      } catch (clipErr) {
-        console.warn('Clipboard error:', clipErr);
-      }
-
-      // 3. SHOW PROMINENT ISSUED PIN MODAL
-      setIssuedPinModal({
-        isOpen: true,
-        email: item.email,
-        tier: item.allocated_tier || 'creator',
-        pin: newPin,
-        isExisting: true
-      });
-
-      addToast(`Regenerated Creator PIN for ${item.email}: ${newPin} (Copied!)`, "success");
-
-      // 4. PERSIST IN BACKGROUND
-      Promise.all([
+      await Promise.all([
         dbService.update('blessed_tier_emails', item.id, {
-          pin: newPin,
-          pin_status: 'active',
-          blessed_at: new Date().toISOString()
+          status: newStatus,
+          enabled: newEnabled,
+          pin_status: newEnabled ? 'active' : 'revoked'
         }),
         dbService.update('tiers', item.id, {
-          pin: newPin,
-          pin_status: 'active',
+          status: newStatus,
+          enabled: newEnabled,
+          pin_status: newEnabled ? 'active' : 'revoked',
           updated_at: new Date().toISOString()
         }),
         dbService.create('access_audit_logs', {
-          action: 'Regenerated Creator PIN',
+          action: 'Toggled Access Status',
           performed_by: userProfile?.email || 'Creator',
           target_user: item.email,
-          details: `Regenerated new Creator PIN (${newPin}) for email: ${item.email}`,
+          details: `Set access status for ${item.email} to ${newStatus.toUpperCase()}`,
           timestamp: new Date().toISOString()
         })
-      ]).catch(err => console.error('Background DB sync error:', err));
+      ]);
 
+      // Sync registered user
+      const usersList = await dbService.list<UserProfile>('users');
+      const matchedUser = usersList.find(u => u.email?.toLowerCase() === item.email.toLowerCase());
+      if (matchedUser) {
+        await dbService.update('users', matchedUser.uid, {
+          tier: newEnabled ? item.allocated_tier : 'free',
+          role: newEnabled ? (item.allocated_tier === 'creator' ? 'creator' : 'investor') : 'subscriber',
+          tier_access_status: newStatus,
+          allow_telegram_broadcast: newEnabled ? !!item.allow_telegram_broadcast : false
+        });
+      }
     } catch (err) {
       console.error(err);
-      addToast("Failed to regenerate PIN.", "error");
+      addToast("Failed to update access status.", "error");
+    }
+  };
+
+  const toggleEmailTelegramBroadcast = async (item: BlessedTierEmail) => {
+    try {
+      const currentAllowed = !!item.allow_telegram_broadcast;
+      const newAllowed = !currentAllowed;
+
+      const updatedRecord: BlessedTierEmail = {
+        ...item,
+        allow_telegram_broadcast: newAllowed
+      };
+
+      setBlessedEmails(prev => prev.map(b => b.id === item.id ? updatedRecord : b));
+      addToast(`Telegram Broadcasting for ${item.email} set to ${newAllowed ? 'ALLOWED' : 'DENIED'}`, "success");
+
+      await Promise.all([
+        dbService.update('blessed_tier_emails', item.id, { allow_telegram_broadcast: newAllowed }),
+        dbService.update('tiers', item.id, { allow_telegram_broadcast: newAllowed, updated_at: new Date().toISOString() }),
+        dbService.create('access_audit_logs', {
+          action: 'Toggled Telegram Broadcast Permission',
+          performed_by: userProfile?.email || 'Creator',
+          target_user: item.email,
+          details: `Set Telegram broadcast permission for ${item.email} to ${newAllowed ? 'ALLOWED' : 'DENIED'}`,
+          timestamp: new Date().toISOString()
+        })
+      ]);
+
+      // Sync registered user
+      const usersList = await dbService.list<UserProfile>('users');
+      const matchedUser = usersList.find(u => u.email?.toLowerCase() === item.email.toLowerCase());
+      if (matchedUser) {
+        await dbService.update('users', matchedUser.uid, { allow_telegram_broadcast: newAllowed });
+      }
+    } catch (err) {
+      console.error(err);
+      addToast("Failed to update Telegram broadcast permission.", "error");
+    }
+  };
+
+  const updateEmailExpiry = async (item: BlessedTierEmail, expiresAt: string | null) => {
+    try {
+      const updatedRecord: BlessedTierEmail = {
+        ...item,
+        expires_at: expiresAt
+      };
+
+      setBlessedEmails(prev => prev.map(b => b.id === item.id ? updatedRecord : b));
+      addToast(`Updated expiry for ${item.email}: ${expiresAt ? new Date(expiresAt).toLocaleDateString() : 'Lifetime Access'}`, "success");
+
+      await Promise.all([
+        dbService.update('blessed_tier_emails', item.id, { expires_at: expiresAt }),
+        dbService.update('tiers', item.id, { expires_at: expiresAt, updated_at: new Date().toISOString() })
+      ]);
+    } catch (err) {
+      console.error(err);
+      addToast("Failed to update expiry date.", "error");
     }
   };
 
@@ -272,31 +348,26 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
       await dbService.delete('tiers', id);
 
       await dbService.create('access_audit_logs', {
-        action: 'Revoked Email Tier Assignment',
+        action: 'Revoked Email Tier Access',
         performed_by: userProfile?.email || 'Creator',
         target_user: email,
-        details: `Removed ${email} from Creator Tiers list and revoked PIN.`,
+        details: `Removed ${email} from Creator Tier Access list.`,
         timestamp: new Date().toISOString()
       });
 
-      addToast(`Removed ${email} from Creator Tiers list.`, "info");
+      addToast(`Removed ${email} from Creator Tier Access list.`, "info");
       fetchBlessedEmails();
       fetchAuditLogs();
     } catch (err) {
       console.error(err);
-      addToast("Failed to remove email from tiers list.", "error");
+      addToast("Failed to remove email from access list.", "error");
     }
   };
 
   const updateBlessedTier = async (item: BlessedTierEmail, tier: Tier) => {
     try {
-      await dbService.update('blessed_tier_emails', item.id, {
-        allocated_tier: tier
-      });
-      await dbService.update('tiers', item.id, {
-        tier: tier,
-        updated_at: new Date().toISOString()
-      });
+      await dbService.update('blessed_tier_emails', item.id, { allocated_tier: tier });
+      await dbService.update('tiers', item.id, { tier: tier, updated_at: new Date().toISOString() });
 
       addToast(`Updated ${item.email} allocated tier to ${tier.toUpperCase()}`, "success");
       fetchBlessedEmails();
@@ -675,7 +746,7 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
 
       {/* Main Control Panels */}
       <div className="space-y-6">
-        {/* TAB 0: Creator Blessed Tiers & PINs */}
+        {/* TAB 0: Email Tier Access & Telegram Management */}
         {activeTab === 'blessed' && (
           <div className="space-y-6">
             <div className="glass-card p-6 border-gold/30 bg-gold/5 space-y-4">
@@ -686,21 +757,22 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                   </div>
                   <div>
                     <h3 className="text-xl font-display font-bold text-white flex items-center gap-2">
-                      Email Address Acceptance & Tier Assignment
+                      Email Tier Access & Telegram Broadcasting Management
                     </h3>
                     <p className="text-xs text-white/40">
-                      Accept user emails or codes, assign custom tiers (Creator, Mythic, Legendary, Zion, Oracle), and issue PINs verified against the Firestore 'tiers' collection.
+                      Assign custom tiers directly to user emails, specify access expiry periods, toggle enable/disable access, and grant or deny Telegram broadcasting permissions — no PINs required.
                     </p>
                   </div>
                 </div>
               </div>
 
+              {/* Form Row 1: Email, Tier, Expiry, Status */}
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end pt-2">
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">User Email Address or Code</label>
+                <div className="space-y-2 md:col-span-1">
+                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">User Email Address</label>
                   <input
-                    type="text"
-                    placeholder="e.g. user@domain.com or trader_email@gmail.com"
+                    type="email"
+                    placeholder="e.g. user@domain.com"
                     value={newBlessedEmail}
                     onChange={(e) => setNewBlessedEmail(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-gold/50 outline-none"
@@ -719,7 +791,82 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                     <option value="legendary">Legendary Tier</option>
                     <option value="zion">Zion Tier</option>
                     <option value="oracle">Oracle Tier</option>
+                    <option value="trader">Trader Tier</option>
+                    <option value="initiate">Initiate Tier</option>
+                    <option value="free">Free Tier</option>
                   </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Access Period / Expiry</label>
+                  <select
+                    value={newBlessedExpiry}
+                    onChange={(e) => setNewBlessedExpiry(e.target.value as any)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-gold/50 outline-none"
+                  >
+                    <option value="never">♾️ Lifetime (No Expiry)</option>
+                    <option value="7">⏱️ 7 Days</option>
+                    <option value="30">⏱️ 30 Days (1 Month)</option>
+                    <option value="90">⏱️ 90 Days (3 Months)</option>
+                    <option value="365">⏱️ 1 Year</option>
+                    <option value="custom">📅 Custom Expiry Date</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Initial Access State</label>
+                  <select
+                    value={newAccessStatus}
+                    onChange={(e) => setNewAccessStatus(e.target.value as 'enabled' | 'disabled')}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm font-bold focus:border-gold/50 outline-none"
+                    style={{ color: newAccessStatus === 'enabled' ? '#34d399' : '#f43f5e' }}
+                  >
+                    <option value="enabled" style={{ color: '#34d399' }}>🟢 ENABLED</option>
+                    <option value="disabled" style={{ color: '#f43f5e' }}>🔴 DISABLED</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Custom Date Input if selected */}
+              {newBlessedExpiry === 'custom' && (
+                <div className="space-y-1.5 max-w-xs pt-1">
+                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Select Expiry Date & Time</label>
+                  <input
+                    type="datetime-local"
+                    value={customExpiryDate}
+                    onChange={(e) => setCustomExpiryDate(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:border-gold/50 outline-none"
+                  />
+                </div>
+              )}
+
+              {/* Form Row 2: Telegram Broadcast Toggle, Notes, Submit Button */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center pt-2">
+                <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 cursor-pointer hover:bg-white/10 transition-all"
+                  onClick={() => setNewAllowTelegram(!newAllowTelegram)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={newAllowTelegram}
+                    onChange={(e) => setNewAllowTelegram(e.target.checked)}
+                    className="w-4 h-4 rounded text-gold focus:ring-gold bg-black/40 border-white/20 cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      📡 Allow Telegram Broadcasting
+                    </span>
+                    <p className="text-[10px] text-white/40">Grants user permission to broadcast signals/messages to Telegram.</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1 md:col-span-1">
+                  <input
+                    type="text"
+                    placeholder="Approval notes / Subscriber reference..."
+                    value={newBlessedNote}
+                    onChange={(e) => setNewBlessedNote(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white/80 focus:border-gold/50 outline-none"
+                  />
                 </div>
 
                 <button
@@ -728,45 +875,22 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                   className="w-full bg-gold text-black font-bold py-2.5 rounded-xl hover:bg-gold/80 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   {blessing ? <Loader2 className="animate-spin" size={18} /> : <Sparkles size={18} />}
-                  Accept Email & Issue PIN
+                  Assign Tier & Grant Access
                 </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Custom PIN (Optional - Auto-generated if left blank)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 777999 or 6-digit numeric PIN"
-                    value={customPinInput}
-                    onChange={(e) => setCustomPinInput(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white/90 font-mono focus:border-gold/50 outline-none"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] text-white/40 uppercase font-bold tracking-widest">Reason / Approval Notes</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Creator-accepted VIP trader email"
-                    value={newBlessedNote}
-                    onChange={(e) => setNewBlessedNote(e.target.value)}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-xs text-white/70 focus:border-gold/50 outline-none"
-                  />
-                </div>
               </div>
             </div>
 
-            {/* Roster of Creator Blessed Emails */}
+            {/* Managed Email Tier Roster */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <h4 className="text-sm font-bold uppercase tracking-widest text-white/60 flex items-center gap-2">
-                  <Crown size={16} className="text-gold" /> Creator Blessed Roster ({blessedEmails.length})
+                  <Crown size={16} className="text-gold" /> Creator Tier Access Roster ({blessedEmails.length})
                 </h4>
                 <button
                   onClick={fetchBlessedEmails}
                   className="px-3 py-1.5 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5"
                 >
-                  <RefreshCw size={12} /> Refresh Roster
+                  <RefreshCw size={12} /> Refresh List
                 </button>
               </div>
 
@@ -777,7 +901,7 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
               ) : blessedEmails.length === 0 ? (
                 <div className="glass-card p-12 text-center border-white/5 opacity-40">
                   <Crown className="mx-auto mb-4" size={48} />
-                  <p className="text-sm italic">No blessed emails present. Add emails above to grant creator-blessed PIN access.</p>
+                  <p className="text-sm italic">No tier access records present. Add an email above to grant access.</p>
                 </div>
               ) : (
                 <div className="glass-card border-white/5 overflow-hidden">
@@ -785,17 +909,21 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                     <table className="w-full border-collapse text-left">
                       <thead>
                         <tr className="border-b border-white/5 bg-white/[0.02] text-[10px] text-white/40 font-bold uppercase tracking-wider">
-                          <th className="px-6 py-4">Blessed Email</th>
-                          <th className="px-6 py-4">Allocated Tier</th>
-                          <th className="px-6 py-4">Creator PIN</th>
-                          <th className="px-6 py-4">PIN Status</th>
-                          <th className="px-6 py-4">Blessed At</th>
+                          <th className="px-6 py-4">User Email</th>
+                          <th className="px-6 py-4">Assigned Tier</th>
+                          <th className="px-6 py-4">Access Status</th>
+                          <th className="px-6 py-4">Expiry Date</th>
+                          <th className="px-6 py-4">Telegram Broadcast</th>
                           <th className="px-6 py-4 text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5 text-xs text-white/70">
                         {blessedEmails.map((item) => {
                           const isMaster = ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'].includes(item.email.toLowerCase());
+                          const isEnabled = item.status !== 'disabled' && item.enabled !== false && item.pin_status !== 'revoked';
+                          const isExpired = item.expires_at && new Date(item.expires_at) < new Date();
+                          const canTelegram = !!item.allow_telegram_broadcast || item.allocated_tier === 'creator';
+
                           return (
                             <tr key={item.id} className="hover:bg-white/[0.01] transition-all">
                               <td className="px-6 py-4 font-bold text-white">
@@ -809,6 +937,8 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                                 </div>
                                 {item.notes && <p className="text-[10px] text-white/40 font-normal mt-0.5">{item.notes}</p>}
                               </td>
+
+                              {/* Tier Selector */}
                               <td className="px-6 py-4">
                                 <select
                                   value={item.allocated_tier || 'creator'}
@@ -820,54 +950,83 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                                   <option value="legendary">LEGENDARY</option>
                                   <option value="zion">ZION</option>
                                   <option value="oracle">ORACLE</option>
+                                  <option value="trader">TRADER</option>
+                                  <option value="initiate">INITIATE</option>
+                                  <option value="free">FREE</option>
                                 </select>
                               </td>
+
+                              {/* Status Toggle Badge */}
                               <td className="px-6 py-4">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono font-bold text-sm text-gold tracking-widest bg-gold/10 px-3 py-1 rounded-lg border border-gold/20">
-                                    {item.pin}
+                                <button
+                                  onClick={() => toggleEmailAccessStatus(item)}
+                                  title="Click to toggle Enabled / Disabled"
+                                  className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-widest flex items-center gap-1.5 border transition-all ${
+                                    isExpired
+                                      ? 'bg-amber-400/10 text-amber-400 border-amber-400/20 hover:bg-amber-400/20'
+                                      : isEnabled
+                                      ? 'bg-emerald-400/10 text-emerald-400 border-emerald-400/20 hover:bg-emerald-400/20'
+                                      : 'bg-rose-400/10 text-rose-400 border-rose-400/20 hover:bg-rose-400/20'
+                                  }`}
+                                >
+                                  {isExpired ? (
+                                    <>⚠️ Expired</>
+                                  ) : isEnabled ? (
+                                    <>🟢 Enabled</>
+                                  ) : (
+                                    <>🔴 Disabled</>
+                                  )}
+                                </button>
+                              </td>
+
+                              {/* Expiry Date Display & Quick Change */}
+                              <td className="px-6 py-4 font-mono text-xs">
+                                <div className="space-y-1">
+                                  <span className={isExpired ? 'text-amber-400 font-bold' : item.expires_at ? 'text-white/80' : 'text-emerald-400 font-bold'}>
+                                    {item.expires_at ? new Date(item.expires_at).toLocaleDateString() : '♾️ Lifetime Access'}
                                   </span>
-                                  <button
-                                    onClick={() => copyToClipboard(item.pin, item.id)}
-                                    title="Copy PIN"
-                                    className="p-1.5 hover:bg-white/10 text-white/40 hover:text-gold rounded-lg transition-all"
-                                  >
-                                    {copiedId === item.id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      onClick={() => updateEmailExpiry(item, null)}
+                                      className="text-[8px] text-white/30 hover:text-gold hover:underline"
+                                    >
+                                      Make Lifetime
+                                    </button>
+                                    <span className="text-white/20">|</span>
+                                    <button
+                                      onClick={() => updateEmailExpiry(item, new Date(Date.now() + 30 * 24 * 3600 * 1000).toISOString())}
+                                      className="text-[8px] text-white/30 hover:text-gold hover:underline"
+                                    >
+                                      +30 Days
+                                    </button>
+                                  </div>
                                 </div>
                               </td>
+
+                              {/* Telegram Broadcast Permission Toggle */}
                               <td className="px-6 py-4">
-                                <span className={`px-2.5 py-0.5 rounded-full text-[8px] font-bold uppercase tracking-widest ${
-                                  item.pin_status === 'active'
-                                    ? 'bg-emerald-400/10 text-emerald-400 border border-emerald-400/20'
-                                    : item.pin_status === 'redeemed'
-                                    ? 'bg-blue-400/10 text-blue-400 border border-blue-400/20'
-                                    : 'bg-rose-400/10 text-rose-400 border border-rose-400/20'
-                                }`}>
-                                  {item.pin_status || 'active'}
-                                </span>
+                                <button
+                                  onClick={() => toggleEmailTelegramBroadcast(item)}
+                                  title="Click to toggle Telegram Broadcasting Permission"
+                                  className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all border flex items-center gap-1.5 ${
+                                    canTelegram
+                                      ? 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30 hover:bg-cyan-500/20'
+                                      : 'bg-white/5 text-white/40 border-white/10 hover:bg-white/10'
+                                  }`}
+                                >
+                                  {canTelegram ? '📡 Allowed' : '🚫 Denied'}
+                                </button>
                               </td>
-                              <td className="px-6 py-4 text-white/40 text-[10px]">
-                                {new Date(item.blessed_at).toLocaleDateString()}
-                              </td>
+
+                              {/* Actions */}
                               <td className="px-6 py-4 text-right">
-                                <div className="flex justify-end items-center gap-2">
-                                  <button
-                                    onClick={() => generateNewPinForEmail(item)}
-                                    title="Generate New PIN"
-                                    className="px-2.5 py-1.5 bg-gold/10 hover:bg-gold/20 text-gold rounded-lg text-xs font-bold transition-all flex items-center gap-1"
-                                  >
-                                    <KeyRound size={12} />
-                                    Regenerate PIN
-                                  </button>
-                                  <button
-                                    onClick={() => removeBlessedEmail(item.id, item.email)}
-                                    title="Remove Email from Blessed List"
-                                    className="p-1.5 text-white/40 hover:text-rose-400 rounded-lg hover:bg-white/5 transition-all"
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </div>
+                                <button
+                                  onClick={() => removeBlessedEmail(item.id, item.email)}
+                                  title="Revoke Access & Delete Record"
+                                  className="p-2 text-white/40 hover:text-rose-400 rounded-lg hover:bg-white/5 transition-all"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
                               </td>
                             </tr>
                           );

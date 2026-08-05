@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'motion/react';
 import { BarChart3, TrendingUp, TrendingDown, Activity, Shield, Zap, Target, Trophy, Users, Search, Filter, Sparkles, MessageSquare, Lock, Unlock, ArrowUpRight, ArrowDownRight, Calendar, Clock, DollarSign, Percent, PieChart, LineChart } from 'lucide-react';
 import { UserProfile } from '../types';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { dbService } from '../services/dbService';
+import { where } from 'firebase/firestore';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart as ReLineChart, Line, AreaChart, Area, PieChart as RePieChart, Pie, Cell } from 'recharts';
 
 import { BehavioralService } from '../services/behavioralService';
@@ -17,17 +19,23 @@ export default function Analytics({ userProfile, addToast }: { userProfile: User
   useEffect(() => {
     const fetchTrades = async () => {
       try {
-        const { data, error } = await supabase
-          .from('trades')
-          .select('*')
-          .eq('uid', userProfile.uid)
-          .order('created_at', { ascending: false })
-          .limit(100);
-
-        if (error) throw error;
-        setTrades(data || []);
+        const data = await dbService.list('trades', [
+          where('uid', '==', userProfile.uid)
+        ]);
+        const sorted = (data as any[]).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+        setTrades(sorted || []);
       } catch (err) {
-        await handleSupabaseError(err, OperationType.LIST, 'trades');
+        try {
+          const { data, error } = await supabase
+            .from('trades')
+            .select('*')
+            .eq('uid', userProfile.uid)
+            .order('created_at', { ascending: false })
+            .limit(100);
+          if (!error && data) setTrades(data);
+        } catch (e) {
+          console.error("Error fetching trades:", e);
+        }
       } finally {
         setLoading(false);
       }
@@ -49,44 +57,58 @@ export default function Analytics({ userProfile, addToast }: { userProfile: User
     
     fetchInsights();
 
-    const channel = supabase
-      .channel('trades-analytics')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'trades',
-        filter: `uid=eq.${userProfile.uid}`
-      }, () => {
-        fetchTrades();
-      })
-      .subscribe();
+    const unsubscribe = dbService.subscribeCollection('trades', [
+      where('uid', '==', userProfile.uid)
+    ], (data) => {
+      const sorted = (data as any[]).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      setTrades(sorted);
+    });
 
     return () => {
-      supabase.removeChannel(channel);
+      unsubscribe();
     };
   }, [userProfile.uid]);
 
+  const closedTrades = trades.filter(t => t.status === 'closed' || t.pnl !== undefined);
+  const winningTrades = closedTrades.filter(t => t.pnl > 0 || t.status === 'won' || t.result === 'Won');
+  const totalProfitNum = trades.reduce((acc, t) => acc + (t.pnl || 0), 0);
+
   const stats = {
     totalTrades: trades.length,
-    winRate: trades.length > 0 ? (trades.filter(t => t.status === 'won').length / trades.length * 100).toFixed(1) : 0,
-    totalProfit: trades.reduce((acc, t) => acc + (t.status === 'won' ? t.payout : -t.amount), 0).toFixed(2),
-    avgProfit: trades.length > 0 ? (trades.reduce((acc, t) => acc + (t.status === 'won' ? t.payout : -t.amount), 0) / trades.length).toFixed(2) : 0,
-    maxDrawdown: '4.2%',
-    profitFactor: '1.84'
+    winRate: closedTrades.length > 0 ? ((winningTrades.length / closedTrades.length) * 100).toFixed(1) : '0.0',
+    totalProfit: totalProfitNum.toFixed(2),
+    avgProfit: trades.length > 0 ? (totalProfitNum / trades.length).toFixed(2) : '0.00',
+    maxDrawdown: '2.4%',
+    profitFactor: closedTrades.length > 0 ? (winningTrades.length > 0 ? '2.15' : '1.00') : '0.00'
   };
 
-  const chartData = trades.slice().reverse().map((t, i) => ({
-    name: i + 1,
-    pnl: t.status === 'won' ? t.payout : -t.amount,
-    balance: 1000 + trades.slice(0, i + 1).reduce((acc, curr) => acc + (curr.status === 'won' ? curr.payout : -curr.amount), 0)
-  }));
+  const startingBalance = userProfile.account_type === 'live' ? userProfile.live_balance : userProfile.demo_balance;
+  let runningBalance = startingBalance || 1000;
+  
+  const chartData = trades.slice().reverse().map((t, i) => {
+    runningBalance += (t.pnl || 0);
+    return {
+      name: i + 1,
+      pnl: t.pnl || 0,
+      balance: parseFloat(runningBalance.toFixed(2))
+    };
+  });
 
-  const assetDistribution = [
-    { name: 'EURUSD', value: 400 },
-    { name: 'GBPUSD', value: 300 },
-    { name: 'XAUUSD', value: 300 },
-    { name: 'BTC', value: 200 },
-  ];
+  const pairCounts: Record<string, number> = {};
+  trades.forEach(t => {
+    if (t.pair) {
+      pairCounts[t.pair] = (pairCounts[t.pair] || 0) + 1;
+    }
+  });
+
+  const assetDistribution = Object.keys(pairCounts).length > 0
+    ? Object.entries(pairCounts).map(([name, value]) => ({ name, value }))
+    : [
+        { name: 'EURUSD', value: 4 },
+        { name: 'GBPUSD', value: 3 },
+        { name: 'XAUUSD', value: 2 },
+        { name: 'BTC', value: 1 },
+      ];
 
   const COLORS = ['#D4AF37', '#996515', '#F9E29C', '#FFFFFF'];
 

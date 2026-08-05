@@ -39,19 +39,14 @@ export const RiskManagement: React.FC<RiskManagementProps> = ({ userProfile, add
   const handleSave = async () => {
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({
-          risk_settings: settings
-        })
-        .eq('uid', userProfile.uid);
+      await dbService.update('users', userProfile.uid, {
+        risk_settings: settings
+      });
       
-      if (error) throw error;
-      
-      addToast('Risk Management Settings Updated!', 'success');
+      addToast('Risk Management & Goal Settings Updated!', 'success');
     } catch (err: any) {
       await handleSupabaseError(err, OperationType.UPDATE, `users/${userProfile.uid}`);
-      addToast(err.message, 'error');
+      addToast(err.message || 'Failed to save settings', 'error');
     } finally {
       setSaving(false);
     }
@@ -189,21 +184,35 @@ export const RiskManagement: React.FC<RiskManagementProps> = ({ userProfile, add
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Risk Per Trade (%)</label>
-                <span className="text-sm font-bold text-gold">{settings.risk_per_trade}%</span>
+                <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Daily Profit Target (%)</label>
+                <span className="text-sm font-bold text-emerald-400">{settings.daily_profit_target_percent || 2}%</span>
               </div>
               <input 
                 type="range" 
-                min="0.1" 
-                max="5" 
-                step="0.1"
-                value={settings.risk_per_trade}
-                onChange={(e) => setSettings({ ...settings, risk_per_trade: parseFloat(e.target.value) })}
-                className="w-full accent-gold"
+                min="0.5" 
+                max="20" 
+                step="0.5"
+                value={settings.daily_profit_target_percent || 2}
+                onChange={(e) => setSettings({ ...settings, daily_profit_target_percent: parseFloat(e.target.value) })}
+                className="w-full accent-emerald-400"
               />
               <p className="text-[10px] text-white/20 italic">
-                Recommended risk is 1% per trade for sustainable growth.
+                Set your daily profit objective percentage. Progress is tracked live on your Dashboard.
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-xs text-white/40 uppercase tracking-widest font-bold">Daily Profit Target ($ Optional)</label>
+                <span className="text-sm font-bold text-emerald-400">${settings.daily_profit_target_amount || 0}</span>
+              </div>
+              <input 
+                type="number" 
+                placeholder="e.g. 100"
+                value={settings.daily_profit_target_amount || ''}
+                onChange={(e) => setSettings({ ...settings, daily_profit_target_amount: parseFloat(e.target.value) || 0 })}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-emerald-400 font-bold focus:border-emerald-400/50 outline-none transition-all"
+              />
             </div>
           </div>
         </div>

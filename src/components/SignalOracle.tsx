@@ -1260,7 +1260,35 @@ export default function SignalOracle({ userProfile, addToast }: SignalOracleProp
                               
                               await dbService.create('trades', tradeData);
                               
-                              addToast("Ritual executed. The trade is now live in your portfolio.", "success");
+                              const newSignalsUsed = (userProfile.signals_used_today || 0) + 1;
+                              const newTakenCount = ((userProfile as any).signals_taken_count || 0) + 1;
+                              await dbService.update('users', userProfile.uid, {
+                                signals_used_today: newSignalsUsed,
+                                signals_taken_count: newTakenCount,
+                                updated_at: new Date().toISOString()
+                              }).catch(e => console.warn("User counter update warning:", e));
+                              userProfile.signals_used_today = newSignalsUsed;
+                              (userProfile as any).signals_taken_count = newTakenCount;
+
+                              if (activeSignal.id) {
+                                const currentUsedBy = activeSignal.used_by_uids || [];
+                                const updatedUsedBy = Array.from(new Set([...currentUsedBy, userProfile.uid]));
+                                const updatedCount = (activeSignal.used_count || 0) + 1;
+                                await dbService.update('signals', activeSignal.id, {
+                                  used_by_uids: updatedUsedBy,
+                                  used_count: updatedCount
+                                }).catch(e => console.warn("Signal update warning:", e));
+                              }
+
+                              await dbService.create('access_audit_logs', {
+                                action: 'Executed Oracle Signal',
+                                performed_by: userProfile.email || userProfile.uid,
+                                target_user: userProfile.email || userProfile.uid,
+                                details: `Executed ritual trade on ${activeSignal.pair} at ${activeSignal.entry} (Lot: ${calculatedLot})`,
+                                timestamp: new Date().toISOString()
+                              }).catch(e => console.warn("Audit log error:", e));
+
+                              addToast(`Ritual executed. Recorded signal usage (${newSignalsUsed}/${userProfile.risk_settings?.max_daily_trades || 10}). Trade is now live in portfolio.`, "success");
                             } catch (error) {
                               addToast("Failed to execute ritual in the physical realm.", "error");
                             }

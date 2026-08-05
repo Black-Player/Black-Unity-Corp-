@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { auth as firebaseAuth, googleProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup } from '../firebase';
 import { dbService } from '../services/dbService';
-import { UserProfile, AccessKey, UserRole } from '../types';
+import { UserProfile, AccessKey, UserRole, Tier, BlessedTierEmail } from '../types';
 import { LogIn, UserPlus, Chrome, Key } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -13,25 +13,94 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const validateAccessKey = async (keyStr: string): Promise<{ role: UserRole; keyId?: string; expiry?: string; key?: string } | null> => {
-    if (!keyStr) return { role: 'subscriber' };
+  const validateAccessKey = async (keyStr: string, userEmail?: string): Promise<{ 
+    role: UserRole; 
+    tier: Tier; 
+    keyId?: string; 
+    expiry?: string | null; 
+    key?: string;
+    allow_telegram_broadcast?: boolean;
+    tier_access_status?: 'enabled' | 'disabled';
+  } | null> => {
+    const cleanEmail = (userEmail || '').toLowerCase().trim();
+    const cleanCode = (keyStr || '').trim();
 
+    // 1. Direct Email Tier Access Check (No PIN Required!)
+    if (cleanEmail) {
+      const blessedList = await dbService.list<BlessedTierEmail>('blessed_tier_emails');
+      const tiersList = await dbService.list<any>('tiers');
+
+      const matchedBlessed = blessedList.find(b => b.email?.toLowerCase() === cleanEmail);
+      const matchedTier = tiersList.find(t => t.email?.toLowerCase() === cleanEmail);
+      const record = matchedBlessed || matchedTier;
+
+      if (record) {
+        // Check if disabled by Creator
+        const isDisabled = record.status === 'disabled' || record.enabled === false || record.pin_status === 'revoked';
+        if (isDisabled) {
+          return {
+            role: 'subscriber',
+            tier: 'free',
+            allow_telegram_broadcast: false,
+            tier_access_status: 'disabled',
+            key: 'EMAIL-GRANT'
+          };
+        }
+
+        // Check if expired
+        if (record.expires_at && new Date(record.expires_at) < new Date()) {
+          return {
+            role: 'subscriber',
+            tier: 'free',
+            allow_telegram_broadcast: false,
+            tier_access_status: 'disabled',
+            expiry: record.expires_at,
+            key: 'EMAIL-GRANT'
+          };
+        }
+
+        const rawTier = String(record.allocated_tier || record.tier || 'oracle').toLowerCase();
+        let role: UserRole = 'investor';
+        let tier: Tier = 'oracle';
+
+        if (rawTier === 'creator') { role = 'creator'; tier = 'creator'; }
+        else if (rawTier === 'mythic') { role = 'investor'; tier = 'mythic'; }
+        else if (rawTier === 'legendary') { role = 'investor'; tier = 'legendary'; }
+        else if (rawTier === 'oracle') { role = 'investor'; tier = 'oracle'; }
+        else if (rawTier === 'zion') { role = 'investor'; tier = 'zion'; }
+        else if (rawTier === 'student') { role = 'student'; tier = 'zion'; }
+        else if (rawTier === 'investor') { role = 'investor'; tier = 'zion'; }
+        else { role = 'investor'; tier = rawTier as Tier; }
+
+        return {
+          role,
+          tier,
+          allow_telegram_broadcast: record.allow_telegram_broadcast === true || role === 'creator',
+          tier_access_status: 'enabled',
+          expiry: record.expires_at || null,
+          key: 'EMAIL-GRANT'
+        };
+      }
+    }
+
+    if (!cleanCode) return { role: 'subscriber', tier: 'free', allow_telegram_broadcast: false, tier_access_status: 'enabled' };
+
+    // 2. Legacy Key Check
     const keys = await dbService.list('access_keys');
-    const keyData = keys.find((k: any) => k.key === keyStr) as AccessKey | undefined;
+    const keyData = keys.find((k: any) => k.key === cleanCode || k.key === cleanCode.toUpperCase()) as AccessKey | undefined;
 
     if (!keyData) return null;
-
-    // Check expiry
     if (keyData.expiry && new Date(keyData.expiry) < new Date()) return null;
-
-    // Check usage limit
     if (keyData.usage_count >= keyData.usage_limit) return null;
 
     return { 
       role: keyData.type === 'student' ? 'student' : 'investor',
+      tier: 'zion',
       keyId: keyData.id,
       expiry: keyData.expiry,
-      key: keyData.key
+      key: keyData.key,
+      allow_telegram_broadcast: false,
+      tier_access_status: 'enabled'
     };
   };
 
@@ -39,21 +108,26 @@ export default function Auth() {
     const userSnap = await dbService.get('users', user.uid);
     
     if (!userSnap) {
-      const keyResult = await validateAccessKey(keyStr);
+      const keyResult = await validateAccessKey(keyStr, user.email);
       if (!keyResult && keyStr) {
-        throw new Error('Invalid or expired Access Key.');
+        throw new Error('Invalid or expired Access Key or Creator PIN.');
       }
 
       const role: UserRole = keyResult?.role || 'subscriber';
+      const tier: Tier = keyResult?.tier || 'free';
       const creatorEmails = ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'];
       const finalRole: UserRole = creatorEmails.includes((user.email || '').toLowerCase()) ? 'creator' : role;
-      const tag: 'Investor' | 'Student' | 'Subscriber' = finalRole === 'investor' ? 'Investor' : (finalRole === 'student' ? 'Student' : 'Subscriber');
+      const finalTier: Tier = finalRole === 'creator' ? 'creator' : tier;
+      const tag = finalRole === 'creator' ? 'Creator' : (finalRole === 'subscriber' ? 'Subscriber' : `Tier Verified (${finalTier.toUpperCase()})`);
 
       const profile: UserProfile = {
         uid: user.uid,
         email: user.email || '',
         role: finalRole,
-        tier: finalRole === 'creator' ? 'creator' : (finalRole === 'investor' ? 'zion' : 'free'),
+        tier: finalTier,
+        allow_telegram_broadcast: finalRole === 'creator' || keyResult?.allow_telegram_broadcast === true,
+        tier_expires_at: keyResult?.expiry || null,
+        tier_access_status: keyResult?.tier_access_status || 'enabled',
         subscriber_tag: tag,
         access_code_used: keyResult?.key || undefined,
         access_code_expiry: keyResult?.expiry || undefined,

@@ -938,7 +938,46 @@ export default function TelegramCenter({ userProfile, addToast, setActivePage }:
     return <span className="text-amber-400 font-mono text-xs">{hours}h {mins}m remaining</span>;
   };
 
-  // If passcode is locked, show pin pad gate
+  const isCreator = userProfile.role === 'creator' || userProfile.tier === 'creator';
+  const canBroadcast = isCreator || userProfile.allow_telegram_broadcast === true;
+
+  if (!canBroadcast) {
+    return (
+      <div className="min-h-[70vh] flex flex-col items-center justify-center p-6 text-center">
+        <div className="glass-card p-10 max-w-lg border-rose-500/20 bg-rose-500/5 space-y-6">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center justify-center mx-auto">
+            <ShieldAlert size={36} />
+          </div>
+          <div>
+            <h2 className="text-2xl font-display font-bold text-white">Telegram Broadcasting Restricted</h2>
+            <p className="text-sm text-white/60 mt-2 leading-relaxed">
+              Telegram Broadcasting access is reserved for Creator authorization. The Creator must explicitly grant Telegram Broadcast permissions to your email (<span className="text-gold font-mono font-bold">{userProfile.email}</span>) in the Access & Tier Control Hub.
+            </p>
+          </div>
+          <div className="p-4 bg-black/40 border border-white/5 rounded-xl text-xs font-mono text-left space-y-2">
+            <div className="flex justify-between">
+              <span className="text-white/40">USER EMAIL:</span>
+              <span className="text-white font-bold">{userProfile.email}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/40">CURRENT TIER:</span>
+              <span className="text-gold font-bold uppercase">{userProfile.tier}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/40">BROADCAST ACCESS:</span>
+              <span className="text-rose-400 font-bold">DENIED 🔴</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setActivePage('dashboard')}
+            className="w-full py-3 bg-white/10 hover:bg-white/20 text-white font-bold rounded-xl text-xs transition-all"
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!isUnlocked) {
     return (
       <div id="telegram-gate-container" className="min-h-screen bg-cosmic-black flex flex-col items-center justify-center p-6 select-none relative">

@@ -14,6 +14,9 @@ export interface UserProfile {
   username?: string;
   role: UserRole;
   tier: Tier;
+  allow_telegram_broadcast?: boolean;
+  tier_expires_at?: string | null;
+  tier_access_status?: 'enabled' | 'disabled';
   student_tier?: StudentTier;
   student_rank?: StudentRank;
   ap: number; // Advancement Points
@@ -45,6 +48,9 @@ export interface UserProfile {
     stop_loss_buffer: number;
     max_daily_trades?: number;
     max_drawdown_limit?: number;
+    daily_profit_target_percent?: number;
+    daily_profit_target_amount?: number;
+    daily_target_lockdown?: boolean;
     prop_firm_mode?: boolean;
     trading_hours?: {
       start: string;
@@ -101,7 +107,7 @@ export interface UserProfile {
   cooldown_active?: boolean;
   cooldown_until?: string;
   cooldown_reason?: string;
-  subscriber_tag?: 'Investor' | 'Student' | 'Subscriber';
+  subscriber_tag?: string;
   access_code_expiry?: string;
   access_code_used?: string;
 }
@@ -121,8 +127,12 @@ export interface BlessedTierEmail {
   id: string;
   email: string;
   allocated_tier: Tier;
-  pin: string;
-  pin_status: 'active' | 'redeemed' | 'revoked';
+  pin?: string;
+  pin_status?: 'active' | 'redeemed' | 'revoked';
+  status?: 'enabled' | 'disabled' | 'active' | 'revoked';
+  enabled?: boolean;
+  expires_at?: string | null;
+  allow_telegram_broadcast?: boolean;
   blessed_by: string;
   blessed_at: string;
   redeemed_by_uid?: string;
@@ -135,8 +145,12 @@ export interface TierAssignment {
   email: string;
   email_code?: string;
   tier: Tier;
-  pin: string;
-  pin_status: 'active' | 'redeemed' | 'revoked';
+  pin?: string;
+  pin_status?: 'active' | 'redeemed' | 'revoked';
+  status?: 'enabled' | 'disabled' | 'active' | 'revoked';
+  enabled?: boolean;
+  expires_at?: string | null;
+  allow_telegram_broadcast?: boolean;
   created_by: string;
   created_at: string;
   updated_at?: string;
@@ -198,6 +212,8 @@ export interface Signal {
   shares_count?: number;
   telegram_message_id?: string;
   tp_hits?: string[];
+  used_by_uids?: string[];
+  used_count?: number;
   exit_price?: number;
   closed_at?: string;
   result?: 'Won' | 'Lost';

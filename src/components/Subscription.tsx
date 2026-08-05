@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { UserProfile, TIER_BOT_LIMITS, TIER_FEATURES, BlessedTierEmail, TierAssignment } from '../types';
+import { UserProfile, TIER_BOT_LIMITS, TIER_FEATURES, BlessedTierEmail, TierAssignment, AccessKey, UserRole, Tier } from '../types';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { dbService } from '../services/dbService';
 import { where } from 'firebase/firestore';
@@ -109,74 +109,92 @@ export default function Subscription({ userProfile, addToast }: SubscriptionProp
     setCheckingCode(true);
     try {
       const cleanCode = code.trim();
+      const strippedCode = cleanCode.replace(/^PIN-?/i, '').trim();
       const uppercaseCode = cleanCode.toUpperCase();
       const userEmail = (userProfile.email || '').toLowerCase().trim();
 
-      // 1. Validation Layer against Firestore 'tiers' collection
+      // Fetch collections for validation
       const tiersList = await dbService.list<TierAssignment>('tiers');
       const blessedList = await dbService.list<BlessedTierEmail>('blessed_tier_emails');
+      const accessKeysList = await dbService.list<AccessKey>('access_keys');
 
-      // Check if user's email exists in 'tiers' or 'blessed_tier_emails'
-      const userTierRecord = tiersList.find(t => t.email.toLowerCase() === userEmail) ||
-        blessedList.find(b => b.email.toLowerCase() === userEmail);
+      // 1. Search in blessed_tier_emails
+      const matchedBlessed = blessedList.find(b => 
+        b.pin_status !== 'revoked' && (
+          b.pin === cleanCode || 
+          b.pin === strippedCode || 
+          b.pin === uppercaseCode ||
+          (userEmail && b.email.toLowerCase() === userEmail && (b.pin === cleanCode || b.pin === strippedCode))
+        )
+      );
 
-      // Check if code matches any record or specifically the user's email record
-      const matchedRecord = userTierRecord || 
-        tiersList.find(t => t.pin === cleanCode || t.pin === uppercaseCode || `PIN-${t.pin}` === uppercaseCode || t.email_code === cleanCode) ||
-        blessedList.find(b => b.pin === cleanCode || b.pin === uppercaseCode || `PIN-${b.pin}` === uppercaseCode);
+      // 2. Search in tiers collection
+      const matchedTier = tiersList.find(t => 
+        t.pin_status !== 'revoked' && (
+          t.pin === cleanCode || 
+          t.pin === strippedCode || 
+          t.pin === uppercaseCode || 
+          t.email_code === cleanCode ||
+          (userEmail && t.email?.toLowerCase() === userEmail && (t.pin === cleanCode || t.pin === strippedCode || t.email_code === cleanCode))
+        )
+      );
+
+      // 3. Fallback: if user email is registered in blessed/tiers, check if entered PIN matches
+      const userBlessedRecord = blessedList.find(b => b.email.toLowerCase() === userEmail && b.pin_status !== 'revoked');
+      const userTierRecord = tiersList.find(t => t.email.toLowerCase() === userEmail && t.pin_status !== 'revoked');
+
+      const matchedRecord = matchedBlessed || matchedTier || 
+        (userBlessedRecord && (userBlessedRecord.pin === cleanCode || userBlessedRecord.pin === strippedCode) ? userBlessedRecord : null) ||
+        (userTierRecord && (userTierRecord.pin === cleanCode || userTierRecord.pin === strippedCode || (userTierRecord as any).email_code === cleanCode) ? userTierRecord : null);
 
       if (matchedRecord) {
-        // If user has a registered email record in 'tiers', verify the PIN strictly matches their email's record
-        if (userTierRecord) {
-          const validPin = userTierRecord.pin === cleanCode || 
-            userTierRecord.pin === uppercaseCode || 
-            `PIN-${userTierRecord.pin}` === uppercaseCode ||
-            (userTierRecord as any).email_code === cleanCode;
+        const rawTier = (matchedRecord as any).allocated_tier || (matchedRecord as any).tier || 'oracle';
+        let newRole: UserRole = 'investor';
+        let newTier: Tier = 'oracle';
 
-          if (!validPin) {
-            addToast(`PIN verification failed. The entered PIN does not match the allocated record for ${userEmail} in the tiers database.`, "error");
-            return;
-          }
-        }
+        if (rawTier === 'creator') { newRole = 'creator'; newTier = 'creator'; }
+        else if (rawTier === 'mythic') { newRole = 'investor'; newTier = 'mythic'; }
+        else if (rawTier === 'legendary') { newRole = 'investor'; newTier = 'legendary'; }
+        else if (rawTier === 'oracle') { newRole = 'investor'; newTier = 'oracle'; }
+        else if (rawTier === 'zion') { newRole = 'investor'; newTier = 'zion'; }
+        else if (rawTier === 'student') { newRole = 'student'; newTier = 'zion'; }
+        else if (rawTier === 'investor') { newRole = 'investor'; newTier = 'zion'; }
+        else { newRole = 'investor'; newTier = rawTier as Tier; }
 
-        if (matchedRecord.pin_status === 'revoked') {
-          addToast("This Creator Tier assignment or PIN has been revoked.", "error");
-          return;
-        }
-
-        const allocatedTier = (matchedRecord as any).tier || (matchedRecord as any).allocated_tier || 'creator';
-        const newRole = allocatedTier === 'creator' ? 'creator' : 'investor';
-        const tag = `Tier Verified (${allocatedTier.toUpperCase()})`;
+        const tag = `Tier Verified (${rawTier.toUpperCase()})`;
 
         // Update User Profile
         await dbService.update('users', userProfile.uid, {
           role: newRole,
-          tier: allocatedTier,
+          tier: newTier,
+          ...(newRole === 'student' ? { student_tier: 'initiate', student_rank: 'Initiate' } : {}),
           subscriber_tag: tag,
           access_code_used: `PIN-${matchedRecord.pin}`,
-          access_code_expiry: null, // Permanent Creator Tier Blessing
+          access_code_expiry: null,
           updated_at: new Date().toISOString()
         });
 
         // Mark PIN as redeemed in 'tiers' and 'blessed_tier_emails'
-        if ((matchedRecord as any).tier) {
+        if ((matchedRecord as any).tier && matchedRecord.id) {
           await dbService.update('tiers', matchedRecord.id, {
             pin_status: 'redeemed',
             redeemed_by_uid: userProfile.uid,
             redeemed_at: new Date().toISOString()
-          });
+          }).catch(err => console.warn('Tier status update warn:', err));
         }
-        await dbService.update('blessed_tier_emails', matchedRecord.id, {
-          pin_status: 'redeemed',
-          redeemed_by_uid: userProfile.uid,
-          redeemed_at: new Date().toISOString()
-        });
+        if (matchedRecord.id) {
+          await dbService.update('blessed_tier_emails', matchedRecord.id, {
+            pin_status: 'redeemed',
+            redeemed_by_uid: userProfile.uid,
+            redeemed_at: new Date().toISOString()
+          }).catch(err => console.warn('Blessed status update warn:', err));
+        }
 
         // Welcome Notification
         await dbService.create('notifications', {
           uid: userProfile.uid,
-          title: '👑 Tier Verified & Features Unlocked!',
-          message: `Your email (${userEmail}) and PIN have been validated against the Firestore tiers database. Account elevated to ${allocatedTier.toUpperCase()} tier!`,
+          title: '👑 Creator PIN Verified & Features Unlocked!',
+          message: `Your PIN (${matchedRecord.pin}) has been verified against the Creator database. Account elevated to ${rawTier.toUpperCase()} tier!`,
           type: 'system',
           read: false,
           created_at: new Date().toISOString()
@@ -184,27 +202,26 @@ export default function Subscription({ userProfile, addToast }: SubscriptionProp
 
         // Audit Log
         await dbService.create('access_audit_logs', {
-          action: 'Verified Email & PIN in Tiers Collection',
+          action: 'Verified Email & Creator PIN',
           performed_by: userProfile.email || userProfile.uid,
           target_user: matchedRecord.email,
-          details: `Unlocked ${allocatedTier.toUpperCase()} Tier features via verified PIN (${matchedRecord.pin}) in tiers DB.`,
+          details: `Unlocked ${rawTier.toUpperCase()} Tier features via verified Creator PIN (${matchedRecord.pin}).`,
           timestamp: new Date().toISOString()
         });
 
-        addToast(`👑 Verified Email & PIN! ${allocatedTier.toUpperCase()} Tier Features Unlocked!`, "success");
+        addToast(`👑 PIN Verified! Unlocked ${rawTier.toUpperCase()} Tier Features!`, "success");
         setCode('');
         setTimeout(() => {
           window.location.reload();
-        }, 1500);
+        }, 1200);
         return;
       }
 
-      // 2. Standard Access Keys check
-      const keys = await dbService.list('access_keys');
-      const keyData = keys.find((k: any) => k.key === uppercaseCode) as any;
+      // 4. Standard Access Keys check (e.g., STU-XXXX, INV-XXXX)
+      const keyData = accessKeysList.find((k: any) => k.key === uppercaseCode || k.key === cleanCode) as any;
 
       if (!keyData) {
-        addToast("Invalid access code or PIN. Please check and try again.", "error");
+        addToast("Invalid access code or PIN. Please check the PIN issued by Creator.", "error");
         return;
       }
 

@@ -324,6 +324,32 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const boostInputRef = useRef<HTMLInputElement>(null);
 
+  const [showGoalEditor, setShowGoalEditor] = useState(false);
+  const [goalTargetPercent, setGoalTargetPercent] = useState<number>((userProfile.risk_settings as any)?.daily_profit_target_percent || 2);
+  const [goalTargetAmount, setGoalTargetAmount] = useState<number>((userProfile.risk_settings as any)?.daily_profit_target_amount || 0);
+  const [goalMaxTrades, setGoalMaxTrades] = useState<number>(userProfile.risk_settings?.max_daily_trades || 10);
+
+  const handleSaveGoals = async () => {
+    try {
+      const updatedRiskSettings = {
+        ...(userProfile.risk_settings || {}),
+        daily_profit_target_percent: goalTargetPercent,
+        daily_profit_target_amount: goalTargetAmount,
+        max_daily_trades: goalMaxTrades
+      };
+      await dbService.update('users', userProfile.uid, {
+        risk_settings: updatedRiskSettings,
+        updated_at: new Date().toISOString()
+      });
+      userProfile.risk_settings = updatedRiskSettings as any;
+      addToast("Daily Ascension Goals updated successfully!", "success");
+      setShowGoalEditor(false);
+    } catch (e) {
+      console.error(e);
+      addToast("Failed to update daily goals", "error");
+    }
+  };
+
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -817,6 +843,37 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
     try {
       await dbService.create('trades', tradeData);
       
+      // Update User Profile counters (signals_used_today & signals_taken_count)
+      const newSignalsUsed = (userProfile.signals_used_today || 0) + 1;
+      const newTakenCount = ((userProfile as any).signals_taken_count || 0) + 1;
+      await dbService.update('users', userProfile.uid, {
+        signals_used_today: newSignalsUsed,
+        signals_taken_count: newTakenCount,
+        updated_at: new Date().toISOString()
+      }).catch(e => console.warn("User counter update warning:", e));
+      userProfile.signals_used_today = newSignalsUsed;
+      (userProfile as any).signals_taken_count = newTakenCount;
+
+      // Update Signal record to mark used_by_uids and used_count
+      if (signal.id) {
+        const currentUsedBy = signal.used_by_uids || [];
+        const updatedUsedBy = Array.from(new Set([...currentUsedBy, userProfile.uid]));
+        const updatedCount = (signal.used_count || 0) + 1;
+        await dbService.update('signals', signal.id, {
+          used_by_uids: updatedUsedBy,
+          used_count: updatedCount
+        }).catch(e => console.warn("Signal update warning:", e));
+      }
+
+      // Record Activity & Audit Log
+      await dbService.create('access_audit_logs', {
+        action: 'Executed Signal Trade',
+        performed_by: userProfile.email || userProfile.uid,
+        target_user: userProfile.email || userProfile.uid,
+        details: `Executed ${type.toUpperCase()} trade on ${signal.pair} at ${signal.entry} (Lot: ${autoLotSize})`,
+        timestamp: new Date().toISOString()
+      }).catch(e => console.warn("Audit log error:", e));
+
       // Create notification
       await dbService.create('notifications', {
           uid: userProfile.uid,
@@ -827,12 +884,11 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           created_at: new Date().toISOString()
       });
 
-      addToast(`Trade executed: ${type.toUpperCase()} ${signal.pair} (Lot: ${autoLotSize})`, 'success');
+      addToast(`Trade executed: ${type.toUpperCase()} ${signal.pair} (Lot: ${autoLotSize}) [Recorded: ${newSignalsUsed}/${userProfile.risk_settings?.max_daily_trades || 10}]`, 'success');
 
       // PART 15: SIGNAL STREAMING
       if (signal.confidence > 85) {
           console.log(`[Streaming] Transmitting high-confidence signal for ${signal.pair} to internal APIs...`);
-          // Mock Telegram/WhatsApp webhook logic
       }
     } catch (err) {
       console.error("Execution failed", err);
@@ -859,8 +915,11 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
 
   const currentBalance = accountType === 'live' ? userProfile.live_balance : userProfile.demo_balance;
   const targetPercent = (userProfile.risk_settings as any)?.daily_profit_target_percent || 2;
-  const computedProfitTarget = ((currentBalance || 0) * targetPercent) / 100;
-  const currentProfitPercent = computedProfitTarget > 0 ? (dailyPnl / computedProfitTarget) * 100 : 0;
+  const targetAmount = (userProfile.risk_settings as any)?.daily_profit_target_amount;
+  const computedProfitTarget = targetAmount && targetAmount > 0 ? targetAmount : (((currentBalance || 0) * targetPercent) / 100);
+  const openFloatingPnl = activeTrades.reduce((acc, t) => acc + (t.pnl || 0), 0);
+  const totalDailyPnl = dailyPnl + openFloatingPnl;
+  const currentProfitPercent = computedProfitTarget > 0 ? (totalDailyPnl / computedProfitTarget) * 100 : 0;
   const maxAllowedTrades = userProfile.risk_settings?.max_daily_trades || TIER_LIMITS[userProfile.tier] || 10;
   const remainingDailyTrades = Math.max(0, maxAllowedTrades - (userProfile.signals_used_today || 0));
 
@@ -1309,22 +1368,83 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
           {/* Daily Goals Progress Component */}
-          <div className="glass-card p-6 flex flex-col gap-6">
+          <div className="glass-card p-6 flex flex-col gap-6 relative">
             <div className="flex items-center justify-between">
               <h3 className="text-xl font-display font-bold gold-gradient flex items-center gap-2">
                 <Target size={20} className="text-gold" /> Daily Ascension Goals
               </h3>
-              <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold">Stay Disciplined</span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowGoalEditor(!showGoalEditor)}
+                  className="px-3 py-1 rounded-lg bg-gold/10 border border-gold/30 text-gold hover:bg-gold hover:text-black font-bold text-xs transition-all flex items-center gap-1 cursor-pointer"
+                >
+                  {showGoalEditor ? 'Close Goal Settings' : 'Adjust Target Goal'}
+                </button>
+                <span className="text-[10px] text-white/40 uppercase tracking-widest font-bold hidden sm:inline">Stay Disciplined</span>
+              </div>
             </div>
+
+            {/* Goal Settings Drawer / Inline Form */}
+            {showGoalEditor && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="p-4 rounded-xl bg-black/40 border border-gold/20 space-y-4"
+              >
+                <h4 className="text-xs uppercase tracking-widest text-gold font-bold">Configure Daily Profit & Trade Limits</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/60 font-bold uppercase">Daily Profit Target (%)</label>
+                    <input 
+                      type="number" 
+                      step="0.5" 
+                      value={goalTargetPercent} 
+                      onChange={(e) => setGoalTargetPercent(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-gold font-bold focus:border-gold outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/60 font-bold uppercase">Target Dollar ($ Optional)</label>
+                    <input 
+                      type="number" 
+                      placeholder="e.g. 100" 
+                      value={goalTargetAmount || ''} 
+                      onChange={(e) => setGoalTargetAmount(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-emerald-400 font-bold focus:border-emerald-400 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-white/60 font-bold uppercase">Max Daily Signals/Trades</label>
+                    <input 
+                      type="number" 
+                      value={goalMaxTrades} 
+                      onChange={(e) => setGoalMaxTrades(parseInt(e.target.value) || 10)}
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-blue-400 font-bold focus:border-blue-400 outline-none"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={handleSaveGoals}
+                    className="px-4 py-2 rounded-lg bg-gold text-black font-bold text-xs hover:scale-105 transition-all cursor-pointer"
+                  >
+                    Save Ascension Goals
+                  </button>
+                </div>
+              </motion.div>
+            )}
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Profit Target */}
               <div className="space-y-4">
                 <div className="flex justify-between items-end">
                   <div>
-                    <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold">Profit Target ({targetPercent}%)</p>
-                    <p className={`text-lg font-bold font-mono ${dailyPnl >= computedProfitTarget ? 'text-emerald-400' : 'text-gold'}`}>
-                      ${dailyPnl.toFixed(2)} <span className="text-[10px] text-white/40">/ ${computedProfitTarget.toFixed(2)}</span>
+                    <p className="text-[10px] uppercase tracking-widest text-white/40 font-bold">
+                      Profit Target ({targetAmount > 0 ? `$${targetAmount}` : `${targetPercent}%`})
+                    </p>
+                    <p className={`text-lg font-bold font-mono ${totalDailyPnl >= computedProfitTarget ? 'text-emerald-400' : 'text-gold'}`}>
+                      ${totalDailyPnl.toFixed(2)} <span className="text-[10px] text-white/40">/ ${computedProfitTarget.toFixed(2)}</span>
                     </p>
                   </div>
                   <span className="text-xs font-bold text-white/60">{currentProfitPercent.toFixed(1)}%</span>
@@ -1333,7 +1453,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                   <motion.div 
                     initial={{ width: 0 }}
                     animate={{ width: `${Math.min(100, Math.max(0, currentProfitPercent))}%` }}
-                    className={`h-full ${dailyPnl >= computedProfitTarget ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)]' : 'bg-gradient-to-r from-gold/50 to-gold shadow-[0_0_10px_rgba(251,191,36,0.3)]'}`}
+                    className={`h-full ${totalDailyPnl >= computedProfitTarget ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.5)]' : 'bg-gradient-to-r from-gold/50 to-gold shadow-[0_0_10px_rgba(251,191,36,0.3)]'}`}
                   />
                 </div>
               </div>
@@ -1347,7 +1467,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
                       {remainingDailyTrades} <span className="text-[10px] text-white/40">/ {maxAllowedTrades}</span>
                     </p>
                   </div>
-                  <span className="text-xs font-bold text-white/60">{Math.max(0, maxAllowedTrades - remainingDailyTrades)} Executed</span>
+                  <span className="text-xs font-bold text-white/60">{userProfile.signals_used_today || 0} Executed</span>
                 </div>
                 <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
                   <motion.div 

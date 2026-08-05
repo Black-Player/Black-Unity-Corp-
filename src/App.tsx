@@ -5,7 +5,7 @@ import { onAuthStateChanged, User as FirebaseUser } from './firebase';
 import { dbService } from './services/dbService';
 import { BehavioralService } from './services/behavioralService';
 import { analyzeTradeReview } from './services/aiService';
-import { Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, EconomicEvent, PriceAlert, MasterStrategy, Tribe, Challenge, MarketplaceItem, MarketNews, UserProgress, UserProfile } from './types';
+import { Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, EconomicEvent, PriceAlert, MasterStrategy, Tribe, Challenge, MarketplaceItem, MarketNews, UserProgress, UserProfile, UserRole, Tier } from './types';
 import Auth from './components/Auth';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
@@ -218,12 +218,63 @@ export default function App() {
               } else if (userEmail) {
                 try {
                   const tiersList = await dbService.list<any>('tiers');
-                  const tierRec = tiersList.find((t: any) => t.email?.toLowerCase() === userEmail && t.pin_status !== 'revoked');
-                  if (tierRec && tierRec.tier && typedProfile.tier !== tierRec.tier) {
-                    const newRole = tierRec.tier === 'creator' ? 'creator' : (typedProfile.role === 'creator' ? 'creator' : 'investor');
-                    await dbService.update('users', user.uid, { role: newRole, tier: tierRec.tier });
-                    typedProfile.role = newRole;
-                    typedProfile.tier = tierRec.tier;
+                  const blessedList = await dbService.list<any>('blessed_tier_emails');
+
+                  const blessedRec = blessedList.find((b: any) => b.email?.toLowerCase() === userEmail);
+                  const tierRec = tiersList.find((t: any) => t.email?.toLowerCase() === userEmail);
+
+                  const record = blessedRec || tierRec;
+
+                  if (record) {
+                    const isDisabled = record.status === 'disabled' || record.enabled === false || record.pin_status === 'revoked';
+                    const isExpired = record.expires_at && new Date(record.expires_at) < new Date();
+                    
+                    if (isDisabled || isExpired) {
+                      // Access has been disabled or expired by Creator
+                      if (typedProfile.tier !== 'free') {
+                        await dbService.update('users', user.uid, {
+                          tier: 'free',
+                          role: 'subscriber',
+                          subscriber_tag: isDisabled ? 'Tier Disabled by Creator' : 'Tier Expired',
+                          allow_telegram_broadcast: false,
+                          tier_access_status: 'disabled',
+                          tier_expires_at: record.expires_at || null
+                        });
+                        typedProfile.tier = 'free';
+                        typedProfile.role = 'subscriber';
+                        typedProfile.subscriber_tag = isDisabled ? 'Tier Disabled by Creator' : 'Tier Expired';
+                        typedProfile.allow_telegram_broadcast = false;
+                        typedProfile.tier_access_status = 'disabled';
+                      }
+                    } else {
+                      const assignedTier = record.allocated_tier || record.tier;
+                      const canBroadcastTelegram = record.allow_telegram_broadcast === true || typedProfile.role === 'creator' || assignedTier === 'creator';
+                      let newRole: UserRole = typedProfile.role === 'creator' ? 'creator' : 'investor';
+                      if (assignedTier === 'creator') newRole = 'creator';
+                      else if (assignedTier === 'student') newRole = 'student';
+
+                      const needsUpdate = 
+                        typedProfile.tier !== assignedTier || 
+                        typedProfile.allow_telegram_broadcast !== canBroadcastTelegram ||
+                        typedProfile.tier_access_status !== 'enabled';
+
+                      if (needsUpdate) {
+                        await dbService.update('users', user.uid, { 
+                          role: newRole, 
+                          tier: assignedTier as Tier,
+                          allow_telegram_broadcast: canBroadcastTelegram,
+                          tier_access_status: 'enabled',
+                          tier_expires_at: record.expires_at || null,
+                          subscriber_tag: `Tier Verified (${assignedTier.toUpperCase()})` 
+                        });
+                        typedProfile.role = newRole;
+                        typedProfile.tier = assignedTier as Tier;
+                        typedProfile.allow_telegram_broadcast = canBroadcastTelegram;
+                        typedProfile.tier_access_status = 'enabled';
+                        typedProfile.tier_expires_at = record.expires_at || null;
+                        typedProfile.subscriber_tag = `Tier Verified (${assignedTier.toUpperCase()})`;
+                      }
+                    }
                   }
                 } catch (tErr) {
                   console.error("Error checking tiers collection for user profile sync:", tErr);

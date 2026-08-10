@@ -144,10 +144,12 @@ export default function Profile({ userProfile, targetUserId, addToast }: Profile
 
   const getTierColor = (tier: Tier) => {
     switch (tier) {
+      case 'creator': return 'text-gold font-bold';
       case 'mythic': return 'text-purple-400';
-      case 'legendary': return 'text-gold';
+      case 'legendary': return 'text-amber-400';
       case 'zion': return 'text-blue-400';
       case 'oracle': return 'text-emerald-400';
+      case 'trader': return 'text-cyan-400 font-bold';
       default: return 'text-slate-400';
     }
   };

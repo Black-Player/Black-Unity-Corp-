@@ -27,6 +27,18 @@ export default function Auth() {
 
     // 1. Direct Email Tier Access Check (No PIN Required!)
     if (cleanEmail) {
+      const traderGrantEmails = ['maboat4@gmail.com', 'tumelomotsatsi@gmail.com', 's.uchiha.su5@gmail.com'];
+      if (traderGrantEmails.includes(cleanEmail)) {
+        return {
+          role: 'investor',
+          tier: 'trader',
+          allow_telegram_broadcast: false,
+          tier_access_status: 'enabled',
+          expiry: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          key: 'EMAIL-GRANT'
+        };
+      }
+
       const blessedList = await dbService.list<BlessedTierEmail>('blessed_tier_emails');
       const tiersList = await dbService.list<any>('tiers');
 

@@ -4,7 +4,7 @@ export type StudentTier = 'initiate' | 'oracle' | 'zion' | 'ascended';
 
 export type StudentRank = 'Initiate' | 'Developing' | 'Disciplined' | 'Elite' | 'Ascended';
 
-export type Tier = 'free' | 'oracle' | 'zion' | 'legendary' | 'mythic' | 'creator';
+export type Tier = 'free' | 'oracle' | 'zion' | 'legendary' | 'mythic' | 'creator' | 'trader' | 'student' | 'initiate';
 
 export type AppTheme = 'cosmic' | 'nebula-bleach' | 'nebula-jjk' | 'nebula-demonslayer' | 'nebula-naruto' | 'nebula-dbs' | 'nebula-kof' | 'nebula-sf' | 'nebula-mvc' | 'heavenly';
 

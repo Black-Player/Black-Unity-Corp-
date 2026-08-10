@@ -148,17 +148,78 @@ export default function App() {
           let profile = await dbService.get('users', user.uid);
           
           const creatorEmails = ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'];
-          const isCreatorEmail = creatorEmails.includes((user.email || '').toLowerCase());
-          
+          const traderGrantEmails = ['maboat4@gmail.com', 'tumelomotsatsi@gmail.com', 's.uchiha.su5@gmail.com'];
+          const userEmail = (user.email || '').toLowerCase().trim();
+          const isCreatorEmail = creatorEmails.includes(userEmail);
+          const isTraderGrantEmail = traderGrantEmails.includes(userEmail);
+
+          // Fetch tier access records
+          let blessedRec: any = null;
+          let tierRec: any = null;
+          try {
+            const tiersList = await dbService.list<any>('tiers');
+            const blessedList = await dbService.list<any>('blessed_tier_emails');
+            blessedRec = blessedList.find((b: any) => b.email?.toLowerCase() === userEmail);
+            tierRec = tiersList.find((t: any) => t.email?.toLowerCase() === userEmail);
+          } catch (tErr) {
+            console.error("Error checking tier collections:", tErr);
+          }
+          const record = blessedRec || tierRec;
+
+          // Determine target tier & settings
+          let initialRole: UserRole = isCreatorEmail ? 'creator' : 'investor';
+          let initialTier: Tier = isCreatorEmail ? 'creator' : 'free';
+          let initialAllowTelegram = isCreatorEmail;
+          let initialExpiry: string | null = null;
+          let initialStatus: 'enabled' | 'disabled' = 'enabled';
+          let initialTag = isCreatorEmail ? 'Creator' : 'Free Tier';
+
+          if (isCreatorEmail) {
+            initialRole = 'creator';
+            initialTier = 'creator';
+            initialAllowTelegram = true;
+            initialStatus = 'enabled';
+            initialTag = 'Creator';
+          } else if (isTraderGrantEmail) {
+            initialRole = 'investor';
+            initialTier = 'trader';
+            initialAllowTelegram = false;
+            initialStatus = 'enabled';
+            initialExpiry = record?.expires_at || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+            initialTag = 'Tier Verified (TRADER)';
+          } else if (record) {
+            const isDisabled = record.status === 'disabled' || record.enabled === false || record.pin_status === 'revoked';
+            const isExpired = record.expires_at && new Date(record.expires_at) < new Date();
+            if (isDisabled || isExpired) {
+              initialRole = 'subscriber';
+              initialTier = 'free';
+              initialAllowTelegram = false;
+              initialStatus = 'disabled';
+              initialExpiry = record.expires_at || null;
+              initialTag = isDisabled ? 'Tier Disabled by Creator' : 'Tier Expired';
+            } else {
+              const assignedTier = (record.allocated_tier || record.tier || 'oracle').toLowerCase() as Tier;
+              initialRole = assignedTier === 'creator' ? 'creator' : (assignedTier === 'student' ? 'student' : 'investor');
+              initialTier = assignedTier;
+              initialAllowTelegram = record.allow_telegram_broadcast === true || assignedTier === 'creator';
+              initialStatus = 'enabled';
+              initialExpiry = record.expires_at || null;
+              initialTag = `Tier Verified (${assignedTier.toUpperCase()})`;
+            }
+          }
+
           if (!profile) {
               console.warn('User profile not found in database, auto-provisioning default user profile...');
-              const finalRole = isCreatorEmail ? 'creator' : 'subscriber';
               
               const defaultProfile: UserProfile = {
                 uid: user.uid,
                 email: user.email || '',
-                role: finalRole,
-                tier: finalRole === 'creator' ? 'creator' : 'free',
+                role: initialRole,
+                tier: initialTier,
+                allow_telegram_broadcast: initialAllowTelegram,
+                tier_expires_at: initialExpiry,
+                tier_access_status: initialStatus,
+                subscriber_tag: initialTag,
                 ap: 0,
                 penalties: 0,
                 xp: 0,
@@ -206,79 +267,31 @@ export default function App() {
               await dbService.create('users', defaultProfile, user.uid);
               profile = defaultProfile;
           } else {
-              // Automatically upgrade existing user profile if email is Creator or in 'tiers' database
+              // Automatically sync existing user profile if tier or permissions changed
               const typedProfile = profile as UserProfile;
-              const userEmail = (user.email || '').toLowerCase().trim();
 
-              if (isCreatorEmail && (typedProfile.role !== 'creator' || typedProfile.tier !== 'creator')) {
-                console.warn('Creator email detected, upgrading existing user profile...');
-                await dbService.update('users', user.uid, { role: 'creator', tier: 'creator' });
-                typedProfile.role = 'creator';
-                typedProfile.tier = 'creator';
-              } else if (userEmail) {
-                try {
-                  const tiersList = await dbService.list<any>('tiers');
-                  const blessedList = await dbService.list<any>('blessed_tier_emails');
+              const needsUpdate = 
+                typedProfile.tier !== initialTier || 
+                typedProfile.role !== initialRole ||
+                typedProfile.allow_telegram_broadcast !== initialAllowTelegram ||
+                typedProfile.tier_access_status !== initialStatus ||
+                typedProfile.tier_expires_at !== initialExpiry;
 
-                  const blessedRec = blessedList.find((b: any) => b.email?.toLowerCase() === userEmail);
-                  const tierRec = tiersList.find((t: any) => t.email?.toLowerCase() === userEmail);
-
-                  const record = blessedRec || tierRec;
-
-                  if (record) {
-                    const isDisabled = record.status === 'disabled' || record.enabled === false || record.pin_status === 'revoked';
-                    const isExpired = record.expires_at && new Date(record.expires_at) < new Date();
-                    
-                    if (isDisabled || isExpired) {
-                      // Access has been disabled or expired by Creator
-                      if (typedProfile.tier !== 'free') {
-                        await dbService.update('users', user.uid, {
-                          tier: 'free',
-                          role: 'subscriber',
-                          subscriber_tag: isDisabled ? 'Tier Disabled by Creator' : 'Tier Expired',
-                          allow_telegram_broadcast: false,
-                          tier_access_status: 'disabled',
-                          tier_expires_at: record.expires_at || null
-                        });
-                        typedProfile.tier = 'free';
-                        typedProfile.role = 'subscriber';
-                        typedProfile.subscriber_tag = isDisabled ? 'Tier Disabled by Creator' : 'Tier Expired';
-                        typedProfile.allow_telegram_broadcast = false;
-                        typedProfile.tier_access_status = 'disabled';
-                      }
-                    } else {
-                      const assignedTier = record.allocated_tier || record.tier;
-                      const canBroadcastTelegram = record.allow_telegram_broadcast === true || typedProfile.role === 'creator' || assignedTier === 'creator';
-                      let newRole: UserRole = typedProfile.role === 'creator' ? 'creator' : 'investor';
-                      if (assignedTier === 'creator') newRole = 'creator';
-                      else if (assignedTier === 'student') newRole = 'student';
-
-                      const needsUpdate = 
-                        typedProfile.tier !== assignedTier || 
-                        typedProfile.allow_telegram_broadcast !== canBroadcastTelegram ||
-                        typedProfile.tier_access_status !== 'enabled';
-
-                      if (needsUpdate) {
-                        await dbService.update('users', user.uid, { 
-                          role: newRole, 
-                          tier: assignedTier as Tier,
-                          allow_telegram_broadcast: canBroadcastTelegram,
-                          tier_access_status: 'enabled',
-                          tier_expires_at: record.expires_at || null,
-                          subscriber_tag: `Tier Verified (${assignedTier.toUpperCase()})` 
-                        });
-                        typedProfile.role = newRole;
-                        typedProfile.tier = assignedTier as Tier;
-                        typedProfile.allow_telegram_broadcast = canBroadcastTelegram;
-                        typedProfile.tier_access_status = 'enabled';
-                        typedProfile.tier_expires_at = record.expires_at || null;
-                        typedProfile.subscriber_tag = `Tier Verified (${assignedTier.toUpperCase()})`;
-                      }
-                    }
-                  }
-                } catch (tErr) {
-                  console.error("Error checking tiers collection for user profile sync:", tErr);
-                }
+              if (needsUpdate) {
+                await dbService.update('users', user.uid, { 
+                  role: initialRole, 
+                  tier: initialTier,
+                  allow_telegram_broadcast: initialAllowTelegram,
+                  tier_access_status: initialStatus,
+                  tier_expires_at: initialExpiry,
+                  subscriber_tag: initialTag
+                });
+                typedProfile.role = initialRole;
+                typedProfile.tier = initialTier;
+                typedProfile.allow_telegram_broadcast = initialAllowTelegram;
+                typedProfile.tier_access_status = initialStatus;
+                typedProfile.tier_expires_at = initialExpiry;
+                typedProfile.subscriber_tag = initialTag;
               }
           }
           

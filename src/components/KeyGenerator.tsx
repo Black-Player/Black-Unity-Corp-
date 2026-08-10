@@ -20,7 +20,7 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
   const [loadingBlessed, setLoadingBlessed] = useState(false);
   const [newBlessedEmail, setNewBlessedEmail] = useState('');
   const [newBlessedTier, setNewBlessedTier] = useState<Tier>('mythic');
-  const [newBlessedExpiry, setNewBlessedExpiry] = useState<'never' | '7' | '30' | '90' | '365' | 'custom'>('never');
+  const [newBlessedExpiry, setNewBlessedExpiry] = useState<'never' | '7' | '14' | '30' | '90' | '365' | 'custom'>('never');
   const [customExpiryDate, setCustomExpiryDate] = useState('');
   const [newAccessStatus, setNewAccessStatus] = useState<'enabled' | 'disabled'>('enabled');
   const [newAllowTelegram, setNewAllowTelegram] = useState<boolean>(false);
@@ -90,6 +90,9 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
             id: masterDocId,
             email: masterEmail,
             allocated_tier: 'creator',
+            status: 'enabled',
+            enabled: true,
+            allow_telegram_broadcast: true,
             pin: initialPin,
             pin_status: 'active',
             blessed_by: 'Creator Auto-Provision',
@@ -106,6 +109,9 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
             email: masterEmail,
             email_code: masterDocId,
             tier: 'creator',
+            status: 'enabled',
+            enabled: true,
+            allow_telegram_broadcast: true,
             pin: initialPin,
             pin_status: 'active',
             created_by: 'Creator Auto-Provision',
@@ -113,6 +119,60 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
             notes: 'Master Creator Account Tier Record'
           };
           await dbService.create('tiers', tierRecord, masterDocId);
+          needsRefresh = true;
+        }
+      }
+
+      // Auto-provision requested Trader Tier emails (14 Days Expiry, No Telegram Broadcast)
+      const traderGrantEmails = [
+        'maboat4@gmail.com',
+        'tumelomotsatsi@gmail.com',
+        's.uchiha.su5@gmail.com'
+      ];
+      const fourteenDaysExpiry = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
+      for (const tEmail of traderGrantEmails) {
+        const lowerEmail = tEmail.toLowerCase();
+        const existsInBlessed = data.some(item => item.email?.toLowerCase() === lowerEmail);
+        const existsInTiers = tiersData.some(item => item.email?.toLowerCase() === lowerEmail);
+        const docId = lowerEmail.replace(/[@.]/g, '_');
+
+        if (!existsInBlessed) {
+          const traderRecord: BlessedTierEmail = {
+            id: docId,
+            email: lowerEmail,
+            allocated_tier: 'trader' as Tier,
+            status: 'enabled',
+            enabled: true,
+            expires_at: fourteenDaysExpiry,
+            allow_telegram_broadcast: false,
+            pin: 'AUTO-EMAIL-ACCESS',
+            pin_status: 'active',
+            blessed_by: 'Creator Grant (Trader 14 Days)',
+            blessed_at: new Date().toISOString(),
+            notes: 'Trader Tier (14 Days Expiry, No Telegram Broadcasting)'
+          };
+          await dbService.create('blessed_tier_emails', traderRecord, docId);
+          needsRefresh = true;
+        }
+
+        if (!existsInTiers) {
+          const tierRecord = {
+            id: docId,
+            email: lowerEmail,
+            email_code: docId,
+            tier: 'trader',
+            status: 'enabled',
+            enabled: true,
+            expires_at: fourteenDaysExpiry,
+            allow_telegram_broadcast: false,
+            pin: 'AUTO-EMAIL-ACCESS',
+            pin_status: 'active',
+            created_by: 'Creator Grant (Trader 14 Days)',
+            created_at: new Date().toISOString(),
+            notes: 'Trader Tier (14 Days Expiry, No Telegram Broadcasting)'
+          };
+          await dbService.create('tiers', tierRecord, docId);
           needsRefresh = true;
         }
       }
@@ -133,6 +193,7 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
     if (mode === 'never' || !mode) return null;
     const now = Date.now();
     if (mode === '7') return new Date(now + 7 * 24 * 60 * 60 * 1000).toISOString();
+    if (mode === '14') return new Date(now + 14 * 24 * 60 * 60 * 1000).toISOString();
     if (mode === '30') return new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString();
     if (mode === '90') return new Date(now + 90 * 24 * 60 * 60 * 1000).toISOString();
     if (mode === '365') return new Date(now + 365 * 24 * 60 * 60 * 1000).toISOString();
@@ -806,6 +867,7 @@ export default function KeyGenerator({ addToast, userProfile }: { addToast: any,
                   >
                     <option value="never">♾️ Lifetime (No Expiry)</option>
                     <option value="7">⏱️ 7 Days</option>
+                    <option value="14">⏱️ 14 Days (2 Weeks)</option>
                     <option value="30">⏱️ 30 Days (1 Month)</option>
                     <option value="90">⏱️ 90 Days (3 Months)</option>
                     <option value="365">⏱️ 1 Year</option>

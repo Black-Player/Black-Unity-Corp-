@@ -134,17 +134,30 @@ export const dbService = {
   },
 
   /**
-   * READ: Single Document with cloud-first, local-fallback caching
+   * INSTANT READ: Direct Local Cache Read (0ms latency)
+   */
+  getLocal<T = any>(table: string, id: string): T | null {
+    const localTable = getLocalTable(table);
+    return (localTable[id] || null) as T | null;
+  },
+
+  /**
+   * READ: Single Document with fast local fallback and cloud sync (max 2s timeout)
    */
   async get<T = any>(table: string, id: string): Promise<T | null> {
-    // 1. Try Firestore
+    const localTable = getLocalTable(table);
+    const cached = localTable[id] ? (localTable[id] as T) : null;
+
+    // 1. Try Firestore with max 2s timeout
     try {
-      if (db && typeof db.app !== "undefined" || db.type === "firestore" || (db && Object.keys(db).length > 0)) {
-        const docSnap = await getDoc(doc(db, table, id));
-        if (docSnap.exists()) {
+      if (db && (typeof db.app !== "undefined" || db.type === "firestore" || (db && Object.keys(db).length > 0))) {
+        const fetchPromise = getDoc(doc(db, table, id));
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000));
+        const docSnap = await Promise.race([fetchPromise, timeoutPromise]);
+
+        if (docSnap && docSnap.exists()) {
           const cloudData = { id: docSnap.id, ...docSnap.data() } as any;
           // Sync to cache
-          const localTable = getLocalTable(table);
           localTable[id] = cloudData;
           saveLocalTable(table, localTable);
           return cloudData as T;
@@ -155,39 +168,44 @@ export const dbService = {
     }
 
     // 2. Failover to Local Cache
-    const localTable = getLocalTable(table);
-    return (localTable[id] || null) as T | null;
+    return cached;
   },
 
   /**
-   * READ: Collection list with cloud-first, local-fallback caching
+   * READ: Collection list with cloud sync and fast local fallback (max 2.5s timeout)
    */
   async list<T = any>(table: string, constraints: any[] = []): Promise<T[]> {
-    // 1. Try Firestore
-    try {
-      if (db && typeof db.app !== "undefined" || db.type === "firestore" || (db && Object.keys(db).length > 0)) {
-        const q = query(collection(db, table), ...constraints);
-        const querySnapshot = await getDocs(q);
-        const items = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as any[];
+    const localTable = getLocalTable(table);
+    const cachedItems = Object.values(localTable) as T[];
 
-        // Sync items to local cache
-        const localTable = getLocalTable(table);
-        items.forEach((item) => {
-          localTable[item.id] = item;
-        });
-        saveLocalTable(table, localTable);
-        return items as T[];
+    // 1. Try Firestore with max 2.5s timeout
+    try {
+      if (db && (typeof db.app !== "undefined" || db.type === "firestore" || (db && Object.keys(db).length > 0))) {
+        const q = query(collection(db, table), ...constraints);
+        const fetchPromise = getDocs(q);
+        const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2500));
+        const querySnapshot = await Promise.race([fetchPromise, timeoutPromise]);
+
+        if (querySnapshot && querySnapshot.docs) {
+          const items = querySnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          })) as any[];
+
+          // Sync items to local cache
+          items.forEach((item) => {
+            localTable[item.id] = item;
+          });
+          saveLocalTable(table, localTable);
+          return items as T[];
+        }
       }
     } catch (error: any) {
       console.warn(`[Offline/Permission Fallback] Firestore list failed for ${table}. Using local cache:`, error.message);
     }
 
     // 2. Failover to Local Cache
-    const localTable = getLocalTable(table);
-    return Object.values(localTable) as T[];
+    return cachedItems;
   },
 
   /**

@@ -139,12 +139,17 @@ export default function App() {
   useEffect(() => {
     if (user) {
       setError(null);
+
+      // Instant hydration from local storage cache for 0ms load time
+      const cachedProfile = dbService.getLocal<UserProfile>('users', user.uid);
+      if (cachedProfile) {
+        setUserProfile(cachedProfile);
+        setLoading(false);
+      }
       
-      // Initial fetch
+      // Background sync profile & tier check
       const fetchProfile = async () => {
         try {
-          // Add a small delay to ensure auth token is fully synced to Firestore
-          await new Promise(resolve => setTimeout(resolve, 500));
           let profile = await dbService.get('users', user.uid);
           
           const creatorEmails = ['kanitezu@gmail.com', 'andilenqobile561@gmail.com'];
@@ -153,16 +158,19 @@ export default function App() {
           const isCreatorEmail = creatorEmails.includes(userEmail);
           const isTraderGrantEmail = traderGrantEmails.includes(userEmail);
 
-          // Fetch tier access records
+          // Fast targeted tier access check
           let blessedRec: any = null;
           let tierRec: any = null;
-          try {
-            const tiersList = await dbService.list<any>('tiers');
-            const blessedList = await dbService.list<any>('blessed_tier_emails');
-            blessedRec = blessedList.find((b: any) => b.email?.toLowerCase() === userEmail);
-            tierRec = tiersList.find((t: any) => t.email?.toLowerCase() === userEmail);
-          } catch (tErr) {
-            console.error("Error checking tier collections:", tErr);
+          if (!isCreatorEmail && userEmail) {
+            try {
+              const docId = userEmail.replace(/[@.]/g, '_');
+              [blessedRec, tierRec] = await Promise.all([
+                dbService.get<any>('blessed_tier_emails', docId),
+                dbService.get<any>('tiers', docId)
+              ]);
+            } catch (tErr) {
+              console.error("Error checking tier collections:", tErr);
+            }
           }
           const record = blessedRec || tierRec;
 

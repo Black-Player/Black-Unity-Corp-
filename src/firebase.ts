@@ -65,13 +65,10 @@ try {
   
   // Safe Firestore initialization
   try {
-    db = initializeFirestore(app, {
-      experimentalForceLongPolling: true
-    });
+    db = getFirestore(app);
   } catch (dbErr: any) {
-    console.warn("initializeFirestore with polling failed, trying standard getFirestore:", dbErr);
     try {
-      db = getFirestore(app);
+      db = initializeFirestore(app, {});
     } catch (getDbErr: any) {
       console.error("Critical Firestore initialization failed:", getDbErr);
       throw getDbErr;

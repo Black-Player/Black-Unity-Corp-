@@ -39,12 +39,13 @@ export default function Auth() {
         };
       }
 
-      const blessedList = await dbService.list<BlessedTierEmail>('blessed_tier_emails');
-      const tiersList = await dbService.list<any>('tiers');
+      const docId = cleanEmail.replace(/[@.]/g, '_');
+      const [blessedRec, tierRec] = await Promise.all([
+        dbService.get<BlessedTierEmail>('blessed_tier_emails', docId),
+        dbService.get<any>('tiers', docId)
+      ]);
 
-      const matchedBlessed = blessedList.find(b => b.email?.toLowerCase() === cleanEmail);
-      const matchedTier = tiersList.find(t => t.email?.toLowerCase() === cleanEmail);
-      const record = matchedBlessed || matchedTier;
+      const record = blessedRec || tierRec;
 
       if (record) {
         // Check if disabled by Creator

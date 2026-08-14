@@ -1,22 +1,32 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { derivService, DerivTick } from './services/derivService';
 import { DERIV_SYMBOLS } from './constants';
+import { normalizeTickData, normalizeSymbolKey, NormalizedTick } from './hooks/useMarketPrices';
 
 interface MarketContextType {
-  marketPrices: Record<string, DerivTick>;
-  marketPricesRef: React.MutableRefObject<Record<string, DerivTick>>;
+  marketPrices: Record<string, NormalizedTick>;
+  marketPricesRef: React.MutableRefObject<Record<string, NormalizedTick>>;
   connectionStatus: 'Live' | 'Syncing' | 'Delayed';
 }
 
 const MarketContext = createContext<MarketContextType | undefined>(undefined);
-const MarketRefContext = createContext<React.MutableRefObject<Record<string, DerivTick>> | undefined>(undefined);
+const MarketRefContext = createContext<React.MutableRefObject<Record<string, NormalizedTick>> | undefined>(undefined);
 
 export function MarketProvider({ children }: { children: React.ReactNode }) {
-  const [marketPrices, setMarketPrices] = useState<Record<string, DerivTick>>({});
+  // Initialize state with default normalized prices for all symbols
+  const [marketPrices, setMarketPrices] = useState<Record<string, NormalizedTick>>(() => {
+    const initialMap: Record<string, NormalizedTick> = {};
+    DERIV_SYMBOLS.forEach((s) => {
+      const normalized = normalizeTickData({ symbol: s.symbol });
+      initialMap[s.symbol] = normalized;
+      initialMap[normalizeSymbolKey(s.symbol)] = normalized;
+    });
+    return initialMap;
+  });
+
   const [connectionStatus, setConnectionStatus] = useState<'Live' | 'Syncing' | 'Delayed'>('Syncing');
-  const pendingUpdates = useRef<Record<string, DerivTick>>({});
-  const lastUpdateTime = useRef<number>(0);
-  const latestPrices = useRef<Record<string, DerivTick>>({});
+  const pendingUpdates = useRef<Record<string, NormalizedTick>>({});
+  const latestPrices = useRef<Record<string, NormalizedTick>>(marketPrices);
 
   useEffect(() => {
     // Poll connection status every second
@@ -38,8 +48,14 @@ export function MarketProvider({ children }: { children: React.ReactNode }) {
     const symbols = DERIV_SYMBOLS.map(s => s.symbol);
     
     const unsubscribe = derivService.subscribeToTicks(symbols, (tick) => {
-      pendingUpdates.current[tick.symbol] = tick;
-      latestPrices.current[tick.symbol] = tick;
+      const normalized = normalizeTickData(tick);
+      const canonKey = normalizeSymbolKey(tick.symbol);
+      
+      pendingUpdates.current[tick.symbol] = normalized;
+      pendingUpdates.current[canonKey] = normalized;
+
+      latestPrices.current[tick.symbol] = normalized;
+      latestPrices.current[canonKey] = normalized;
     });
 
     return () => {

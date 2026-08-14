@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
+import { dbService } from '../services/dbService';
 import { motion } from 'motion/react';
 import { 
   Shield, 

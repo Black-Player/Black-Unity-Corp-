@@ -205,7 +205,7 @@ export interface Signal {
   analysis: string;
   psychological_trap?: string;
   recommended_lot_size: number;
-  status: 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'tp4_hit' | 'sl_hit' | 'rejected' | 'closed' | 'be_hit';
+  status: 'active' | 'tp1_hit' | 'tp2_hit' | 'tp3_hit' | 'tp4_hit' | 'sl_hit' | 'rejected' | 'closed' | 'be_hit' | 'archived';
   created_at: string;
   is_shared?: boolean;
   likes_count?: number;
@@ -325,15 +325,41 @@ export const BOTS: Bot[] = [
   { name: 'Reversal AI', strategy: '6-Step Reversal (15M/5M/1M)', tier_requirement: 'creator', description: '6-Step Multi-Timeframe Reversal Specialist (15M Range -> 5M Sweep -> FVG -> 1M Rejection Trigger). Restricted to Creator access.', icon: 'Cpu' },
 ];
 
-export const TIER_ORDER: Tier[] = ['free', 'oracle', 'zion', 'legendary', 'mythic', 'creator'];
+export const TIER_ORDER: Tier[] = [
+  'free',
+  'initiate',
+  'student',
+  'oracle',
+  'trader',
+  'zion',
+  'legendary',
+  'mythic',
+  'creator'
+];
 
 export function hasTierAccess(userTier: Tier, requiredTier: Tier): boolean {
-  return TIER_ORDER.indexOf(userTier) >= TIER_ORDER.indexOf(requiredTier);
+  if (!userTier) return false;
+  if (userTier === 'creator') return true;
+  if (!requiredTier || requiredTier === 'free') return true;
+
+  const normalizedUser = userTier.toLowerCase();
+  const normalizedReq = requiredTier.toLowerCase();
+
+  const userIdx = TIER_ORDER.indexOf(normalizedUser as Tier);
+  const reqIdx = TIER_ORDER.indexOf(normalizedReq as Tier);
+
+  if (userIdx === -1) return true; // Fallback to safe grant if custom/unknown tier
+  if (reqIdx === -1) return true;
+
+  return userIdx >= reqIdx;
 }
 
 export const TIER_LIMITS: Record<Tier, number> = {
   free: 2,
+  initiate: 2,
+  student: 5,
   oracle: 7,
+  trader: 25,
   zion: 15,
   legendary: 30,
   mythic: 100,
@@ -342,7 +368,10 @@ export const TIER_LIMITS: Record<Tier, number> = {
 
 export const TIER_BOT_LIMITS: Record<Tier, number> = {
   free: 1,
+  initiate: 1,
+  student: 3,
   oracle: 4,
+  trader: 8,
   zion: 7,
   legendary: 10,
   mythic: 15,
@@ -351,16 +380,22 @@ export const TIER_BOT_LIMITS: Record<Tier, number> = {
 
 export const TIER_PRICES: Record<Tier, number> = {
   free: 0,
-  oracle: 299, // ZAR
-  zion: 599, // ZAR
-  legendary: 1299, // ZAR
-  mythic: 2999, // ZAR
+  initiate: 0,
+  student: 149,
+  oracle: 299,
+  trader: 499,
+  zion: 599,
+  legendary: 1299,
+  mythic: 2999,
   creator: 0,
 };
 
 export const TIER_FEATURES: Record<Tier, string[]> = {
   free: ['2 Signals Daily', '1 AI Bot Access', 'Basic Community Chat', 'Demo Account Only'],
+  initiate: ['2 Signals Daily', '1 AI Bot Access', 'Basic Community Chat', 'Demo Account Only'],
+  student: ['5 Signals Daily', '3 AI Bot Access', 'Academy Access', 'Demo Account Trading'],
   oracle: ['7 Signals Daily', '4 AI Bot Access', 'Advanced AI Chat', 'Economic Calendar Analysis', 'Live Account Trading'],
+  trader: ['25 Signals Daily', '8 AI Bot Access', 'Trader Verified Badge', 'Priority Signal Oracle', 'Live & Demo Trading'],
   zion: ['15 Signals Daily', '7 AI Bot Access', 'Custom Bot Forge', 'Portfolio Health Analytics', 'Priority Support'],
   legendary: ['30 Signals Daily', '10 AI Bot Access', 'Master Strategy Builder', 'Performance Reports', 'Early Access Features'],
   mythic: ['Unlimited Signals', 'All AI Bots', 'Direct Oracle Feed', 'Personal Account Manager', 'Exclusive Tribes'],

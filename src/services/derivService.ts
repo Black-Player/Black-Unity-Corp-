@@ -1,5 +1,6 @@
 import { Signal } from '../types';
 import { DERIV_SYMBOLS } from '../constants';
+import { getFallbackPrice } from '../lib/instrumentPrices';
 
 const APP_ID = 1089;
 const DERIV_WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
@@ -44,7 +45,7 @@ class DerivService {
     BOOM50: 106692.62,
     CRASH1000: 5724.30,
     CRASH500: 3086.21,
-    CRASH300: 9500,
+    CRASH300: 2780.50,
     CRASH150: 15000,
     CRASH100: 95871.08,
     CRASH50: 99035.82,
@@ -91,35 +92,7 @@ class DerivService {
   private generateSimulatedTick(symbol: string) {
     let currentPrice = this.simPrices[symbol];
     if (currentPrice === undefined) {
-      if (symbol.includes('BOOM1000')) currentPrice = 14317.74;
-      else if (symbol.includes('BOOM500')) currentPrice = 5005.75;
-      else if (symbol.includes('BOOM300')) currentPrice = 2800;
-      else if (symbol.includes('BOOM150')) currentPrice = 15000;
-      else if (symbol.includes('BOOM100')) currentPrice = 94915.95;
-      else if (symbol.includes('BOOM50')) currentPrice = 106692.62;
-      else if (symbol.includes('CRASH1000')) currentPrice = 5724.30;
-      else if (symbol.includes('CRASH500')) currentPrice = 3086.21;
-      else if (symbol.includes('CRASH300')) currentPrice = 9500;
-      else if (symbol.includes('CRASH150')) currentPrice = 15000;
-      else if (symbol.includes('CRASH100')) currentPrice = 95871.08;
-      else if (symbol.includes('CRASH50')) currentPrice = 99035.82;
-      else if (symbol.includes('STP') || symbol.includes('STEP')) currentPrice = 7637.4;
-      else if (symbol.includes('1HZ25V')) currentPrice = 795691.72;
-      else if (symbol.includes('1HZ50V')) currentPrice = 262861.19;
-      else if (symbol.includes('1HZ75V')) currentPrice = 7100.83;
-      else if (symbol.includes('1HZ100V')) currentPrice = 703.2;
-      else if (symbol.includes('1HZ10V')) currentPrice = 9382.88;
-      else if (symbol.includes('R_100')) currentPrice = 556.82;
-      else if (symbol.includes('R_75')) currentPrice = 47186.13;
-      else if (symbol.includes('R_50')) currentPrice = 94.99;
-      else if (symbol.includes('R_25')) currentPrice = 2659.22;
-      else if (symbol.includes('R_10')) currentPrice = 4865.01;
-      else if (symbol.includes('JD100')) currentPrice = 214.7;
-      else if (symbol.includes('JD75')) currentPrice = 8142.77;
-      else if (symbol.includes('JD50')) currentPrice = 68102.6;
-      else if (symbol.includes('JD25')) currentPrice = 112796.08;
-      else if (symbol.includes('JD10')) currentPrice = 93625.1;
-      else currentPrice = 100;
+      currentPrice = getFallbackPrice(symbol);
       this.simPrices[symbol] = currentPrice;
     }
 

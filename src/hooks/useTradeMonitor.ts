@@ -6,7 +6,7 @@ import { useMarketContext } from '../MarketContext';
 import { speak } from '../lib/voice';
 import { getBotCharacter } from '../lib/themeUtils';
 import { sendSignalUpdateToTelegram } from '../services/communicationService';
-import { calculateAutoLotSize } from '../lib/tradeUtils';
+import { calculateAutoLotSize, isCreatedToday } from '../lib/tradeUtils';
 
 export function useTradeMonitor(
   userProfile: UserProfile, 
@@ -58,14 +58,28 @@ export function useTradeMonitor(
       }
     };
 
+    const processActiveSignals = (data: Signal[]) => {
+      const todaySignals: Signal[] = [];
+      (data as Signal[]).forEach(s => {
+        if (s.status === 'active' && s.uid === userProfile.uid) {
+          if (isCreatedToday(s.created_at)) {
+            todaySignals.push(s);
+          } else {
+            // Auto-archive active signals generated on previous days
+            dbService.update('signals', s.id, { status: 'archived' }).catch(() => {});
+          }
+        }
+      });
+      return todaySignals;
+    };
+
     const fetchSignals = async () => {
       try {
         const data = await dbService.list('signals', [
           where('uid', '==', userProfile.uid),
           where('status', '==', 'active')
         ]);
-        const filtered = (data as Signal[]).filter(s => s.status === 'active' && s.uid === userProfile.uid);
-        setActiveSignals(filtered);
+        setActiveSignals(processActiveSignals(data as Signal[]));
       } catch (error) {
         console.error("Signal monitor fetch error:", error);
       }
@@ -89,8 +103,7 @@ export function useTradeMonitor(
       where('uid', '==', userProfile.uid),
       where('status', '==', 'active')
     ], (data) => {
-      const filtered = (data as Signal[]).filter(s => s.status === 'active' && s.uid === userProfile.uid);
-      setActiveSignals(filtered);
+      setActiveSignals(processActiveSignals(data as Signal[]));
     });
 
     return () => {

@@ -83,15 +83,6 @@ async function startServer() {
     }
   });
 
-  // Start background automated scanner (runs server-side offline 24/7)
-  try {
-    const scanner = new ServerScanner();
-    await scanner.start();
-    console.log('[Server] Server-Side Automated SMC Breakout Scanner started in background.');
-  } catch (err) {
-    console.error('[Server] Failed to start ServerScanner background worker:', err);
-  }
-
   // Vite middleware for development vs static asset serving for production
   if (process.env.NODE_ENV !== 'production') {
     console.log('[Server] Starting in Development mode (mounting Vite middleware)...');
@@ -110,7 +101,19 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Server] Express web server running on port ${PORT}`);
+    console.log(`[Server] Express web server running on http://0.0.0.0:${PORT}`);
+
+    // Launch background automated scanner asynchronously without blocking startup
+    try {
+      const scanner = new ServerScanner();
+      scanner.start().then(() => {
+        console.log('[Server] Server-Side Automated SMC Breakout Scanner started in background.');
+      }).catch((err) => {
+        console.error('[Server] Failed to start ServerScanner background worker:', err);
+      });
+    } catch (err) {
+      console.error('[Server] Failed to initialize ServerScanner:', err);
+    }
   });
 }
 

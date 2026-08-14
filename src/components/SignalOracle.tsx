@@ -10,6 +10,7 @@ import { generateTradingSignal, getMarketSentiment } from '../services/aiService
 import { sendSignalToTelegram, sendMonthlyOracleIntroduction, sendDailyMorningBrief } from '../services/communicationService';
 import { useMarketContext } from '../MarketContext';
 import { calculateAutoLotSize, calculateATR, getFallbackATR } from '../lib/tradeUtils';
+import { getFallbackPrice } from '../lib/instrumentPrices';
 import { derivService } from '../services/derivService';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell, PieChart, Pie } from 'recharts';
 import UltimateConfluenceChart from './UltimateConfluenceChart';
@@ -59,68 +60,7 @@ interface SignalOracleProps {
   addToast: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-const getFallbackPrice = (pair: string) => {
-  const p = pair.toUpperCase();
-  // Crypto
-  if (p.includes('BTC')) return 63900 + Math.random() * 100;
-  if (p.includes('ETH')) return 1770 + Math.random() * 5;
-  
-  // Indices
-  if (p.includes('OTC_DJI') || p.includes('US30')) return 52500 + Math.random() * 100;
-  if (p.includes('OTC_NDX') || p.includes('NAS')) return 29590 + Math.random() * 100;
-  if (p.includes('OTC_GDAXI') || p.includes('GER')) return 25100 + Math.random() * 100;
-  
-  // Commodities
-  if (p.includes('XAU') || p.includes('GOLD')) return 2350 + Math.random() * 10;
-  if (p.includes('XAG') || p.includes('SILVER')) return 60.1 + Math.random() * 0.5;
-  if (p.includes('WTI') || p.includes('OIL')) return 80.5 + Math.random() * 1.0;
-  
-  // Jump Indices
-  if (p.includes('JD100')) return 214.7 + Math.random() * 0.5;
-  if (p.includes('JD75')) return 8142.77 + Math.random() * 5;
-  if (p.includes('JD50')) return 68102.6 + Math.random() * 20;
-  if (p.includes('JD25')) return 112796.08 + Math.random() * 50;
-  if (p.includes('JD10')) return 93625.1 + Math.random() * 50;
-  if (p.includes('JD')) return 68102.6 + Math.random() * 20;
-  
-  // Boom & Crash
-  if (p.includes('BOOM1000')) return 14317.74 + Math.random() * 10;
-  if (p.includes('BOOM500')) return 5005.75 + Math.random() * 5;
-  if (p.includes('BOOM300')) return 2800 + Math.random() * 5;
-  if (p.includes('BOOM150')) return 15000 + Math.random() * 10;
-  if (p.includes('BOOM100')) return 94915.95 + Math.random() * 20;
-  if (p.includes('BOOM50')) return 106692.62 + Math.random() * 20;
-  if (p.includes('CRASH1000')) return 5724.30 + Math.random() * 5;
-  if (p.includes('CRASH500')) return 3086.21 + Math.random() * 5;
-  if (p.includes('CRASH300')) return 9500 + Math.random() * 10;
-  if (p.includes('CRASH150')) return 15000 + Math.random() * 20;
-  if (p.includes('CRASH100')) return 95871.08 + Math.random() * 20;
-  if (p.includes('CRASH50')) return 99035.82 + Math.random() * 20;
-  
-  // 1-second Volatility Indices (1HZ)
-  if (p.includes('1HZ25V')) return 795691.72 + Math.random() * 100;
-  if (p.includes('1HZ50V')) return 262861.19 + Math.random() * 50;
-  if (p.includes('1HZ75V')) return 7100.83 + Math.random() * 5;
-  if (p.includes('1HZ100V')) return 703.2 + Math.random() * 1;
-  if (p.includes('1HZ10V')) return 9382.88 + Math.random() * 10;
-  
-  // Volatility Indices (R_)
-  if (p.includes('R_100')) return 556.82 + Math.random() * 2;
-  if (p.includes('R_75')) return 47186.13 + Math.random() * 20;
-  if (p.includes('R_50')) return 94.99 + Math.random() * 1;
-  if (p.includes('R_25')) return 2659.22 + Math.random() * 5;
-  if (p.includes('R_10')) return 4865.01 + Math.random() * 10;
-  if (p.includes('STP') || p.includes('STEP')) return 7637.4 + Math.random() * 2;
-  
-  // Forex
-  if (p.includes('JPY')) return 161.5 + Math.random() * 0.5;
-  if (p.includes('EURUSD')) return 1.1444 + (Math.random() * 0.0020);
-  if (p.includes('GBPUSD')) return 1.3430 + (Math.random() * 0.0020);
-  if (p.includes('AUDUSD')) return 0.6952 + (Math.random() * 0.0020);
-  if (p.includes('USDCAD')) return 1.4156 + (Math.random() * 0.0020);
-  
-  return 1.0850 + (Math.random() * 0.0050);
-};
+
 
 export default function SignalOracle({ userProfile, addToast }: SignalOracleProps) {
   const { marketPrices } = useMarketContext();

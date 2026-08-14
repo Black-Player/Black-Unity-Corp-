@@ -3,9 +3,10 @@ import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { dbService } from '../services/dbService';
 import { UserProfile, Signal } from '../types';
 import { exportToGoogleSheets, exportToGoogleDrive } from '../services/workspaceService';
-import { History as HistoryIcon, Search, Filter, CheckCircle2, XCircle, Clock, BarChart3, Bot, Zap, XOctagon, Download, FileSpreadsheet, Send } from 'lucide-react';
+import { History as HistoryIcon, Search, Filter, CheckCircle2, XCircle, Clock, BarChart3, Bot, Zap, XOctagon, Download, FileSpreadsheet, Send, Archive as ArchiveIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { sendSignalToTelegram } from '../services/communicationService';
+import { isCreatedToday } from '../lib/tradeUtils';
 
 interface HistoryProps {
   userProfile: UserProfile;
@@ -65,6 +66,27 @@ export default function History({ userProfile, addToast }: HistoryProps) {
     } catch (e) {
       console.error(e);
       addToast('Failed to close active signals', 'error');
+    } finally {
+      setIsClosing(false);
+    }
+  };
+
+  const handleArchiveUsedSignals = async () => {
+    const sToArchive = signals.filter(s => s.status !== 'archived' && (s.status !== 'active' || !isCreatedToday(s.created_at)));
+    if (sToArchive.length === 0) {
+      addToast('No eligible signals to move to archive.', 'info');
+      return;
+    }
+    setIsClosing(true);
+    try {
+      for (const sig of sToArchive) {
+        await dbService.update('signals', sig.id, { status: 'archived' });
+      }
+      addToast(`Moved ${sToArchive.length} signals to the Archive section!`, 'success');
+      setSignals(prev => prev.map(s => (s.status !== 'active' || !isCreatedToday(s.created_at)) ? { ...s, status: 'archived' } : s));
+    } catch (e) {
+      console.error(e);
+      addToast('Failed to move signals to archive', 'error');
     } finally {
       setIsClosing(false);
     }
@@ -178,6 +200,15 @@ export default function History({ userProfile, addToast }: HistoryProps) {
               {isClosing ? 'Closing...' : 'Close All Active'}
             </button>
           )}
+          <button
+            onClick={handleArchiveUsedSignals}
+            disabled={isClosing}
+            className="px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-all border border-gold/40 text-gold hover:bg-gold hover:text-black flex items-center gap-2"
+            title="Move used/closed signals to the Archive section"
+          >
+            <ArchiveIcon size={14} />
+            Archive Used Signals
+          </button>
           <div className="flex gap-2 ml-auto">
             <button
               onClick={handleExportDrive}

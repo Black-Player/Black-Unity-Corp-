@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { dbService } from '../services/dbService';
 import { where, orderBy, limit } from 'firebase/firestore';
-import { calculateAutoLotSize, evaluateCapitalSafety, calculateCorrelationCoefficient } from '../lib/tradeUtils';
+import { calculateAutoLotSize, evaluateCapitalSafety, calculateCorrelationCoefficient, isCreatedToday } from '../lib/tradeUtils';
 import { BehavioralService } from '../services/behavioralService';
 import { supabase, handleSupabaseError, OperationType } from '../supabase';
 import { UserProfile, Signal, Trade, BOTS, TIER_LIMITS, TIER_BOT_LIMITS, PriceAlert, MarketNews, Tier, hasTierAccess } from '../types';
@@ -50,69 +50,7 @@ interface DashboardProps {
 
 import { memo } from 'react';
 import { speak } from '../lib/voice';
-
-const getFallbackPrice = (pair: string) => {
-  const p = pair.toUpperCase();
-  // Crypto
-  if (p.includes('BTC')) return 63900 + Math.random() * 100;
-  if (p.includes('ETH')) return 1770 + Math.random() * 5;
-  
-  // Indices
-  if (p.includes('OTC_DJI') || p.includes('US30')) return 52500 + Math.random() * 100;
-  if (p.includes('OTC_NDX') || p.includes('NAS')) return 29590 + Math.random() * 100;
-  if (p.includes('OTC_GDAXI') || p.includes('GER')) return 25100 + Math.random() * 100;
-  
-  // Commodities
-  if (p.includes('XAU') || p.includes('GOLD')) return 2350 + Math.random() * 10;
-  if (p.includes('XAG') || p.includes('SILVER')) return 60.1 + Math.random() * 0.5;
-  if (p.includes('WTI') || p.includes('OIL')) return 80.5 + Math.random() * 1.0;
-  
-  // Jump Indices
-  if (p.includes('JD100')) return 214.7 + Math.random() * 0.5;
-  if (p.includes('JD75')) return 8142.77 + Math.random() * 5;
-  if (p.includes('JD50')) return 68102.6 + Math.random() * 20;
-  if (p.includes('JD25')) return 112796.08 + Math.random() * 50;
-  if (p.includes('JD10')) return 93625.1 + Math.random() * 50;
-  if (p.includes('JD')) return 68102.6 + Math.random() * 20;
-  
-  // Boom & Crash
-  if (p.includes('BOOM1000')) return 14317.74 + Math.random() * 10;
-  if (p.includes('BOOM500')) return 5005.75 + Math.random() * 5;
-  if (p.includes('BOOM300')) return 2800 + Math.random() * 5;
-  if (p.includes('BOOM150')) return 15000 + Math.random() * 10;
-  if (p.includes('BOOM100')) return 94915.95 + Math.random() * 20;
-  if (p.includes('BOOM50')) return 106692.62 + Math.random() * 20;
-  if (p.includes('CRASH1000')) return 5724.30 + Math.random() * 5;
-  if (p.includes('CRASH500')) return 3086.21 + Math.random() * 5;
-  if (p.includes('CRASH300')) return 9500 + Math.random() * 10;
-  if (p.includes('CRASH150')) return 15000 + Math.random() * 20;
-  if (p.includes('CRASH100')) return 95871.08 + Math.random() * 20;
-  if (p.includes('CRASH50')) return 99035.82 + Math.random() * 20;
-  
-  // 1-second Volatility Indices (1HZ)
-  if (p.includes('1HZ25V')) return 795691.72 + Math.random() * 100;
-  if (p.includes('1HZ50V')) return 262861.19 + Math.random() * 50;
-  if (p.includes('1HZ75V')) return 7100.83 + Math.random() * 5;
-  if (p.includes('1HZ100V')) return 703.2 + Math.random() * 1;
-  if (p.includes('1HZ10V')) return 9382.88 + Math.random() * 10;
-  
-  // Volatility Indices (R_)
-  if (p.includes('R_100')) return 556.82 + Math.random() * 2;
-  if (p.includes('R_75')) return 47186.13 + Math.random() * 20;
-  if (p.includes('R_50')) return 94.99 + Math.random() * 1;
-  if (p.includes('R_25')) return 2659.22 + Math.random() * 5;
-  if (p.includes('R_10')) return 4865.01 + Math.random() * 10;
-  if (p.includes('STP') || p.includes('STEP')) return 7637.4 + Math.random() * 2;
-  
-  // Forex
-  if (p.includes('JPY')) return 161.5 + Math.random() * 0.5;
-  if (p.includes('EURUSD')) return 1.1444 + (Math.random() * 0.0020);
-  if (p.includes('GBPUSD')) return 1.3430 + (Math.random() * 0.0020);
-  if (p.includes('AUDUSD')) return 0.6952 + (Math.random() * 0.0020);
-  if (p.includes('USDCAD')) return 1.4156 + (Math.random() * 0.0020);
-  
-  return 1.0850 + (Math.random() * 0.0050);
-};
+import { getFallbackPrice } from '../lib/instrumentPrices';
 
 const MarketPriceCard = memo(({ symbol, onSelect }: { symbol: string, onSelect: (symbol: string) => void }) => {
   const { marketPrices } = useMarketContext();
@@ -223,6 +161,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   const availableBots = BOTS.filter(bot => hasTierAccess(userProfile.tier, bot.tier_requirement));
   const customBots = userProfile.custom_bots || [];
   const allAvailableBots = [...availableBots, ...customBots];
+  const defaultBot = allAvailableBots[0] || BOTS[0];
 
   useEffect(() => {
     const launchDate = new Date('2024-04-15T00:00:00Z').getTime();
@@ -309,7 +248,13 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   const [generationMode, setGenerationMode] = useState<'manual' | 'auto'>('manual');
   const [timeframe, setTimeframe] = useState('Auto');
   const [tradingStyle, setTradingStyle] = useState('Auto');
-  const [selectedBot, setSelectedBot] = useState(allAvailableBots[0]);
+  const [selectedBot, setSelectedBot] = useState(defaultBot);
+
+  useEffect(() => {
+    if (!selectedBot || !allAvailableBots.some(b => b.name === selectedBot.name)) {
+      setSelectedBot(defaultBot);
+    }
+  }, [userProfile.tier, userProfile.custom_bots, allAvailableBots.length]);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState('');
   const [sentiment, setSentiment] = useState({ bullish: 65, bearish: 35, summary: 'Market shows strong bullish momentum.' });
@@ -483,6 +428,21 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
   }, [pair]);
 
   useEffect(() => {
+    const processSignals = (data: Signal[]) => {
+      const todaySignals: Signal[] = [];
+      (data as Signal[]).forEach(sig => {
+        if (sig.status === 'active') {
+          if (isCreatedToday(sig.created_at)) {
+            todaySignals.push(sig);
+          } else {
+            // Auto-archive active signals generated on previous days
+            dbService.update('signals', sig.id, { status: 'archived' }).catch(() => {});
+          }
+        }
+      });
+      return todaySignals;
+    };
+
     // Initial fetch
     const fetchSignals = async () => {
       try {
@@ -490,9 +450,9 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           where('uid', '==', userProfile.uid),
           where('status', '==', 'active'),
           orderBy('created_at', 'desc'),
-          limit(10)
+          limit(20)
         ]);
-        setActiveSignals(data as Signal[]);
+        setActiveSignals(processSignals(data as Signal[]));
       } catch (error) {
         console.error("Fetch signals failed", error);
       }
@@ -505,9 +465,9 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
       where('uid', '==', userProfile.uid),
       where('status', '==', 'active'),
       orderBy('created_at', 'desc'),
-      limit(10)
+      limit(20)
     ], (data) => {
-      setActiveSignals(data as Signal[]);
+      setActiveSignals(processSignals(data as Signal[]));
     });
 
     return () => unsubscribe();
@@ -620,7 +580,9 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         allPrices: activePair === 'Auto' ? currentPricesMap : undefined,
       };
 
-      const signalData = await generateTradingSignal(activePair, activeTimeframe, selectedBot, currentPrice, sentiment, boostAnalysis, advancedOptions);
+      const botToUse = selectedBot || defaultBot || BOTS[0];
+
+      const signalData = await generateTradingSignal(activePair, activeTimeframe, botToUse, currentPrice, sentiment, boostAnalysis, advancedOptions);
       
       // Phase 4: SIGNAL ENGINE (STRICT FILTER)
       const hasStructure = signalData.bos_detected || signalData.choch_detected || !!signalData.market_structure;
@@ -648,8 +610,8 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
         tp3: signalData.tp3 || 0,
         tp4: signalData.tp4 || 0,
         risk_reward: signalData.risk_reward || 0,
-        strategy: selectedBot.strategy,
-        ai_bot: selectedBot.name,
+        strategy: botToUse.strategy || 'SMC',
+        ai_bot: botToUse.name || 'Oracle',
         confidence: signalData.confidence || 0,
         market_structure: signalData.market_structure,
         liquidity_presence: signalData.liquidity_swept,
@@ -676,7 +638,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
           await dbService.create('notifications', {
               uid: userProfile.uid,
               title: 'Celestial Signal Received',
-              message: `Oracle ${selectedBot.name} detected a ${newSignal.tp1 > newSignal.entry ? 'BUY' : 'SELL'} setup for ${finalPair}. Confidence: ${signalData.confidence}%`,
+              message: `Oracle ${botToUse.name} detected a ${newSignal.tp1 > newSignal.entry ? 'BUY' : 'SELL'} setup for ${finalPair}. Confidence: ${signalData.confidence}%`,
               type: 'signal',
               read: false,
               created_at: new Date().toISOString()
@@ -687,7 +649,7 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
               signals_used_today: (userProfile.signals_used_today || 0) + 1
           });
           
-          addToast(`Dimension Sync: New ${finalPair} signal generated by ${selectedBot.name}!`, 'success');
+          addToast(`Dimension Sync: New ${finalPair} signal generated by ${botToUse.name}!`, 'success');
 
           // Broadcast to Telegram (The Chronicle)
           if (userProfile.integrations?.telegram_automation_enabled !== false) {
@@ -1550,16 +1512,19 @@ export default function Dashboard({ userProfile, addToast, handleCloseTrade }: D
 
           <div className="glass-card p-6 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-display font-bold flex items-center gap-2">
-                <Zap className="text-gold" size={20} /> Active Signals
-              </h2>
-              <span className="text-xs text-white/40">{activeSignals.length} Active</span>
+              <div>
+                <h2 className="text-xl font-display font-bold flex items-center gap-2">
+                  <Zap className="text-gold" size={20} /> Today's Active Signals
+                </h2>
+                <p className="text-[11px] text-white/40 mt-0.5">Only signals generated today ({new Date().toLocaleDateString(undefined, { weekday: 'long' })}) remain active on Dashboard. Prior day signals automatically move to Archive.</p>
+              </div>
+              <span className="text-xs text-white/40">{activeSignals.length} Active Today</span>
             </div>
 
             <div className="space-y-4">
               <AnimatePresence mode="popLayout">
                 {activeSignals.length === 0 ? (
-                  <div className="text-center py-12 text-white/20 italic">No active signals. Generate one to start.</div>
+                  <div className="text-center py-12 text-white/20 italic">No active signals for today ({new Date().toLocaleDateString(undefined, { weekday: 'long' })}). Generate a signal or check Archive for past days.</div>
                 ) : (
                   activeSignals.map((signal) => (
                     <motion.div

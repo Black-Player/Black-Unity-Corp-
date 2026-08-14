@@ -2,6 +2,7 @@ import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { EconomicEvent, MarketNews, Signal, Bot } from "../types";
 import { SYSTEM_ROLE } from "../constants/systemRole";
 import { calculateATR, getFallbackATR, analyzeMarketSMC, SMCAnalysis } from "../lib/tradeUtils";
+import { getFallbackPrice } from "../lib/instrumentPrices";
 import { derivService } from "./derivService";
 import { aiOptimizationService, SHARED_KNOWLEDGE_BASE } from "./aiOptimizationService";
 
@@ -88,59 +89,7 @@ export interface AdvancedSignalOptions {
 }
 
 function getFallbackPriceForAI(pair: string): number {
-  const p = pair.toUpperCase();
-  // Crypto
-  if (p.includes('BTC')) return 63900;
-  if (p.includes('ETH')) return 1770;
-  
-  // Indices
-  if (p.includes('OTC_DJI') || p.includes('US30')) return 52500;
-  if (p.includes('OTC_NDX') || p.includes('NAS')) return 29590;
-  if (p.includes('OTC_GDAXI') || p.includes('GER')) return 25100;
-  
-  // Commodities
-  if (p.includes('XAU') || p.includes('GOLD')) return 2350;
-  if (p.includes('XAG') || p.includes('SILVER')) return 60.1;
-  if (p.includes('WTI') || p.includes('OIL')) return 80.5;
-  
-  // Jump Indices
-  if (p.includes('JD100')) return 214.7;
-  if (p.includes('JD75')) return 8142.77;
-  if (p.includes('JD50')) return 68102.6;
-  if (p.includes('JD25')) return 112796.08;
-  if (p.includes('JD10')) return 93625.1;
-  if (p.includes('JD')) return 68102.6;
-  
-  // Boom & Crash
-  if (p.includes('BOOM1000')) return 14317.74;
-  if (p.includes('BOOM500')) return 5005.75;
-  if (p.includes('BOOM300')) return 2800;
-  if (p.includes('BOOM150')) return 15000;
-  if (p.includes('BOOM100')) return 94915.95;
-  if (p.includes('BOOM50')) return 106692.62;
-  if (p.includes('CRASH1000')) return 5724.30;
-  if (p.includes('CRASH500')) return 3086.21;
-  if (p.includes('CRASH300')) return 9500;
-  if (p.includes('CRASH150')) return 15000;
-  if (p.includes('CRASH100')) return 95871.08;
-  if (p.includes('CRASH50')) return 99035.82;
-  
-  // 1-second Volatility Indices (1HZ)
-  if (p.includes('1HZ25V')) return 795691.72;
-  if (p.includes('1HZ50V')) return 262861.19;
-  if (p.includes('1HZ75V')) return 7100.83;
-  if (p.includes('1HZ100V')) return 703.2;
-  if (p.includes('1HZ10V')) return 9382.88;
-  
-  // Volatility Indices (R_)
-  if (p.includes('R_100')) return 556.82;
-  if (p.includes('R_75')) return 47186.13;
-  if (p.includes('R_50')) return 94.99;
-  if (p.includes('R_25')) return 2659.22;
-  if (p.includes('R_10')) return 4865.01;
-  if (p.includes('STP') || p.includes('STEP')) return 7637.4;
-
-  return 1.0850;
+  return getFallbackPrice(pair);
 }
 
 function getPipSizeForPair(symbol: string, currentPrice: number): number {
@@ -400,10 +349,10 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         - Timeframe: ${isAutoTimeframe ? 'AI Decides (Scan D1, W1, 1M)' : timeframe}
         - Trading Style/Execution: ${isAutoStyle ? 'AI Decides (Scalp, Intraday, or Swing)' : (advancedOptions?.tradingStyle || 'Intraday')}
         - Market Sentiment: ${JSON.stringify(marketData)}
-        - Strategy: ${bot.strategy}
-        - AI Bot: ${bot.name}
-        - Risk Profile: ${bot.risk_profile || 'balanced'}
-        - Personality: ${bot.personality || 'analytical'}
+        - Strategy: ${bot?.strategy || 'Smart Money Concepts'}
+        - AI Bot: ${bot?.name || 'Oracle'}
+        - Risk Profile: ${bot?.risk_profile || 'balanced'}
+        - Personality: ${bot?.personality || 'analytical'}
         - Prop Firm Mode (Strict): ${advancedOptions?.propFirmMode ? 'ENABLED (Use lower risk, higher drawdown protection, 6/7 confirmation threshold minimum)' : 'DISABLED'}
         - Capital Protection Mode: ${advancedOptions?.capitalProtectionMode ? 'ENABLED (Recent losses detected. Force high-confluence only. Reduce signal frequency)' : 'DISABLED'}
         ${chartAnalysis ? `- Oracle Eye Visionary Analysis: ${JSON.stringify(chartAnalysis)}` : ''}
@@ -643,7 +592,7 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         selected_timeframe: finalTimeframe,
         selected_style: finalStyle,
         decision_reasoning: `EVOLUTION SYSTEM STATUS: Operating under Cosmic Regional Preservation mode. Imbalance detected near key liquidity level (${finalPrice.toFixed(4)}). Order books indicate high-confluence smart money interest. Structure is shifting with volume, suggesting immediate momentum.`,
-        ai_sentiment_feedback: `Preservation engine activated. Aligned with ${bot.name} of Zion. Accuracy locked at ${confidence}%.`,
+        ai_sentiment_feedback: `Preservation engine activated. Aligned with ${bot?.name || 'Oracle'} of Zion. Accuracy locked at ${confidence}%.`,
         entry: finalPrice,
         stop_loss: Number(stop_loss.toFixed(4)),
         tp1: Number(tp1.toFixed(4)),
@@ -669,7 +618,7 @@ export async function generateTradingSignal(pair: string, timeframe: string, bot
         dynamic_sl_logic: `Placed behind unmitigated H4 Order Block at ${(isBuy ? finalPrice - slOffset : finalPrice + slOffset).toFixed(4)} to protect capital from stop hunts.`,
         analysis: `Oracle in Regional Preservation Mode. Technical structure shows strong correlation index. Invalidation level strictly at ${(isBuy ? finalPrice - slOffset : finalPrice + slOffset).toFixed(4)}. Reward ratio of ${rr}:1 established.`,
         psychological_trap: "Inducement Trap. Retailers are selling early. Expect the market makers to clear previous highs before continuing.",
-        strategy_type: bot.strategy,
+        strategy_type: bot?.strategy || 'SMC',
         visual_blueprint: `OB_ZONE ~ FVG_IMBALANCE ~ LIQUIDITY_SWEEP`,
         recommended_lot_size: 0.1
       };

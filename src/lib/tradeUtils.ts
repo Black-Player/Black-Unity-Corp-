@@ -1,5 +1,21 @@
 import { UserProfile } from "../types";
 
+export function isCreatedToday(dateString?: string): boolean {
+  if (!dateString) return false;
+  try {
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return false;
+    const now = new Date();
+    return (
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate()
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * Calculates the lot size based on balance, risk percentage, and SL distance.
  * Includes precise tracking for Deriv multipliers vs Forex.

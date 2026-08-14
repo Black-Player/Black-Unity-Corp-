@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { derivService, DerivTick } from '../services/derivService';
 import { DERIV_SYMBOLS } from '../constants';
 import { getFallbackPrice } from '../lib/instrumentPrices';
+import { instrumentTruthEngine } from '../services/instrumentTruthEngine';
+import { deterministicTradingEngine } from '../services/deterministicTradingEngine';
 
 export interface NormalizedTick extends DerivTick {
   rawPrice: number;
@@ -154,6 +156,7 @@ export function useMarketPrices() {
 
     const unsubscribe = derivService.subscribeToTicks(symbols, (tick) => {
       const normalized = normalizeTickData(tick);
+      instrumentTruthEngine.updatePrice(tick.symbol, tick.price, 'Deriv WS Live');
       setMarketPrices((prev) => ({
         ...prev,
         [tick.symbol]: normalized,

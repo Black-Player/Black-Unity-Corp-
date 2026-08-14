@@ -16,6 +16,8 @@ import fs from 'fs';
 import path from 'path';
 import { DERIV_SYMBOLS } from '../constants';
 import { getFallbackATR } from '../lib/tradeUtils';
+import { deterministicTradingEngine } from './deterministicTradingEngine';
+import { signalFirewall } from './signalFirewall';
 
 // Load Firebase Config
 const configPath = path.resolve(process.cwd(), 'firebase-applet-config.json');
@@ -409,22 +411,24 @@ export class ServerScanner {
         // Passed cooldown!
         this.lastTriggerTime[user.uid][symbol] = now;
 
-        // Dynamic stop loss range calculation using Average True Range (ATR)
-        const atr = getFallbackATR(symbol, currentPrice);
-        const slOffset = atr * 1.5; // Tighter, adaptive stops using 1.5x ATR
+        // Deterministic Stop Loss & TP calculation with 1:3.00 R:R model
+        const tradePlan = deterministicTradingEngine.calculateTradePlan({
+          symbol,
+          direction: breakoutType === 'buy' ? 'Buy' : 'Sell',
+          basePrice: currentPrice,
+          monetaryRisk: 1.50
+        });
 
-        const entryPrice = currentPrice;
-        const stop_loss = breakoutType === 'buy' ? entryPrice - slOffset : entryPrice + slOffset;
-
-        // Mandate: If SL risk is $1.00 (slOffset), TP1 must be at least $3.50 (3.5x slOffset)
-        const tp1 = breakoutType === 'buy' ? entryPrice + slOffset * 3.5 : entryPrice - slOffset * 3.5;
-        const tp2 = breakoutType === 'buy' ? entryPrice + slOffset * 5.0 : entryPrice - slOffset * 5.0;
-        const tp3 = breakoutType === 'buy' ? entryPrice + slOffset * 7.5 : entryPrice - slOffset * 7.5;
-        const tp4 = breakoutType === 'buy' ? entryPrice + slOffset * 10.0 : entryPrice - slOffset * 10.0;
+        const entryPrice = tradePlan.entryPrice;
+        const stop_loss = tradePlan.stopLossPrice;
+        const tp1 = tradePlan.tp1.price;
+        const tp2 = tradePlan.tp2.price;
+        const tp3 = tradePlan.tp3.price;
+        const tp4 = tradePlan.tp4.price;
 
         const confidence = Math.floor(Math.random() * 11) + 85; // 85% - 95%
         const actionWord = breakoutType === 'buy' ? 'bullish' : 'bearish';
-        const decision_reasoning = `The market executed an impulsive ${actionWord} breakout. This structure shift (${breakStyle}) at ${entryPrice.toFixed(2)} indicates high-confluence institutional orders and displacement. Optimized TP and SL levels are set at premium/discount zones to guarantee safe risk-to-reward scaling.`;
+        const decision_reasoning = `The market executed an impulsive ${actionWord} breakout. Structure shift (${breakStyle}) at ${entryPrice.toFixed(2)} confirms institutional displacement. Deterministic plan calculated with Hard 1:3.00 R:R ($1.50 Risk -> $4.50 TP1).`;
 
         const newSignal: any = {
           uid: user.uid,
@@ -433,13 +437,13 @@ export class ServerScanner {
           entry: entryPrice,
           decision: breakoutType === 'buy' ? 'Buy' : 'Sell',
           decision_reasoning,
-          ai_sentiment_feedback: `Bullish momentum validated above Key OB zone. Optimized 1:4.2 dynamic Risk-to-Reward profile activated.`,
+          ai_sentiment_feedback: `Bullish momentum validated above Key OB zone. Hard 1:3.00 institutional Risk-to-Reward profile activated.`,
           stop_loss,
           tp1,
           tp2,
           tp3,
           tp4,
-          risk_reward: 4.2,
+          risk_reward: 3.00,
           strategy: breakStyle === 'CHoCH' ? '6-Step Multi-Timeframe Reversal Set Up' : 'Smart Money Concepts (SMC)',
           ai_bot: breakStyle === 'CHoCH' ? 'Morpheus Reversal AI' : 'Sentinel AI',
           confidence,
@@ -450,12 +454,19 @@ export class ServerScanner {
           order_type: 'Market',
           execution: 'Intraday',
           risk_percent: user.risk_settings?.risk_per_trade || 1,
-          analysis: `SMC Structure break (${breakStyle}) detected. Entering on mitigation pullback.`,
+          analysis: `SMC Structure break (${breakStyle}) detected. Invalidation set at ${stop_loss} with Hard 1:3.00 R:R (+$$${tradePlan.monetaryRewardTP1.toFixed(2)}) target at ${tp1}.`,
           psychological_trap: 'Retail Liquidity Inducement Trap avoided.',
-          recommended_lot_size: 0.1,
+          recommended_lot_size: tradePlan.recommendedLotSize,
           status: 'active',
           created_at: new Date().toISOString()
         };
+
+        // 16-point Signal Firewall verification
+        const firewallResult = signalFirewall.validateSignal({ signal: newSignal });
+        if (!firewallResult.overallPassed) {
+          console.warn(`[Server Scanner] Signal blocked by firewall for ${symbol}:`, firewallResult.blockReasons);
+          continue;
+        }
 
         try {
           console.log(`[Server Scanner] Structuring automated Signal for User ${user.uid} (${symbol}) due to ${breakStyle} breakout`);

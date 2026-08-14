@@ -5,6 +5,9 @@ import { calculateATR, getFallbackATR, analyzeMarketSMC, SMCAnalysis } from "../
 import { getFallbackPrice } from "../lib/instrumentPrices";
 import { derivService } from "./derivService";
 import { aiOptimizationService, SHARED_KNOWLEDGE_BASE } from "./aiOptimizationService";
+import { instrumentTruthEngine } from "./instrumentTruthEngine";
+import { deterministicTradingEngine } from "./deterministicTradingEngine";
+import { signalFirewall } from "./signalFirewall";
 
 // Caching mechanism to reduce API calls
 const cache: Record<string, { data: any, timestamp: number }> = {};
@@ -127,55 +130,56 @@ function validateAndSanitizeSignal(
   }
   rawSignal.selected_pair = finalPair;
 
-  // 2. Determine correct current price for finalPair
-  let resolvedCurrentPrice = requestedPrice;
-  if (requestedPair === 'Auto' || finalPair !== requestedPair) {
-    if (advancedOptions?.allPrices && advancedOptions.allPrices[finalPair]) {
-      resolvedCurrentPrice = advancedOptions.allPrices[finalPair];
-    } else {
-      resolvedCurrentPrice = getFallbackPriceForAI(finalPair);
-    }
+  // 2. Determine correct current price from Instrument Truth Engine
+  const spec = instrumentTruthEngine.getSpec(finalPair);
+  let resolvedCurrentPrice = spec.currentPrice || requestedPrice;
+  if (advancedOptions?.allPrices && advancedOptions.allPrices[finalPair]) {
+    resolvedCurrentPrice = advancedOptions.allPrices[finalPair];
   }
 
   const decision = rawSignal.decision || 'No Trade';
-  const p = finalPair.toUpperCase();
-  const decimals = p.includes('JPY') || p.includes('BTC') || p.includes('ETH') || p.includes('XAU') || p.includes('GOLD') || p.includes('BOOM') || p.includes('CRASH') ? 2 : 4;
 
   if (decision === 'Buy' || decision === 'Sell') {
     const isBuy = decision === 'Buy';
-    // Use raw signal entry if valid, otherwise fallback to live current price
-    let entryPrice = Number(rawSignal.entry);
-    if (isNaN(entryPrice) || entryPrice <= 0 || (Math.abs(entryPrice - resolvedCurrentPrice) / resolvedCurrentPrice > 0.1)) {
-      entryPrice = resolvedCurrentPrice;
+    let candidateEntry = Number(rawSignal.entry);
+    if (isNaN(candidateEntry) || candidateEntry <= 0 || (Math.abs(candidateEntry - resolvedCurrentPrice) / resolvedCurrentPrice > 0.08)) {
+      candidateEntry = resolvedCurrentPrice;
     }
 
-    const pipSize = getPipSizeForPair(finalPair, entryPrice);
-    // Enforce highly requested strict 20-25 pips Stop Loss (fixed at 22 pips)
-    const slOffset = 22 * pipSize;
+    // Run deterministic calculation engine
+    const plan = deterministicTradingEngine.calculateTradePlan({
+      symbol: finalPair,
+      direction: isBuy ? 'Buy' : 'Sell',
+      basePrice: candidateEntry,
+      monetaryRisk: 1.50
+    });
 
-    rawSignal.entry = Number(entryPrice.toFixed(decimals));
-    rawSignal.stop_loss = Number((isBuy ? entryPrice - slOffset : entryPrice + slOffset).toFixed(decimals));
-    
-    // Scale all TP levels relative to Stop Loss to maintain strict Risk-Reward ratio (TP1 must be at least 3.5x risk)
-    rawSignal.tp1 = Number((isBuy ? entryPrice + slOffset * 3.5 : entryPrice - slOffset * 3.5).toFixed(decimals));
-    rawSignal.tp2 = Number((isBuy ? entryPrice + slOffset * 5.0 : entryPrice - slOffset * 5.0).toFixed(decimals));
-    rawSignal.tp3 = Number((isBuy ? entryPrice + slOffset * 7.5 : entryPrice - slOffset * 7.5).toFixed(decimals));
-    rawSignal.tp4 = Number((isBuy ? entryPrice + slOffset * 10.0 : entryPrice - slOffset * 10.0).toFixed(decimals));
-    rawSignal.risk_reward = 3.5;
-    
-    rawSignal.dynamic_sl_logic = `Strict institutional invalidation setup at ${rawSignal.stop_loss} to secure capital.`;
-    rawSignal.analysis = `SMC execution on ${finalPair}. Shift in market structure confirmed. Invalidation strictly set at ${rawSignal.stop_loss} with 1:3.5+ RR target at ${rawSignal.tp1}.`;
+    rawSignal.entry = plan.entryPrice;
+    rawSignal.stop_loss = plan.stopLossPrice;
+    rawSignal.tp1 = plan.tp1.price;
+    rawSignal.tp2 = plan.tp2.price;
+    rawSignal.tp3 = plan.tp3.price;
+    rawSignal.tp4 = plan.tp4.price;
+    rawSignal.risk_reward = plan.tp1.riskRewardRatio; // 3.00
+    rawSignal.recommended_lot_size = plan.recommendedLotSize;
+    rawSignal.dynamic_sl_logic = `Strict institutional invalidation at ${plan.stopLossPrice} (-$${plan.monetaryRisk.toFixed(2)} risk). Trailing to Break Even activated at TP1 (+1:3.00 R:R).`;
+    rawSignal.analysis = `Deterministic execution on ${spec.name}. Structure confirmed. Invalidation strictly set at ${plan.stopLossPrice} with Hard 1:3.00 R:R (+$$${plan.monetaryRewardTP1.toFixed(2)}) target at ${plan.tp1.price}.`;
   } else {
-    // No Trade - set default placeholders gracefully
-    const pipSize = getPipSizeForPair(finalPair, resolvedCurrentPrice);
-    const slOffset = 22 * pipSize;
+    // No Trade - deterministic placeholders
+    const plan = deterministicTradingEngine.calculateTradePlan({
+      symbol: finalPair,
+      direction: 'Buy',
+      basePrice: resolvedCurrentPrice,
+      monetaryRisk: 1.50
+    });
 
-    rawSignal.entry = resolvedCurrentPrice;
-    rawSignal.stop_loss = Number((resolvedCurrentPrice - slOffset).toFixed(decimals));
-    rawSignal.tp1 = Number((resolvedCurrentPrice + slOffset * 3.5).toFixed(decimals));
-    rawSignal.tp2 = Number((resolvedCurrentPrice + slOffset * 5.0).toFixed(decimals));
-    rawSignal.tp3 = Number((resolvedCurrentPrice + slOffset * 7.5).toFixed(decimals));
-    rawSignal.tp4 = Number((resolvedCurrentPrice + slOffset * 10.0).toFixed(decimals));
+    rawSignal.entry = plan.entryPrice;
+    rawSignal.stop_loss = plan.stopLossPrice;
+    rawSignal.tp1 = plan.tp1.price;
+    rawSignal.tp2 = plan.tp2.price;
+    rawSignal.tp3 = plan.tp3.price;
+    rawSignal.tp4 = plan.tp4.price;
+    rawSignal.risk_reward = 3.00;
   }
 
   return rawSignal;
@@ -1548,7 +1552,23 @@ export async function generateCouncilDebate(
         throw new Error("Empty Council response from AI.");
       }
 
-      return JSON.parse(response.text.replace(/```json/gi, '').replace(/```/g, '').trim());
+      const parsed = JSON.parse(response.text.replace(/```json/gi, '').replace(/```/g, '').trim());
+      if (parsed?.creatorSynthesizer?.hasTradeSetup && parsed?.creatorSynthesizer?.educationalPlan) {
+        const p = parsed.creatorSynthesizer.educationalPlan;
+        const plan = deterministicTradingEngine.calculateTradePlan({
+          symbol: p.pair || finalPair,
+          direction: p.type === 'SELL' ? 'Sell' : 'Buy',
+          basePrice: parseFloat(p.entry) || currentPrice,
+          monetaryRisk: 1.50
+        });
+        p.entry = plan.entryPrice.toString();
+        p.stop_loss = plan.stopLossPrice.toString();
+        p.tp1 = plan.tp1.price.toString();
+        p.tp2 = plan.tp2.price.toString();
+        p.tp3 = plan.tp3.price.toString();
+        p.tp4 = plan.tp4.price.toString();
+      }
+      return parsed;
     });
   } catch (err) {
     console.error("Council debate AI generation failed, utilizing robust mathematical default:", err);
